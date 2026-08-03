@@ -18,7 +18,7 @@ export function ViewTabs<T extends string>({
   onSelect: (v: T) => void;
 }) {
   return (
-    <div className="mt-4 inline-flex w-full rounded-full border border-border bg-surface p-0.5">
+    <div className="mt-6 inline-flex w-full rounded-xl border border-border bg-surface p-1 shadow-sm sm:w-auto sm:min-w-80">
       {tabs.map((t) => {
         const activeTab = t.value === active;
         return (
@@ -27,9 +27,9 @@ export function ViewTabs<T extends string>({
             type="button"
             onClick={() => onSelect(t.value)}
             aria-pressed={activeTab}
-            className={`flex-1 rounded-full px-3 py-1.5 text-sm font-medium transition ${
+            className={`min-h-11 flex-1 rounded-lg px-4 py-2 text-sm font-bold transition ${
               activeTab
-                ? "bg-foreground text-background"
+                ? "bg-accent text-accent-ink shadow-sm"
                 : "text-muted hover:text-foreground"
             }`}
           >

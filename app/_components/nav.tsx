@@ -9,18 +9,19 @@ export interface NavItem {
   href: string;
   label: string;
   section: NavSection;
+  description?: string;
 }
 
 /** Veřejné URL zůstávají stabilní; seskupení mění jen informační architekturu. */
 export const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Zápasy", section: "matches" },
-  { href: "/porovnani", label: "Porovnání", section: "analysis" },
-  { href: "/tabulky", label: "Tabulky", section: "analysis" },
-  { href: "/predikce", label: "Predikce", section: "analysis" },
-  { href: "/digest", label: "Model vs. trh", section: "analysis" },
-  { href: "/transfers", label: "Přestupy", section: "analysis" },
-  { href: "/tipovacka", label: "Moje tipy", section: "tips" },
-  { href: "/hra", label: "Manažer", section: "game" },
+  { href: "/", label: "Zápasy", section: "matches", description: "Program a výsledky" },
+  { href: "/porovnani", label: "Porovnání", section: "analysis", description: "Tým proti týmu" },
+  { href: "/tabulky", label: "Tabulky", section: "analysis", description: "Ligové pořadí" },
+  { href: "/predikce", label: "Predikce", section: "analysis", description: "Co čeká model" },
+  { href: "/digest", label: "Model vs. trh", section: "analysis", description: "Kde se lišíme" },
+  { href: "/transfers", label: "Přestupy", section: "analysis", description: "Pohyb v klubech" },
+  { href: "/tipovacka", label: "Moje tipy", section: "tips", description: "Osobní deník" },
+  { href: "/hra", label: "Manažer", section: "game", description: "Vlastní kariéra" },
 ];
 
 const PRIMARY_ITEMS: Array<{
@@ -64,33 +65,12 @@ export function SectionNav() {
 
   return (
     <>
-      <nav aria-label="Hlavní navigace" className="mt-3 hidden items-center gap-1 md:flex">
-        {PRIMARY_ITEMS.map((item) => {
-          const active = section === item.section;
-          return (
-            <Link
-              key={item.section}
-              href={item.href}
-              aria-current={active ? "page" : undefined}
-              className={`inline-flex min-h-10 items-center gap-2 rounded-xl px-3.5 py-2 text-sm font-semibold transition ${
-                active
-                  ? "bg-foreground text-background shadow-sm"
-                  : "text-muted hover:bg-surface hover:text-foreground"
-              }`}
-            >
-              <NavIcon name={item.icon} />
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
-
       {section === "analysis" && (
         <nav
           aria-label="Sekce analýz"
-          className="mt-3 -mx-4 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="mt-3 -mx-4 overflow-x-auto px-4 [scrollbar-width:none] lg:hidden [&::-webkit-scrollbar]:hidden"
         >
-          <div className="flex gap-1.5 pb-1 md:border-t md:border-border md:pt-3">
+          <div className="flex gap-1.5 pb-1">
             {NAV_ITEMS.filter((item) => item.section === "analysis").map((item) => {
               const active = isActiveSection(pathname, item.href);
               return (
@@ -100,7 +80,7 @@ export function SectionNav() {
                   aria-current={active ? "page" : undefined}
                   className={`shrink-0 rounded-full border px-3 py-1.5 text-sm font-medium transition ${
                     active
-                      ? "border-foreground bg-foreground text-background"
+                      ? "border-accent bg-accent text-accent-ink"
                       : "border-border bg-surface text-muted hover:text-foreground"
                   }`}
                 >
@@ -115,6 +95,57 @@ export function SectionNav() {
   );
 }
 
+/** Pevná redakční navigace pro široký desktop. */
+export function DesktopSidebar() {
+  const pathname = usePathname();
+  return (
+    <aside className="fixed inset-y-0 left-0 z-50 hidden w-[17rem] flex-col bg-[#171a16] p-5 text-white lg:flex">
+      <Link href="/" className="flex items-center gap-3 border-b border-white/15 pb-5" aria-label="Predictapp – domů">
+        <span className="grid h-11 w-11 place-items-center rounded-xl bg-accent text-xl font-black text-accent-ink">P</span>
+        <span>
+          <span className="block font-display text-xl font-bold tracking-tight">Predictapp</span>
+          <span className="block text-[10px] font-bold uppercase tracking-[.18em] text-white/55">Football intelligence</span>
+        </span>
+      </Link>
+
+      <nav aria-label="Hlavní navigace" className="mt-6 flex flex-1 flex-col gap-2">
+        {NAV_ITEMS.map((item, index) => {
+          const active = isActiveSection(pathname, item.href);
+          const showDivider = index === 1 || index === 6 || index === 7;
+          return (
+            <div key={item.href} className={showDivider ? "mt-3 border-t border-white/10 pt-4" : ""}>
+              {showDivider && (
+                <p className="mb-2 px-3 text-[10px] font-black uppercase tracking-[.18em] text-white/40">
+                  {item.section === "analysis" ? "Analýzy" : item.section === "tips" ? "Osobní" : "Hra"}
+                </p>
+              )}
+              <Link
+                href={item.href}
+                aria-current={active ? "page" : undefined}
+                className={`group flex min-h-12 items-center gap-3 rounded-xl px-3 py-2 transition ${
+                  active ? "bg-accent text-accent-ink" : "text-white/72 hover:bg-white/8 hover:text-white"
+                }`}
+              >
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-current/10">
+                  <NavIcon name={item.section === "matches" ? "matches" : item.section === "tips" ? "tips" : item.section === "game" ? "game" : "analysis"} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-extrabold leading-tight">{item.label}</span>
+                  <span className={`block truncate text-[10px] ${active ? "text-accent-ink/65" : "text-white/40"}`}>{item.description}</span>
+                </span>
+              </Link>
+            </div>
+          );
+        })}
+      </nav>
+      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+        <p className="text-[10px] font-black uppercase tracking-[.16em] text-accent">Datově poctivé</p>
+        <p className="mt-1 text-xs leading-5 text-white/55">Predikce oddělujeme od ověřené výhody nad trhem.</p>
+      </div>
+    </aside>
+  );
+}
+
 /** Mobilní navigace drží čtyři hlavní úkoly vždy na dosah palce. */
 export function MobileBottomNav() {
   const pathname = usePathname();
@@ -123,7 +154,7 @@ export function MobileBottomNav() {
   return (
     <nav
       aria-label="Hlavní mobilní navigace"
-      className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
+      className="fixed inset-x-0 bottom-0 z-50 border-t border-foreground/10 bg-[#171a16]/96 pb-[env(safe-area-inset-bottom)] text-white shadow-[0_-12px_35px_rgb(0_0_0/.15)] backdrop-blur lg:hidden"
     >
       <div className="mx-auto grid max-w-lg grid-cols-4 px-1">
         {PRIMARY_ITEMS.map((item) => {
@@ -134,12 +165,12 @@ export function MobileBottomNav() {
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] font-semibold transition ${
-                active ? "text-foreground" : "text-muted"
+                active ? "text-accent" : "text-white/55"
               }`}
             >
               <span
                 className={`grid h-7 w-12 place-items-center rounded-full transition ${
-                  active ? "bg-foreground text-background" : ""
+                  active ? "bg-accent text-accent-ink" : ""
                 }`}
               >
                 <NavIcon name={item.icon} />

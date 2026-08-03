@@ -66,10 +66,10 @@ export function DigestApp({ user }: { user: SessionUser | null }) {
   }, []);
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-5 sm:py-8">
+    <main className="app-page">
       <AppHeader user={user} />
 
-      <h1 className="mt-4 text-lg font-semibold text-foreground">Vs. trh</h1>
+      <h1>Vs. trh</h1>
       <p className="mt-1 text-sm text-muted">
         Zápasy nejbližších 7 dní, kde se náš odhad nejvíc rozchází s kurzy očištěnými
         o marži sázkovky. Je to pozvánka podívat se, <em>proč</em> – ne tip: na historii

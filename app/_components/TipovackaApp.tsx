@@ -130,7 +130,7 @@ export function TipovackaApp({
 
   if (!user) {
     return (
-      <main className="mx-auto w-full max-w-3xl px-4 py-5 sm:py-8">
+      <main className="app-page">
         <AppHeader user={user} />
         <h1 className="mt-4 text-lg font-semibold text-foreground">Tipovačka</h1>
         <SignInPrompt />
@@ -139,7 +139,7 @@ export function TipovackaApp({
   }
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-5 sm:py-8">
+    <main className="app-page">
       <AppHeader user={user} />
       <h1 className="mt-4 text-lg font-semibold text-foreground">Tipovačka</h1>
       <p className="mt-1 text-sm text-muted">

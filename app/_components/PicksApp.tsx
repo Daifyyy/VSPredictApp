@@ -233,10 +233,10 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
   }
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-5 sm:py-8">
+    <main className="app-page">
       <AppHeader user={user} />
 
-      <h1 className="mt-4 text-lg font-semibold text-foreground">Predikce</h1>
+      <h1>Predikce</h1>
       {/* Rozpor „jmenuje se to tipy, ale nesázej podle toho" se řeší TADY, ne až ve
           třetím panelu, kam se doroluje málokdo. */}
       <p className="mt-1 text-sm text-muted">

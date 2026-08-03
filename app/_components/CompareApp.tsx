@@ -466,7 +466,7 @@ export function CompareApp({
       : null;
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-5 sm:py-8">
+    <main className="app-page">
       <AppHeader user={user} share />
 
       <div className="mt-4">

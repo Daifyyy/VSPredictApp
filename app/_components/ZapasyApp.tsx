@@ -473,29 +473,32 @@ export function ZapasyApp({
   );
 
   return (
-    <main className="mx-auto w-full max-w-4xl px-4 py-4 sm:py-7">
+    <main className="app-page">
       <AppHeader user={user} />
 
-      <section className="mt-5 overflow-hidden rounded-2xl border border-border bg-surface-raised p-4 shadow-sm sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <section className="editorial-card stagger-in mt-6 overflow-hidden bg-foreground p-5 text-background sm:p-8 lg:grid lg:grid-cols-[1.45fr_.55fr] lg:gap-10">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between lg:block">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-home">Fotbalový přehled</p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+            <h1 className="editorial-title mt-3 max-w-3xl text-background">
               Zápasy bez zbytečného hledání
             </h1>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-muted">
+            <p className="mt-4 max-w-xl text-sm leading-6 text-background/65 sm:text-base">
               Program, živé skóre a výsledky na jednom místě. Otevři zápas a uvidíš
               porovnání týmů i srozumitelnou předzápasovou analýzu.
             </p>
           </div>
           <Link
             href="/porovnani"
-            className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-foreground px-4 py-2.5 text-sm font-semibold text-background transition hover:opacity-90"
+            className="mt-6 inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-accent px-5 py-2.5 text-sm font-black text-accent-ink transition hover:-translate-y-0.5 hover:bg-white"
           >
             Porovnat dva týmy
           </Link>
         </div>
-        <QuickActions />
+        <div className="mt-8 border-t border-background/20 pt-6 lg:mt-0 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+          <p className="page-kicker text-background/50">Rychlý rozcestník</p>
+          <QuickActions />
+        </div>
       </section>
 
       <ViewTabs
