@@ -1,0 +1,212 @@
+import { z } from "zod";
+import type {
+  MatchPick,
+  MatchPrediction,
+  PickMarket,
+  PickRule,
+  PredictionRow,
+} from "@/lib/types";
+import { isNationalTournamentLeague } from "@/lib/data/catalog";
+import { rowValue } from "./value";
+import { readinessOf } from "@/lib/stats/readiness";
+
+/**
+ * Pravidla výběru zápasů do predikční záložky. Čisté funkce nad uloženými
+ * predikcemi (`PredictionRow`) – žádná data ani síť. Sdílí je API i testy.
+ */
+
+/** Zod schéma pravidla (sdílí endpointy /api/picks i /api/picks/stats). */
+export const ruleSchema = z.object({
+  market: z.enum(["win", "over25", "btts"]).default("win"),
+  venue: z.enum(["home", "away", "any"]).default("home"),
+  minProb: z.coerce.number().min(0).max(1).default(0.65),
+  /**
+   * Volitelný práh rozdílu proti **férové (odmaržované)** ceně trhu, tedy „jak moc se
+   * lišíme od názoru trhu". Vynechán → kurzy se ignorují. Pozn.: není to práh ziskovosti –
+   * ta se měří přes `edge` (p × kurz − 1), který je přísnější o marži.
+   */
+  minEdge: z.coerce.number().optional(),
+  // Volitelný práh připravenosti (efektivní vzorek λ). Vynechán → readiness se nehlídá.
+  // Slouží jako gate „nevydat tip pod N zápasů" (ochrana na startu sezóny).
+  minReadiness: z.coerce.number().optional(),
+});
+
+/** Přednastavená pravidla (rychlá volba v UI). */
+export const PICK_PRESETS: { id: string; label: string; rule: PickRule }[] = [
+  { id: "home-fav-65", label: "Domácí favorit ≥ 65 %", rule: { market: "win", venue: "home", minProb: 0.65 } },
+  { id: "away-fav-60", label: "Hostující favorit ≥ 60 %", rule: { market: "win", venue: "away", minProb: 0.6 } },
+  { id: "over25-60", label: "Přes 2.5 gólu ≥ 60 %", rule: { market: "over25", venue: "any", minProb: 0.6 } },
+  { id: "btts-60", label: "Oba skórují ≥ 60 %", rule: { market: "btts", venue: "any", minProb: 0.6 } },
+];
+
+export interface RuleMatch {
+  ok: boolean;
+  prob: number;
+  side: "home" | "away" | null;
+  /** Edge nad **vyplácenou** cenou (prob×kurz−1); null = kurz nedotažen. */
+  edge: number | null;
+  /**
+   * Rozdíl proti **férové** ceně (prob − p_trh). `null`, když protistranu trhu neznáme
+   * (starší řádky bez `oddsUnder25`/`oddsBttsNo`). Podle tohohle se filtruje.
+   */
+  edgeFair: number | null;
+}
+
+/** Pravděpodobnost a strana relevantní pro trh pravidla (bez posouzení prahů). */
+function targetOf(
+  row: PredictionRow,
+  rule: PickRule
+): { prob: number; side: "home" | "away" | null } {
+  if (rule.market === "over25") return { prob: row.over25, side: null };
+  if (rule.market === "btts") return { prob: row.bttsYes, side: null };
+  // market === "win"
+  if (rule.venue === "home") return { prob: row.homeWin, side: "home" };
+  if (rule.venue === "away") return { prob: row.awayWin, side: "away" };
+  // venue === "any" → silnější strana
+  const side = row.homeWin >= row.awayWin ? "home" : "away";
+  return { prob: Math.max(row.homeWin, row.awayWin), side };
+}
+
+/**
+ * Posoudí, zda predikce splňuje pravidlo, a vrátí relevantní pravděpodobnost + hranu.
+ * Práh `minProb` platí vždy; je-li navíc nastaven `minEdge`, tip projde jen tehdy, když
+ * známe **celý trh** (aby šla marže oddělit) a rozdíl proti férové ceně dosáhne prahu.
+ *
+ * Filtruje se podle `edgeFair` (neshoda s trhem), protože záložka je dnes analytická,
+ * ne tipovací – viz přejmenování v UI. Kdo by chtěl filtr „vydělá to", musí použít `edge`.
+ */
+export function evaluateRule(row: PredictionRow, rule: PickRule): RuleMatch {
+  if (!row.available)
+    return { ok: false, prob: 0, side: null, edge: null, edgeFair: null };
+
+  const { prob, side } = targetOf(row, rule);
+  const value = rowValue(row, rule.market, side);
+  const edge = value?.edge ?? null;
+  const edgeFair = value?.edgeFair ?? null;
+
+  let ok = prob >= rule.minProb;
+  if (rule.minEdge != null) ok = ok && edgeFair != null && edgeFair >= rule.minEdge;
+  // Readiness gate: pod prahem efektivního vzorku λ tip nevydáme (málo dat).
+  if (rule.minReadiness != null) ok = ok && row.readinessSample >= rule.minReadiness;
+
+  return { ok, prob, side, edge, edgeFair };
+}
+
+function predictionOf(row: PredictionRow): MatchPrediction {
+  return {
+    available: row.available,
+    // Uložená λ jsou základní (před zostřením); pravidla je čtou jen jako „očekávané góly“,
+    // zostřenou variantu nepotřebují (pravděpodobnosti berou hotové z řádku).
+    lambdaHome: row.lambdaHome,
+    lambdaAway: row.lambdaAway,
+    lambdaHomeBase: row.lambdaHome,
+    lambdaAwayBase: row.lambdaAway,
+    homeWin: row.homeWin,
+    draw: row.draw,
+    awayWin: row.awayWin,
+    bttsYes: row.bttsYes,
+    over25: row.over25,
+    // Přesná skóre nejsou v uloženém řádku (UI-only obohacení z živé mřížky); pravidla je nepotřebují.
+    topScores: [],
+    lowConfidence: row.lowConfidence,
+    readiness: readinessOf(row.readinessSample),
+  };
+}
+
+/**
+ * Popisek pod řádkem tipu – **říká PROČ, ne to samé číslo podruhé.**
+ *
+ * Dřív to bylo „Sparta doma favorit · 74 % na výhru", přičemž `74 %` už na řádku je
+ * (`PickRow` ho tiskne vpravo tučně). Popisek tedy nenesl žádnou informaci navíc.
+ * Dnes nese **očekávané góly** – to je skutečný důvod, proč pravděpodobnost vyšla tak,
+ * jak vyšla, a laik z „2.1 : 0.8" pochopí zápas líp než z procenta.
+ *
+ * λ jsou ta **základní** (před zostřením), stejně jako je čte `predictionOf` – viz jeho
+ * komentář. `LAMBDA_SHARPEN = 1.0` je dokumentovaný no-op, takže zobrazené číslo sedí
+ * s tím, ze kterého vyšly pravděpodobnosti. Čistá funkce, 0 volání navíc.
+ */
+function explain(
+  row: PredictionRow,
+  market: PickMarket,
+  side: "home" | "away" | null
+): string {
+  const g = (x: number) => x.toFixed(1);
+  if (market === "over25") {
+    return `Přes 2.5 gólu · čekáme ${g(row.lambdaHome + row.lambdaAway)} gólu celkem`;
+  }
+  if (market === "btts") {
+    return `Oba týmy skórují · čekáme ${g(row.lambdaHome)} : ${g(row.lambdaAway)} gólu`;
+  }
+  const name = side === "home" ? row.homeName : row.awayName;
+  const where = side === "home" ? "doma" : "venku";
+  return `${name} ${where} favorit · čekáme ${g(row.lambdaHome)} : ${g(row.lambdaAway)} gólu`;
+}
+
+/**
+ * Sestaví `MatchPick` pro daný trh/stranu z řádku (deep-link, value, vysvětlení).
+ * Jeden zdroj pravdy pro `filterPicks` i digest (`lib/picks/digest.ts`).
+ * Klub → CLUB mód, „liga" = `leagueId` u obou (deep-link rovnou klikací). Reprezentační
+ * turnaj → NATIONAL mód, konfederace doplní route (`getNationalConfedMap`; zde null).
+ */
+export function buildPick(
+  row: PredictionRow,
+  market: PickMarket,
+  side: "home" | "away" | null,
+  prob: number
+): MatchPick {
+  const national = isNationalTournamentLeague(row.leagueId);
+  return {
+    fixtureId: row.fixtureId,
+    kickoff: row.kickoff,
+    leagueId: row.leagueId,
+    home: { id: row.homeTeamId, name: row.homeName, logoUrl: row.homeLogo },
+    away: { id: row.awayTeamId, name: row.awayName, logoUrl: row.awayLogo },
+    prediction: predictionOf(row),
+    market,
+    side,
+    prob,
+    value: rowValue(row, market, side),
+    explanation: explain(row, market, side),
+    compareMode: national ? "NATIONAL" : "CLUB",
+    homeCompareLeagueId: national ? null : row.leagueId,
+    awayCompareLeagueId: national ? null : row.leagueId,
+    counts: countsOf(row),
+  };
+}
+
+/**
+ * Očekávané rohy a karty za celý zápas ze **součtu** obou stran uložené λ.
+ *
+ * Čistě čtení z řádku – 0 volání API. Chybí-li kterákoli strana (řádek z doby před
+ * ukládáním, nebo model neměl dost dat), vrací `null` a UI to pole vynechá; dosadit
+ * ligový průměr by vypadalo jako predikce, kterou nemáme.
+ */
+function countsOf(row: PredictionRow): MatchPick["counts"] {
+  const sum = (h?: number | null, a?: number | null) =>
+    h != null && a != null ? h + a : null;
+  return {
+    corners: sum(row.lambdaCornersHome, row.lambdaCornersAway),
+    cards: sum(row.lambdaCardsHome, row.lambdaCardsAway),
+  };
+}
+
+/**
+ * Vybere a seřadí tipy splňující pravidlo: nejdříve hrané zápasy první,
+ * při stejném dni nejvyšší pravděpodobnost první.
+ */
+export function filterPicks(
+  rows: PredictionRow[],
+  rule: PickRule
+): MatchPick[] {
+  const picks: MatchPick[] = [];
+  for (const row of rows) {
+    const m = evaluateRule(row, rule);
+    if (!m.ok) continue;
+    picks.push(buildPick(row, rule.market, m.side, m.prob));
+  }
+  return picks.sort((a, b) => {
+    const dayCmp = a.kickoff.slice(0, 10).localeCompare(b.kickoff.slice(0, 10));
+    if (dayCmp !== 0) return dayCmp;
+    return b.prob - a.prob;
+  });
+}

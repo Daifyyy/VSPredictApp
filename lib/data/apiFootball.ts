@@ -1,0 +1,894 @@
+import { z } from "zod";
+import type { Metric } from "@/lib/types";
+import { schedule } from "./rateLimiter";
+
+/**
+ * Klient API-Football v3 (přímé API api-sports.io, hlavička x-apisports-key).
+ * Klíč drž výhradně na serveru: API_FOOTBALL_KEY v env.
+ */
+
+const BASE_URL = "https://v3.football.api-sports.io";
+// Rate-limit api-sports je distribuovaný a občas odmítne i pod limitem →
+// přechodná chyba, kterou vyřeší rychlý retry (trefí jiný edge node).
+const MAX_RETRIES = 6;
+
+function apiKey(): string {
+  const key = process.env.API_FOOTBALL_KEY;
+  if (!key) throw new Error("Chybí API_FOOTBALL_KEY v prostředí.");
+  return key;
+}
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+class RateLimitError extends Error {}
+
+/**
+ * Obecný GET. API-Football vrací obálku { errors, results, response }.
+ * Prochází globálním rate-limiterem (≤300/min) a při překročení minutového
+ * limitu zkouší znovu s odstupem. `response` se validuje schématem.
+ */
+export async function apiGet<T>(
+  path: string,
+  params: Record<string, string | number>,
+  schema: z.ZodType<T>
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await schedule(() => doFetch(path, params, schema));
+    } catch (e) {
+      if (e instanceof RateLimitError && attempt < MAX_RETRIES) {
+        // Krátký odstup – další pokus zpravidla trefí jiný (volný) node.
+        await sleep(250 + attempt * 350);
+        continue;
+      }
+      throw e;
+    }
+  }
+}
+
+async function doFetch<T>(
+  path: string,
+  params: Record<string, string | number>,
+  schema: z.ZodType<T>
+): Promise<T> {
+  const url = new URL(`${BASE_URL}${path}`);
+  for (const [k, v] of Object.entries(params)) {
+    url.searchParams.set(k, String(v));
+  }
+  const res = await fetch(url, {
+    headers: { "x-apisports-key": apiKey() },
+    // ŽÁDNÁ Next data cache. Cachovací vrstva je Postgres (`ApiCache` s TTL per
+    // endpoint + trvalá `MatchStatCache`) – tenhle fetch je to, co se volá, teprve
+    // když ta vrstva chce čerstvá data. Next fetch cache s pevnou revalidací tu
+    // seděla NAD ní a přebíjela každý kratší TTL: `cachedJson` po hodině správně
+    // sáhl pro nový denní rozpis, ale dostal 24 h starou odpověď a uložil si ji
+    // s čerstvou expirací → dohraný zápas (Argentina–Švýcarsko, status AET) se
+    // v Programu dál tvářil jako nadcházející. Totéž tiše potkávalo tabulky (6 h),
+    // zranění (6 h) i střelce (12 h).
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(`API-Football ${path} HTTP ${res.status}`);
+  }
+  const json = await res.json();
+
+  // API vrací 200 i při chybě klíče/limitu — chyby jsou v `errors`.
+  const errors = json?.errors;
+  const hasErrors =
+    errors &&
+    ((Array.isArray(errors) && errors.length > 0) ||
+      (typeof errors === "object" && Object.keys(errors).length > 0));
+  if (hasErrors) {
+    const msg = JSON.stringify(errors);
+    if (/rate|minute|too many/i.test(msg)) {
+      console.error(
+        `[ratelimit] ${path} min-remaining=${res.headers.get("x-ratelimit-remaining")}/${res.headers.get("x-ratelimit-limit")} day-remaining=${res.headers.get("x-ratelimit-requests-remaining")}`
+      );
+      throw new RateLimitError(`API-Football ${path}: ${msg}`);
+    }
+    throw new Error(`API-Football ${path}: ${msg}`);
+  }
+  if (process.env.API_DEBUG) {
+    console.error(
+      `[apicall] ${path} min-remaining=${res.headers.get("x-ratelimit-remaining")} @${new Date().toISOString().slice(11, 23)}`
+    );
+  }
+
+  return schema.parse(json.response);
+}
+
+// ---- Schémata (tolerantní – jen pole, která používáme) ----
+
+const statusSchema = z.object({
+  account: z.object({ firstname: z.string().optional() }).partial().optional(),
+  subscription: z
+    .object({ plan: z.string().optional(), active: z.boolean().optional() })
+    .partial()
+    .optional(),
+  requests: z
+    .object({ current: z.number().optional(), limit_day: z.number().optional() })
+    .partial()
+    .optional(),
+});
+
+const teamItemSchema = z.object({
+  team: z.object({
+    id: z.number(),
+    name: z.string(),
+    logo: z.string(),
+    national: z.boolean().optional(),
+  }),
+});
+
+const fixtureItemSchema = z.object({
+  fixture: z.object({
+    id: z.number(),
+    date: z.string(),
+    // Rozhodčí – vstup do modelu karet (`lib/picks/cards.ts`), kde je to zhruba polovina
+    // přínosu. Volitelný: u některých soutěží a u budoucích zápasů chodí `null`. Formát
+    // je „R. Jones" (s tečkou), football-data píše „R Jones" – při párování normalizovat.
+    referee: z.string().nullable().optional(),
+    status: z.object({
+      short: z.string(),
+      // uplynulé minuty (jen u živých zápasů; jinak null/chybí)
+      elapsed: z.number().nullable().optional(),
+    }),
+    venue: z
+      .object({ id: z.number().nullable(), name: z.string().nullable() })
+      .partial()
+      .optional(),
+  }),
+  league: z.object({
+    id: z.number(),
+    season: z.number(),
+    name: z.string(),
+    round: z.string().nullable().optional(),
+  }),
+  teams: z.object({
+    // name/logo vrací /fixtures u obou týmů – potřebné pro meta reprezentací
+    // v predikci turnaje (tým z libovolné konfederace, mimo konfederační seznam).
+    home: z.object({ id: z.number(), name: z.string(), logo: z.string() }),
+    away: z.object({ id: z.number(), name: z.string(), logo: z.string() }),
+  }),
+  // `goals` je KONCOVÉ skóre – u AET/PEN tedy včetně prodloužení. Náš model predikuje
+  // 90 minut, proto settle/kalibrace berou `score.fulltime` (viz `fullTimeGoals`).
+  goals: z.object({
+    home: z.number().nullable(),
+    away: z.number().nullable(),
+  }),
+  score: z
+    .object({
+      /**
+       * **Pozor na sémantiku u živého zápasu:** v prvním poločase tohle pole zrcadlí
+       * PRŮBĚŽNÉ skóre, ne stav po 45 minutách (ověřeno na živých zápasech – Motor Lublin
+       * ve 40. minutě už měl `halftime` 0:1). Smysl „stav o přestávce" má až od druhého
+       * poločasu dál. Kdo z toho počítá, musí si stav zápasu ohlídat.
+       */
+      halftime: z
+        .object({
+          home: z.number().nullable().optional(),
+          away: z.number().nullable().optional(),
+        })
+        .optional(),
+      fulltime: z
+        .object({
+          home: z.number().nullable().optional(),
+          away: z.number().nullable().optional(),
+        })
+        .optional(),
+    })
+    .optional(),
+});
+
+const statItemSchema = z.object({
+  type: z.string(),
+  value: z.union([z.number(), z.string(), z.null()]),
+});
+const fixtureStatsSchema = z.array(
+  z.object({
+    team: z.object({ id: z.number() }),
+    statistics: z.array(statItemSchema),
+  })
+);
+
+const injuryItemSchema = z.object({
+  player: z.object({ id: z.number(), name: z.string() }),
+  type: z.string().nullable().optional(),
+  reason: z.string().nullable().optional(),
+  fixture: z.object({ date: z.string().nullable().optional() }).optional(),
+});
+const injuriesSchema = z.array(injuryItemSchema);
+
+// /standings vrací per liga+sezóna vnořené pole tabulek (běžně 1, u skupin víc).
+// Bereme jen pole, která zobrazujeme: pozice, body, rozdíl skóre, forma + rozpad
+// celkově/doma/venku. Tolerantní – chybějící část = ošetří se čistá funkce.
+const standingSplitSchema = z.object({
+  played: z.number().nullable().optional(),
+  win: z.number().nullable().optional(),
+  draw: z.number().nullable().optional(),
+  lose: z.number().nullable().optional(),
+  goals: z
+    .object({
+      for: z.number().nullable().optional(),
+      against: z.number().nullable().optional(),
+    })
+    .partial()
+    .optional(),
+});
+const standingRowSchema = z.object({
+  rank: z.number(),
+  team: z.object({ id: z.number(), name: z.string(), logo: z.string() }),
+  points: z.number().nullable().optional(),
+  goalsDiff: z.number().nullable().optional(),
+  form: z.string().nullable().optional(),
+  // Popis místa přímo od API-Football (např. "Promotion - Champions League (Group
+  // Stage)", "Relegation - Relegation Play-offs") – zdroj pravdy pro odvození reálného
+  // UEFA/sestupového klíče, viz `deriveLeagueAccess` v standings.ts.
+  description: z.string().nullable().optional(),
+  all: standingSplitSchema.optional(),
+  home: standingSplitSchema.optional(),
+  away: standingSplitSchema.optional(),
+});
+export type ApiStandingRow = z.infer<typeof standingRowSchema>;
+
+// /players/topscorers vrací seřazený žebříček střelců ligy; `statistics[0]` je aktuální
+// klub + góly. Tolerantní – bereme jen jméno, klub a počet gólů.
+const topScorerSchema = z.object({
+  player: z.object({ id: z.number(), name: z.string() }),
+  statistics: z
+    .array(
+      z.object({
+        team: z.object({ id: z.number(), name: z.string(), logo: z.string() }),
+        goals: z
+          .object({
+            total: z.number().nullable().optional(),
+            assists: z.number().nullable().optional(),
+          })
+          .partial()
+          .optional(),
+      })
+    )
+    .default([]),
+});
+export type ApiTopScorer = z.infer<typeof topScorerSchema>;
+const topScorersSchema = z.array(topScorerSchema);
+const standingsSchema = z.array(
+  z.object({
+    league: z.object({
+      // standings = pole tabulek (skupiny) po řádcích; sloučíme je při zpracování.
+      standings: z.array(z.array(standingRowSchema)).default([]),
+    }),
+  })
+);
+
+// /transfers vrací per hráče pole jeho přestupů (teams.in = kam přišel, out = odkud).
+// `type` je volný text (částka „€ 20M" / „Loan" / „Free" / „N/A" / null) – nespolehlivý.
+const transferTeamSchema = z.object({
+  id: z.number().nullable(), // protistrana může být neznámá (null)
+  name: z.string().nullable().optional(),
+  logo: z.string().nullable().optional(),
+});
+const transferPlayerSchema = z.object({
+  player: z.object({ id: z.number(), name: z.string() }),
+  transfers: z
+    .array(
+      z.object({
+        date: z.string().nullable().optional(),
+        type: z.string().nullable().optional(),
+        teams: z
+          .object({
+            in: transferTeamSchema.nullable().optional(),
+            out: transferTeamSchema.nullable().optional(),
+          })
+          .optional(),
+      })
+    )
+    .default([]),
+});
+const transfersSchema = z.array(transferPlayerSchema);
+
+// Predikce API-Footballu (interní benchmark). `percent` jsou řetězce „45%"; bereme
+// jen 1X2, zbytek (goals/advice/winner) ignorujeme. Tolerantní – chybějící pole = null.
+const predictionItemSchema = z.object({
+  predictions: z
+    .object({
+      percent: z
+        .object({
+          home: z.string().nullable().optional(),
+          draw: z.string().nullable().optional(),
+          away: z.string().nullable().optional(),
+        })
+        .partial()
+        .optional(),
+    })
+    .partial()
+    .optional(),
+});
+const predictionsSchema = z.array(predictionItemSchema);
+
+// Kurzy sázkovek (/odds). Bereme jen tři trhy: Match Winner (bet 1), Goals
+// Over/Under (bet 5 → „Over 2.5"), Both Teams Score (bet 8 → „Yes"). Tolerantní –
+// chybějící sázkovka/trh/hodnota = null. `odd` jsou řetězce desetinného kurzu („1.90").
+// POZOR: `value` NENÍ vždy řetězec. U 1X2 přijde „Home"/„Draw"/„Away", ale u trhů jako
+// „Exact Score" nebo handicapy vrací API **číslo** (1, 2, …). Zod odmítne celou odpověď,
+// takže jediný takový trh shodil parsování VŠECH sázkovek – a protože je fetch kurzů
+// best-effort (`catch` v pipeline i v Tipovačce), selhání bylo tiché: v produkci nebyl
+// za celou dobu uložený ani jeden kurz. Přijímáme obojí a normalizujeme na řetězec.
+const oddsText = z
+  .union([z.string(), z.number()])
+  .transform((v) => String(v));
+const oddsValueSchema = z.object({
+  value: oddsText,
+  odd: oddsText,
+});
+const oddsBetSchema = z.object({
+  id: z.number(),
+  name: z.string().optional(),
+  values: z.array(oddsValueSchema).default([]),
+});
+const oddsBookmakerSchema = z.object({
+  id: z.number(),
+  name: z.string(),
+  bets: z.array(oddsBetSchema).default([]),
+});
+const oddsItemSchema = z.object({
+  bookmakers: z.array(oddsBookmakerSchema).default([]),
+});
+/** Exportováno kvůli testu, který hlídá numerické `value` u exotických trhů. */
+export const oddsSchema = z.array(oddsItemSchema);
+
+export type ApiTeam = z.infer<typeof teamItemSchema>;
+export type ApiFixture = z.infer<typeof fixtureItemSchema>;
+export type ApiFixtureStats = z.infer<typeof fixtureStatsSchema>;
+export type ApiInjury = z.infer<typeof injuryItemSchema>;
+export type ApiTransferPlayer = z.infer<typeof transferPlayerSchema>;
+
+// ---- Veřejné fetchery ----
+
+/** Ověří klíč a vrátí stav účtu (plán, spotřeba kvóty). */
+export function fetchStatus() {
+  return apiGet("/status", {}, statusSchema);
+}
+
+/** Týmy dané ligy a sezóny. */
+export function fetchLeagueTeams(league: number, season: number) {
+  return apiGet("/teams", { league, season }, z.array(teamItemSchema));
+}
+
+/** Zápasy týmu v dané lize a sezóně (jen odehrané se hodí k agregaci). */
+export function fetchTeamFixtures(
+  team: number,
+  league: number,
+  season: number
+) {
+  return apiGet(
+    "/fixtures",
+    { team, league, season },
+    z.array(fixtureItemSchema)
+  );
+}
+
+/**
+ * VŠECHNY zápasy ligy a sezóny – **1 volání na ligu+sezónu** (levné). Nese skóre, takže
+ * z toho jde postavit historii pro offline backtest (`lib/picks/backtest.ts`) bez
+ * per-zápasových statistik (ty stojí 1 volání za zápas → pro tisíce zápasů neúnosné).
+ */
+export function fetchLeagueSeasonFixtures(league: number, season: number) {
+  return apiGet("/fixtures", { league, season }, z.array(fixtureItemSchema));
+}
+
+/** Posledních N zápasů týmu (napříč soutěžemi) – pro formu. */
+export function fetchLastFixtures(team: number, last: number) {
+  return apiGet("/fixtures", { team, last }, z.array(fixtureItemSchema));
+}
+
+/** Nejbližších N nadcházejících zápasů ligy (status NS/TBD; goals jsou null). */
+export function fetchLeagueUpcomingFixtures(league: number, next: number) {
+  return apiGet("/fixtures", { league, next }, z.array(fixtureItemSchema));
+}
+
+/**
+ * Posledních N ODEHRANÝCH zápasů celé ligy (napříč koly) – pro „poslední kolo" v Tabulkách.
+ * `last=N` počítá zápasy, ne celá kola (různý počet zápasů/kolo kvůli přesunům) → volající
+ * bere generózní N a dogroupuje podle `league.round`, viz `groupByRound` ve `standings.ts`.
+ */
+export function fetchLeagueRecentFixtures(league: number, season: number, last: number) {
+  return apiGet("/fixtures", { league, season, last }, z.array(fixtureItemSchema));
+}
+
+/** Zápasy dle ID (batch, max ~20 ID) – pro dotažení výsledků odehraných predikcí. */
+export function fetchFixturesByIds(ids: number[]) {
+  return apiGet("/fixtures", { ids: ids.join("-") }, z.array(fixtureItemSchema));
+}
+
+/**
+ * Jen **živé** zápasy zadaných lig – `/fixtures?live=<id-id-…>`. Malý payload (živých je
+ * v jeden okamžik pár), levné → snese krátký TTL a klientský poll. Nese `status.elapsed`
+ * (minuta) i `goals` (živé skóre). Prázdné `leagueIds` → prázdný výsledek bez volání.
+ */
+export function fetchLiveFixtures(leagueIds: number[]) {
+  if (leagueIds.length === 0) return Promise.resolve([] as ApiFixture[]);
+  return apiGet(
+    "/fixtures",
+    { live: leagueIds.join("-") },
+    z.array(fixtureItemSchema)
+  );
+}
+
+/**
+ * Všechny zápasy daného dne (`date` = `YYYY-MM-DD`) napříč ligami – 1 volání. `timezone`
+ * zajistí správné hranice dne (jinak bere zónu účtu). Filtr na naše ligy se dělá u nás.
+ */
+export function fetchFixturesByDate(date: string) {
+  return apiGet(
+    "/fixtures",
+    { date, timezone: "Europe/Prague" },
+    z.array(fixtureItemSchema)
+  );
+}
+
+/** Per-zápas statistiky (rohy, fauly, střely, xG). */
+export function fetchFixtureStatistics(fixture: number) {
+  return apiGet("/fixtures/statistics", { fixture }, fixtureStatsSchema);
+}
+
+/**
+ * Události zápasu (góly, karty, střídání, VAR) – `/fixtures/events`.
+ *
+ * Schéma je psané **proti vypsané odpovědi** (`npm run probe-events`), ne proti
+ * dokumentaci. Ověřeno na Fortuna lize 2. 8. 2026 (13 událostí):
+ *  - `time.extra` je `null` v základní hrací době a číslo v nastavení,
+ *  - `player`/`assist` jsou objekty s `id`/`name`, obojí může chybět (VAR, neznámý hráč),
+ *  - u střídání je `player` odcházející a `assist` **přicházející** hráč,
+ *  - **`type` má nekonzistentní velikost písmen**: `"Goal"`, `"Card"`, ale `"subst"`.
+ *    Konzumenti proto musí porovnávat case-insensitive.
+ */
+const eventPersonSchema = z
+  .object({
+    id: z.number().nullable().optional(),
+    name: z.string().nullable().optional(),
+  })
+  .nullable()
+  .optional();
+
+const fixtureEventSchema = z.object({
+  time: z.object({
+    elapsed: z.number().nullable(),
+    extra: z.number().nullable().optional(),
+  }),
+  team: z.object({
+    id: z.number(),
+    name: z.string(),
+    logo: z.string().nullable().optional(),
+  }),
+  player: eventPersonSchema,
+  assist: eventPersonSchema,
+  type: z.string(),
+  detail: z.string(),
+  comments: z.string().nullable().optional(),
+});
+
+export type ApiFixtureEvent = z.infer<typeof fixtureEventSchema>;
+
+export function fetchFixtureEvents(fixture: number) {
+  return apiGet("/fixtures/events", { fixture }, z.array(fixtureEventSchema));
+}
+
+/** „45%" → 0.45; null/„N/A"/prázdno → null. */
+function parsePercent(s: string | null | undefined): number | null {
+  if (!s) return null;
+  const n = parseFloat(s.replace("%", "").trim());
+  return Number.isFinite(n) ? n / 100 : null;
+}
+
+/**
+ * Predikce 1X2 od API-Footballu (interní benchmark). Vrací pravděpodobnosti
+ * normalizované na součet 1, nebo `null` když API predikci nemá (časté mimo top-5)
+ * či je neúplná. Mimo `compareTeams` – jen offline srovnání přesnosti.
+ */
+export async function fetchPrediction(
+  fixture: number
+): Promise<{ home: number; draw: number; away: number } | null> {
+  const res = await apiGet("/predictions", { fixture }, predictionsSchema);
+  const pct = res[0]?.predictions?.percent;
+  if (!pct) return null;
+  const home = parsePercent(pct.home);
+  const draw = parsePercent(pct.draw);
+  const away = parsePercent(pct.away);
+  if (home == null || draw == null || away == null) return null;
+  const sum = home + draw + away;
+  if (sum <= 0) return null;
+  return { home: home / sum, draw: draw / sum, away: away / sum };
+}
+
+/**
+ * Preferované sázkovky pro referenční kurz (priorita = stabilita + široké pokrytí
+ * top-5 lig). ID dle API-Football: 8 Bet365, 6 Bwin, 11 1xBet, 2 Marathonbet.
+ * Není-li žádná dostupná, vezme se první vrácená.
+ */
+const PREFERRED_BOOKMAKERS = [8, 6, 11, 2];
+
+/**
+ * Preference pro tipovačku (ROI deník): Pinnacle (id 4) první – ostré, nízkomaržní
+ * kurzy jsou nejférovější benchmark „porazil bys trh". Zbytek jako fallback.
+ */
+export const PINNACLE_FIRST_BOOKMAKERS = [4, 8, 6, 11, 2];
+
+/**
+ * Kurzy jedné sázkovky (decimal odds). Ukládá se jich **všech ~13 z jedné odpovědi**;
+ * typ žije tady, protože ho plní parser, ale čtou ho čisté funkce v `lib/picks/books.ts`.
+ */
+export interface BookOdds {
+  id: number;
+  name: string;
+  home: number | null;
+  draw: number | null;
+  away: number | null;
+  over25: number | null;
+  under25: number | null;
+  btts: number | null;
+  bttsNo: number | null;
+  /**
+   * Rohy Over/Under. **Pole, ne jedna hodnota** – knihy nabízejí RŮZNÉ linie (9.5, 10.5,
+   * 11.5, někdy i čtvrtinové 10.25) a porovnávat kurz na 10.5 s kurzem na 11.5 by byla
+   * hrubá chyba. Ukládá se, co která kniha nabízí, a párování po lince řeší až čtení
+   * (`lib/picks/books.ts`).
+   */
+  corners?: LineOdds[];
+  /**
+   * **Týmové totaly** („Total - Home" / „Total - Away") – kolik gólů dá jeden tým.
+   * Nejlepší trh, který model má mimo 1X2 (viz `lib/picks/teamTotals.ts`): skill nad
+   * konstantou +0.013 až +0.027 log-lossu, nejlíp na lince **1.5**. Tentýž tvar jako
+   * rohy, protože je to tentýž typ trhu – linky se mezi knihami liší.
+   */
+  totalHome?: LineOdds[];
+  totalAway?: LineOdds[];
+  /**
+   * **Karty celkem** Over/Under. Trh, kde má model nejvíc doloženého skillu
+   * (`lib/picks/cards.ts`: +0.010…+0.023 log-lossu nad konstantou na hold-outu, z toho
+   * ~polovina z rozhodčího). Tentýž tvar jako rohy – knihy nabízejí různé linie
+   * (3.5 / 4.5 / 5.5), takže párování po lince je povinné.
+   *
+   * **Pozor na jednotku:** ukládá se jen trh počítaný v KARTÁCH (žluté + červené), ne
+   * booking points (ty váží červenou 2–2.5×) a ne „jen žluté" – to jsou jiné veličiny
+   * než λ modelu. Filtruje `isCardBet`.
+   */
+  cards?: LineOdds[];
+}
+
+/** Kurz Over/Under na JEDNÉ konkrétní lince (rohy, týmové totaly…). */
+export interface LineOdds {
+  line: number;
+  over: number | null;
+  under: number | null;
+}
+
+/** @deprecated Zůstává jen kvůli starším importům – je to `LineOdds`. */
+export type CornerLineOdds = LineOdds;
+
+/** Referenční kurzy jednoho zápasu (decimal odds; null = trh u sázkovky chybí). */
+export interface MatchOdds {
+  bookmaker: string;
+  home: number | null;
+  draw: number | null;
+  away: number | null;
+  over25: number | null;
+  btts: number | null;
+  // Opačné strany over/under a BTTS (0 volání navíc, jen druhá hodnota z už stažené
+  // odpovědi). Kromě ROI deníku tipovačky je **nutná podmínka odmaržování**: bez
+  // protistrany nejde z kurzu oddělit marži, takže by u Over 2.5 a BTTS nešla spočítat
+  // férová cena ani férová hrana (`rowValue` v `lib/picks/value.ts`).
+  under25?: number | null;
+  bttsNo?: number | null;
+  /**
+   * Všechny sázkovky z téže odpovědi. Referenční `bookmaker` výše zůstává (kompatibilita
+   * + jeden stabilní zdroj pro EV), tohle je navíc pro nejlepší cenu a sharp konsenzus.
+   */
+  books?: BookOdds[];
+}
+
+/** Desetinný kurz z hodnoty daného labelu (case-insensitive); platný jen > 1. */
+function oddOf(
+  values: { value: string; odd: string }[],
+  label: string
+): number | null {
+  const v = values.find((x) => x.value.toLowerCase() === label.toLowerCase());
+  const n = v ? parseFloat(v.odd) : NaN;
+  return Number.isFinite(n) && n > 1 ? n : null;
+}
+
+/**
+ * Referenční kurzy zápasu (1X2 + Over 2.5 + BTTS) od jedné sázkovky pro výpočet
+ * EV/value tipů. Vybere preferovanou sázkovku (fallback první dostupná). Vrací `null`,
+ * když API kurzy nemá (časté mimo top-5 / daleko před výkopem) nebo je řádek prázdný.
+ * Stejně jako benchmark: mimo `compareTeams`, fetch 1×/zápas, jen klubové ligy.
+ */
+/**
+ * Syrová odpověď `/odds` (po zod validaci). Slouží **sondě** (`npm run probe-odds`)
+ * k výpisu toho, jaké trhy zápas vůbec nabízí a pod jakými názvy/id.
+ *
+ * Proč to existuje: rohový trh hledáme podle **názvu** (`isCornerBet`), protože id se
+ * mezi knihami liší a hádat ho by znamenalo tiché selhání. Sonda je způsob, jak si to
+ * na reálném zápase ověřit dřív, než se na ta data někdo spolehne.
+ */
+export function fetchOddsRaw(fixture: number) {
+  return apiGet("/odds", { fixture }, oddsSchema);
+}
+
+export async function fetchOdds(
+  fixture: number,
+  preferred: number[] = PREFERRED_BOOKMAKERS
+): Promise<MatchOdds | null> {
+  const res = await apiGet("/odds", { fixture }, oddsSchema);
+  const books = res[0]?.bookmakers ?? [];
+  if (books.length === 0) return null;
+  const book =
+    preferred.map((id) => books.find((b) => b.id === id)).find(
+      (b): b is (typeof books)[number] => b != null
+    ) ?? books[0];
+  // Rozparsuje se KAŽDÁ kniha z odpovědi – je to čistě práce s daty, která už dorazila
+  // (0 volání navíc), a nejlepší cena napříč knihami je jediná prokazatelně funkční páka.
+  const allBooks = res[0]!.bookmakers.map((b) => bookOddsOf(b));
+  const ref = bookOddsOf(book);
+  const out: MatchOdds = {
+    bookmaker: book.name,
+    home: ref.home,
+    draw: ref.draw,
+    away: ref.away,
+    over25: ref.over25,
+    btts: ref.btts,
+    under25: ref.under25,
+    bttsNo: ref.bttsNo,
+    books: allBooks.filter(
+      (b) =>
+        b.home != null ||
+        b.over25 != null ||
+        b.btts != null ||
+        b.corners?.length ||
+        b.cards?.length ||
+        b.totalHome?.length ||
+        b.totalAway?.length
+    ),
+  };
+  // Bez jediného použitelného kurzu nemá smysl řádek ukládat. Rohy, karty i týmové totaly
+  // se počítají taky – jinak by se zahodila odpověď, kde je jediný trh, který nás zajímá.
+  if (
+    out.home == null &&
+    out.over25 == null &&
+    out.btts == null &&
+    !out.books?.some(
+      (b) => b.corners?.length || b.cards?.length || b.totalHome?.length || b.totalAway?.length
+    )
+  ) {
+    return null;
+  }
+  return out;
+}
+
+/**
+ * Trh rohů se hledá **podle názvu, ne podle pevného id**. Id trhů se mezi knihami
+ * i verzemi API liší a špatně uhodnuté číslo by tiše vrátilo prázdno – přesně ten typ
+ * selhání, které u kurzů už jednou nastalo (numerické `value` shodilo celé zod schéma
+ * a rok se neuložil ani jeden kurz). Název „…Corners…" je stabilní a ověřitelný
+ * (`npm run probe-odds` vypíše všechny trhy zápasu i s id).
+ */
+export function isCornerBet(bet: { id: number; name?: string }): boolean {
+  return bet.name != null && /corner/i.test(bet.name);
+}
+
+/**
+ * Je to trh na **karty celkem v zápase**, počítaný v KARTÁCH?
+ *
+ * Přísnější než ostatní matchery, a to schválně – u karet je jednotka past. Nabídka
+ * obsahuje několik trhů se slovem „card", které měří **jinou veličinu** než λ našeho
+ * modelu (`cardCount` = žluté + červené):
+ *  - **booking points** (žlutá 10, červená 25) – jiná stupnice, ne počet karet;
+ *  - **jen žluté** nebo **jen červené** – jiná veličina;
+ *  - **týmové karty** („Home Team Total Cards") – ne total zápasu;
+ *  - **poločasové / první karta / čas karty** – jiný jev.
+ * Kdyby některý z nich prošel, model by porovnával svou λ v kartách s cenou na booking
+ * points a **nic by nekřičelo** – přesně ten typ tiché chyby, který u kurzů už jednou
+ * stál rok dat. Radši se sem nedostane trh, který by patřil, než naopak.
+ *
+ * Hledá se podle **názvu, ne podle id** (id se mezi knihami liší); ověření reálné nabídky
+ * dělá `npm run probe-odds -- <fixtureId> --markets`.
+ */
+export function isCardBet(bet: { id: number; name?: string }): boolean {
+  const n = bet.name;
+  if (!n) return false;
+  if (!/card/i.test(n)) return false;
+  if (/booking|point/i.test(n)) return false; // jiná stupnice
+  if (/yellow|red/i.test(n)) return false; // jen jedna barva = jiná veličina
+  if (/home|away|team/i.test(n)) return false; // týmové, ne total zápasu
+  if (/half|first|last|time|minute/i.test(n)) return false; // jiný jev než počet za zápas
+  if (/corner|goal|shot|foul|offside|throw/i.test(n)) return false; // pojistka proti překryvu
+  return true;
+}
+
+/**
+ * Je to **týmový total** („Total - Home" / „Total - Away")? Vrací stranu, nebo `null`.
+ *
+ * Matchery se **musí vzájemně vylučovat**: nabídka obsahuje i „Total Corners",
+ * „Total Cards" apod., a ty popisují jinou veličinu než góly. Proto se ostatní
+ * veličiny odfiltrují jmenovitě dřív, než se hledá strana. Kdyby to spadlo do jednoho
+ * pytle, model by porovnával svoji gólovou λ s kurzem na rohy – a nic by nekřičelo.
+ */
+export function teamTotalSide(bet: { name?: string }): "home" | "away" | null {
+  const n = bet.name;
+  if (!n) return null;
+  if (/corner|card|booking|offside|foul|shot|throw/i.test(n)) return null;
+  if (!/total|goals/i.test(n)) return null;
+  if (/home/i.test(n)) return "home";
+  if (/away/i.test(n)) return "away";
+  return null; // „Goals Over/Under" = total zápasu, ne týmový
+}
+
+/** „Over 10.5" / „Under 9.5" → linie a strana. `null` u čehokoli jiného. */
+function parseOverUnderLabel(
+  value: string
+): { side: "over" | "under"; line: number } | null {
+  const m = /^(over|under)\s+(\d+(?:\.\d+)?)$/i.exec(value.trim());
+  if (!m) return null;
+  const line = Number(m[2]);
+  return Number.isFinite(line)
+    ? { side: m[1].toLowerCase() as "over" | "under", line }
+    : null;
+}
+
+/** Over/Under kurzy vybraných trhů jedné knihy, seskupené po linkách. */
+function lineOddsOf(
+  bets: { id: number; name?: string; values: { value: string; odd: string }[] }[],
+  pick: (bet: { id: number; name?: string }) => boolean
+): LineOdds[] {
+  const byLine = new Map<number, LineOdds>();
+  for (const bet of bets) {
+    if (!pick(bet)) continue;
+    for (const v of bet.values) {
+      const parsed = parseOverUnderLabel(v.value);
+      if (!parsed) continue;
+      const odd = parseFloat(v.odd);
+      if (!Number.isFinite(odd) || odd <= 1) continue;
+      const entry = byLine.get(parsed.line) ?? {
+        line: parsed.line,
+        over: null,
+        under: null,
+      };
+      entry[parsed.side] = odd;
+      byLine.set(parsed.line, entry);
+    }
+  }
+  return [...byLine.values()].sort((a, b) => a.line - b.line);
+}
+
+/**
+ * Jedna sázkovka z odpovědi `/odds` na náš tvar (1X2 + total 2.5 + BTTS + rohy + karty
+ * + týmové totaly). **Exportováno pro testy** – je to jediné místo, kde se trhy podle
+ * názvu překlápějí do struktury, kterou pak celý zbytek bere jako danou.
+ */
+export function bookOddsOf(book: {
+  id: number;
+  name: string;
+  bets: { id: number; name?: string; values: { value: string; odd: string }[] }[];
+}): BookOdds {
+  const betValues = (betId: number) =>
+    book.bets.find((b) => b.id === betId)?.values ?? [];
+  const mw = betValues(1);
+  const goals = betValues(5);
+  const btts = betValues(8);
+  const corners = lineOddsOf(book.bets, isCornerBet);
+  const cards = lineOddsOf(book.bets, isCardBet);
+  const totalHome = lineOddsOf(book.bets, (b) => teamTotalSide(b) === "home");
+  const totalAway = lineOddsOf(book.bets, (b) => teamTotalSide(b) === "away");
+  return {
+    id: book.id,
+    name: book.name,
+    home: oddOf(mw, "Home"),
+    draw: oddOf(mw, "Draw"),
+    away: oddOf(mw, "Away"),
+    over25: oddOf(goals, "Over 2.5"),
+    under25: oddOf(goals, "Under 2.5"),
+    btts: oddOf(btts, "Yes"),
+    bttsNo: oddOf(btts, "No"),
+    ...(corners.length ? { corners } : {}),
+    ...(cards.length ? { cards } : {}),
+    ...(totalHome.length ? { totalHome } : {}),
+    ...(totalAway.length ? { totalAway } : {}),
+  };
+}
+
+/** Zranění/absence týmu v dané sezóně (pokrytí v API je nekonzistentní). */
+export function fetchTeamInjuries(team: number, season: number) {
+  return apiGet("/injuries", { team, season }, injuriesSchema);
+}
+
+/**
+ * Ligová tabulka (`/standings?league&season`). Vrací syrové řádky napříč skupinami;
+ * výběr řádku týmu + normalizaci dělá čistá funkce (`pickTeamStanding` ve `standings.ts`).
+ * Reprezentační soutěže tabulku spolehlivě nemají → voláme jen pro kluby.
+ */
+export async function fetchLeagueStandings(
+  league: number,
+  season: number
+): Promise<ApiStandingRow[]> {
+  const res = await apiGet("/standings", { league, season }, standingsSchema);
+  // Sloučí případné skupiny (běžná liga = jedna tabulka) do jednoho pole.
+  return res.flatMap((l) => l.league.standings.flat());
+}
+
+/**
+ * Žebříček střelců ligy (`/players/topscorers?league&season`). Výběr hráčů daného týmu
+ * dělá čistá funkce (`pickTeamScorers` ve `scorers.ts`). Jen klubové ligy.
+ */
+export function fetchLeagueTopScorers(
+  league: number,
+  season: number
+): Promise<ApiTopScorer[]> {
+  return apiGet(
+    "/players/topscorers",
+    { league, season },
+    topScorersSchema
+  );
+}
+
+/**
+ * Žebříček nahrávek ligy (`/players/topassists?league&season`) – sesterský endpoint
+ * top střelců, stejný tvar odpovědi (`statistics[].goals.assists` místo `.total`).
+ */
+export function fetchLeagueTopAssists(
+  league: number,
+  season: number
+): Promise<ApiTopScorer[]> {
+  return apiGet(
+    "/players/topassists",
+    { league, season },
+    topScorersSchema
+  );
+}
+
+/**
+ * Přestupy hráčů týmu (příchody i odchody). `/transfers` neumí filtr podle ligy ani
+ * sezóny – vrací celou historii přestupů hráčů týmu, filtrovat dle data se musí u nás.
+ */
+export function fetchTeamTransfers(team: number) {
+  return apiGet("/transfers", { team }, transfersSchema);
+}
+
+/** Mapuje názvy statistik API-Football na naše metriky. */
+export const STAT_TYPE_MAP: Record<string, Metric> = {
+  "Total Shots": "SHOTS",
+  "Shots on Goal": "SHOTS_ON_TARGET",
+  "Shots off Goal": "SHOTS_OFF_TARGET",
+  "Blocked Shots": "BLOCKED_SHOTS",
+  "Shots insidebox": "SHOTS_INSIDE_BOX",
+  "Shots outsidebox": "SHOTS_OUTSIDE_BOX",
+  "Corner Kicks": "CORNERS",
+  Offsides: "OFFSIDES",
+  "Ball Possession": "POSSESSION", // string "65%"
+  Fouls: "FOULS",
+  "Yellow Cards": "YELLOW_CARDS",
+  "Red Cards": "RED_CARDS",
+  "Goalkeeper Saves": "SAVES",
+  "Total passes": "PASSES_TOTAL",
+  "Passes accurate": "PASSES_ACCURATE",
+  "Passes %": "PASS_ACCURACY", // string "87%"
+  expected_goals: "XG",
+};
+
+/** Stav „odehráno" pro API-Football (full time / after ET / penalties). */
+export const FINISHED_STATUSES = new Set(["FT", "AET", "PEN"]);
+
+/**
+ * Stavy, kdy zápas **právě běží** (1./2. poločas, poločasová pauza, prodloužení, penalty,
+ * přerušení). Živý zápas z Programu nemizí – svítí s minutou a skóre.
+ */
+export const LIVE_STATUSES = new Set([
+  "1H", // první poločas
+  "HT", // poločasová přestávka
+  "2H", // druhý poločas
+  "ET", // prodloužení
+  "BT", // přestávka před prodloužením
+  "P", // penaltový rozstřel
+  "SUSP", // dočasně pozastaveno
+  "INT", // přerušeno
+  "LIVE", // obecně živě
+]);

@@ -1,0 +1,366 @@
+import type { MatchStat, Metric, PredictionRow, Team } from "@/lib/types";
+import { compareTeams } from "@/lib/stats/compare";
+import {
+  DEFAULT_BASELINE,
+  PREDICT_PARAMS,
+  type LeagueBaseline,
+  type PredictTuning,
+} from "@/lib/stats/predict";
+import {
+  computeRatings,
+  type RatingMatch,
+  type RatingOptions,
+  type TeamStrength,
+} from "@/lib/stats/ratings";
+import type { MatchOddsRecord } from "./oddsDataset";
+
+/**
+ * Offline backtest: přehraje historické zápasy **stejným jádrem** (`compareTeams` →
+ * `predictMatch`), jaké běží v produkci, a vydá `PredictionRow[]` – tedy přesně ten tvar,
+ * který už umí `computeTrackRecord` / `computeReliability` / `fit.ts`. Model se tak dá měřit
+ * a ladit na tisících zápasů **hned**, ne rychlostí, jakou se hrají (a jakou se plní DB).
+ *
+ * Dvě vědomá omezení oproti produkci (obojí zapiš do závěru, ať se čísla nepřecení):
+ *  1. **Bez xG.** λ v produkci míchá gólový odhad s xG, když je k dispozici. xG je jen
+ *     v `/fixtures/statistics` = 1 volání na zápas → pro tisíce zápasů neúnosné. Backtest
+ *     tedy měří **gólovou část** λ; xG by měl výsledky spíš zlepšit, ne zhoršit.
+ *  2. **Jen ligové zápasy.** Poháry (`euroMatches`) nesbíráme – pro top-5 ligy okrajové.
+ *
+ * Klíčová vlastnost: **point-in-time**. Tým se staví jen ze zápasů s datem PŘED výkopem
+ * predikovaného zápasu (`buildTeamAt`) → žádný leak z budoucnosti. Kryto testem.
+ */
+
+/** Odehraný zápas z historie ligy (jen to, co jde levně vytáhnout z `/fixtures`). */
+export interface HistoryMatch {
+  fixtureId: number;
+  date: string; // ISO
+  season: number; // ligová sezóna (rok začátku)
+  leagueId: number;
+  homeId: number;
+  awayId: number;
+  homeName: string;
+  awayName: string;
+  homeLogo: string;
+  awayLogo: string;
+  /** Skóre po 90 minutách (v lize = koncové; viz `fullTimeGoals`). */
+  homeGoals: number;
+  awayGoals: number;
+  /**
+   * Per-zápas statistiky (xG, střely…) obou stran – doplní `npm run backfill-stats`
+   * (1 volání/zápas). Bez nich backtest jede jen z gólů, což je výchozí stav.
+   */
+  homeMetrics?: Partial<Record<Metric, number>>;
+  awayMetrics?: Partial<Record<Metric, number>>;
+  /**
+   * Zavírací kurzy z football-data.co.uk – doplní `npm run import-odds` (0 volání API).
+   * Teprve s nimi jde na historii spočítat, jestli model **porazí trh**; bez nich měří
+   * backtest jen to, jestli je lepší než hádání.
+   */
+  odds?: MatchOddsRecord;
+  /**
+   * Jméno rozhodčího (football-data, sloupec `Referee`) – vstup do modelu karet, kde je
+   * to dominantní prediktor. Pokrytí je nerovnoměrné (Anglie 100 %, Řecko 0 %), takže
+   * je pole volitelné a zápas bez něj prostě dostane neutrální faktor.
+   */
+  referee?: string;
+}
+
+/**
+ * Zápasy jednoho týmu **před** daným datem, převedené na `MatchStat`.
+ *
+ * `isBaseline` = zápas z předchozí sezóny (okno SEASON, váha 15 %). Produkce ho určuje
+ * dynamicky v `realRepository` („nejnovější dokončená sezóna"); při pohledu zevnitř sezóny
+ * `season` je to vždy `season - 1`, takže se to shoduje.
+ */
+export function matchStatsBefore(
+  history: HistoryMatch[],
+  teamId: number,
+  before: string,
+  season: number
+): MatchStat[] {
+  return history
+    .filter(
+      (m) =>
+        (m.homeId === teamId || m.awayId === teamId) &&
+        m.date < before &&
+        (m.season === season || m.season === season - 1)
+    )
+    .map((m) => {
+      const isHome = m.homeId === teamId;
+      const gf = isHome ? m.homeGoals : m.awayGoals;
+      const ga = isHome ? m.awayGoals : m.homeGoals;
+      // Statistiky (xG, střely) jsou volitelné – jsou-li stažené, jdou do metrik zápasu
+      // stejně jako v produkci; góly je vždy přepíšou (jsou spolehlivější než dopočet).
+      const stats = isHome ? m.homeMetrics : m.awayMetrics;
+      // xG SOUPEŘE = xG, které tým inkasoval → kvalita obrany bez šumu z proměňování.
+      // Rohy soupeře = rohy, které tým pustil → obranná strana λ v modelu rohů
+      // (`lib/picks/corners.ts`). Obojí je tatáž úvaha, jen nad jinou metrikou.
+      // Karty SOUPEŘE = jak moc tým kartu u protihráčů vyvolá → obranná strana λ
+      // v modelu karet (`lib/picks/cards.ts`). Tatáž úvaha jako u xG a rohů.
+      const oppStats = isHome ? m.awayMetrics : m.homeMetrics;
+      const xgAgainst = oppStats?.XG;
+      const cornersAgainst = oppStats?.CORNERS;
+      const cardsAgainst = oppStats?.CARDS;
+      const foulsAgainst = oppStats?.FOULS;
+      return {
+        fixtureId: m.fixtureId,
+        date: m.date,
+        isHome,
+        isNeutral: false,
+        competitive: true,
+        season: m.season,
+        isBaseline: m.season === season - 1,
+        metrics: {
+          ...stats,
+          ...(xgAgainst != null ? { XG_AGAINST: xgAgainst } : {}),
+          ...(cornersAgainst != null ? { CORNERS_AGAINST: cornersAgainst } : {}),
+          ...(cardsAgainst != null ? { CARDS_AGAINST: cardsAgainst } : {}),
+          ...(foulsAgainst != null ? { FOULS_AGAINST: foulsAgainst } : {}),
+          GOALS_FOR: gf,
+          GOALS_AGAINST: ga,
+        },
+      } satisfies MatchStat;
+    })
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+/** Klubový `Team` postavený jen z historie dostupné před `before` (point-in-time). */
+export function buildTeamAt(
+  history: HistoryMatch[],
+  teamId: number,
+  meta: { name: string; logoUrl: string; leagueId: number },
+  before: string,
+  season: number
+): Team {
+  return {
+    id: teamId,
+    name: meta.name,
+    logoUrl: meta.logoUrl,
+    country: "",
+    entityType: "CLUB",
+    leagueId: meta.leagueId,
+    leagueMatches: matchStatsBefore(history, teamId, before, season),
+  };
+}
+
+/**
+ * Ligové měřítko (⌀ góly domácích/hostů) z **předchozí** sezóny téže ligy → do predikce
+ * nemůže protéct nic z hodnoceného ročníku. Chybí-li předchozí sezóna, vrací default.
+ */
+export function baselineFor(
+  history: HistoryMatch[],
+  leagueId: number,
+  season: number
+): LeagueBaseline {
+  const prev = history.filter(
+    (m) => m.leagueId === leagueId && m.season === season - 1
+  );
+  if (prev.length < 50) return DEFAULT_BASELINE;
+  const home = prev.reduce((a, m) => a + m.homeGoals, 0) / prev.length;
+  const away = prev.reduce((a, m) => a + m.awayGoals, 0) / prev.length;
+  return { home, away };
+}
+
+export interface BacktestOptions {
+  /** Predikuj jen zápasy těchto sezón (starší slouží jako baseline/rozjezd). */
+  seasons: number[];
+  /** Vyžaduj aspoň tolik předchozích zápasů u OBOU týmů (0 = predikuj i 1. kolo). */
+  minMatches?: number;
+  /** Ladicí parametry λ – grid search v `scripts/backtest.ts` (bez nich produkční default). */
+  tuning?: PredictTuning;
+  /**
+   * Síly z `computeRatings` (korekce na soupeře + časový útlum) místo okenních průměrů.
+   * `undefined` = dosavadní model → dvojice běhů měří, co C2 přidává. Ligové měřítko
+   * (`home`/`away`) doplní backtest sám z tabulky předchozí sezóny.
+   */
+  ratings?: Omit<RatingOptions, "home" | "away">;
+  /**
+   * Smí formová okna λ (LAST10/LAST5) sáhnout do minulé sezóny? Produkce dnes ano
+   * (`true` = dosavadní chování, se kterým se fitovaly váhy 70/25/5). `false` měří
+   * variantu, kterou od 31. 7. 2026 používá **zobrazení** – viz `docs/data-okna.md`.
+   */
+  crossSeasonForm?: boolean;
+}
+
+/**
+ * Přehraje historii a vrátí predikce ve tvaru `PredictionRow` (s doplněným skutečným
+ * výsledkem) → jde je rovnou prohnat `computeTrackRecord`, `computeReliability`, `fit.ts`.
+ */
+export function backtest(
+  history: HistoryMatch[],
+  opts: BacktestOptions
+): PredictionRow[] {
+  const seasons = new Set(opts.seasons);
+  const minMatches = opts.minMatches ?? 0;
+  const rows: PredictionRow[] = [];
+  // Ligové měřítko se počítá 1× per liga+sezóna (z předchozí sezóny), ne pro každý zápas.
+  const baselines = new Map<string, LeagueBaseline>();
+  // Zápasy per liga (pro ratingy) – ať se nefiltruje celá historie pro každý zápas.
+  const byLeague = new Map<number, RatingMatch[]>();
+  if (opts.ratings) {
+    for (const m of history) {
+      const list = byLeague.get(m.leagueId) ?? [];
+      list.push({
+        date: m.date,
+        homeId: m.homeId,
+        awayId: m.awayId,
+        homeGoals: m.homeGoals,
+        awayGoals: m.awayGoals,
+        homeXg: m.homeMetrics?.XG,
+        awayXg: m.awayMetrics?.XG,
+      });
+      byLeague.set(m.leagueId, list);
+    }
+  }
+  // Ratingy se přepočítávají po KOLECH (per liga a den), ne pro každý zápas zvlášť –
+  // zápasy téhož dne mají stejnou minulost, takže by to bylo jen dražší, ne přesnější.
+  const ratingCache = new Map<string, Map<number, TeamStrength>>();
+
+  for (const m of history) {
+    if (!seasons.has(m.season)) continue;
+
+    const key = `${m.leagueId}:${m.season}`;
+    let baseline = baselines.get(key);
+    if (!baseline) {
+      baseline = baselineFor(history, m.leagueId, m.season);
+      baselines.set(key, baseline);
+    }
+
+    let strength: { home: TeamStrength; away: TeamStrength } | undefined;
+    if (opts.ratings) {
+      const day = m.date.slice(0, 10);
+      const rk = `${m.leagueId}:${day}`;
+      let table = ratingCache.get(rk);
+      if (!table) {
+        table = computeRatings(byLeague.get(m.leagueId) ?? [], m.date, {
+          ...opts.ratings,
+          home: baseline.home,
+          away: baseline.away,
+        });
+        ratingCache.set(rk, table);
+      }
+      const h = table.get(m.homeId);
+      const a = table.get(m.awayId);
+      // Tým bez historie (nováček v 1. kole) → ratingy nemá; spadni na okenní model.
+      if (h && a) strength = { home: h, away: a };
+    }
+
+    const home = buildTeamAt(
+      history,
+      m.homeId,
+      { name: m.homeName, logoUrl: m.homeLogo, leagueId: m.leagueId },
+      m.date,
+      m.season
+    );
+    const away = buildTeamAt(
+      history,
+      m.awayId,
+      { name: m.awayName, logoUrl: m.awayLogo, leagueId: m.leagueId },
+      m.date,
+      m.season
+    );
+    if (
+      home.leagueMatches.length < minMatches ||
+      away.leagueMatches.length < minMatches
+    ) {
+      continue;
+    }
+
+    // `now` = datum zápasu → časová okna (reprezentace) i vše ostatní se dívají do minulosti.
+    const p = compareTeams(
+      home,
+      away,
+      new Date(m.date),
+      { baseline, tuning: opts.tuning, strength },
+      { crossSeasonForm: opts.crossSeasonForm ?? true }
+    ).prediction;
+    if (!p) continue;
+
+    rows.push({
+      fixtureId: m.fixtureId,
+      leagueId: m.leagueId,
+      season: m.season,
+      kickoff: m.date,
+      homeTeamId: m.homeId,
+      awayTeamId: m.awayId,
+      homeName: m.homeName,
+      awayName: m.awayName,
+      homeLogo: m.homeLogo,
+      awayLogo: m.awayLogo,
+      available: p.available,
+      // Základní λ (před zostřením) – stejně jako ukládá produkční pipeline.
+      lambdaHome: p.lambdaHomeBase,
+      lambdaAway: p.lambdaAwayBase,
+      homeWin: p.homeWin,
+      draw: p.draw,
+      awayWin: p.awayWin,
+      bttsYes: p.bttsYes,
+      over25: p.over25,
+      lowConfidence: p.lowConfidence,
+      readinessSample: p.readiness.sample,
+      modelVersion: 0, // backtest, ne produkční řádek
+      rho: PREDICT_PARAMS.rho,
+      sharpen: PREDICT_PARAMS.sharpen,
+      calibA: PREDICT_PARAMS.calibA,
+      calibB: PREDICT_PARAMS.calibB,
+      status: "FT",
+      homeGoals: m.homeGoals,
+      awayGoals: m.awayGoals,
+      benchAvailable: false,
+      benchHomeWin: null,
+      benchDraw: null,
+      benchAwayWin: null,
+      // Zavírací kurzy (`npm run import-odds`). Preferuje se sharp linie (Pinnacle),
+      // protože benchmark má měřit „porazíme nejlepší odhad trhu", ne „porazíme
+      // nejhorší sázkovku". Průměr trhu je fallback pro zápasy, kde Pinnacle chybí.
+      ...oddsColumns(m.odds),
+      // BTTS football-data nenabízí (a měření ukázalo, že na něm model stejně nemá signál).
+      oddsBtts: null,
+      oddsBttsNo: null,
+      oddsCloseHome: null,
+      oddsCloseDraw: null,
+      oddsCloseAway: null,
+      oddsCloseOver25: null,
+      oddsCloseUnder25: null,
+    });
+  }
+  return rows;
+}
+
+/** Zavírací kurzy do sloupců `PredictionRow` (sharp linie, fallback průměr trhu). */
+function oddsColumns(o: MatchOddsRecord | undefined): {
+  oddsBookmaker: string | null;
+  oddsHome: number | null;
+  oddsDraw: number | null;
+  oddsAway: number | null;
+  oddsOver25: number | null;
+  oddsUnder25: number | null;
+} {
+  const t = o?.pinnacle ?? o?.average;
+  const ou = o?.ou25?.pinnacle ?? o?.ou25?.average;
+  if (!t && !ou) {
+    return {
+      oddsBookmaker: null,
+      oddsHome: null,
+      oddsDraw: null,
+      oddsAway: null,
+      oddsOver25: null,
+      oddsUnder25: null,
+    };
+  }
+  return {
+    oddsBookmaker: o?.pinnacle ? "Pinnacle (close)" : "Market avg (close)",
+    oddsHome: t?.home ?? null,
+    oddsDraw: t?.draw ?? null,
+    oddsAway: t?.away ?? null,
+    // Obě strany totalu → jde spočítat férová cena Over 2.5 (`rowValue`).
+    oddsOver25: ou?.over ?? null,
+    oddsUnder25: ou?.under ?? null,
+  };
+}
+
+/**
+ * Referenční baseline: konstantní 1X2 pravděpodobnosti (typický fotbalový rozdaj).
+ * Model, který tohle nepřekoná, nedělá vůbec nic – povinná kontrola smyslu.
+ */
+export const NAIVE_PROBS = { home: 0.45, draw: 0.26, away: 0.29 };

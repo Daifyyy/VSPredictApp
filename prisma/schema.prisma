@@ -1,0 +1,427 @@
+// Prisma schéma – cache vrstva nad API-Football (§1/§2 plánu).
+// Read-through cache: aplikace čte odsud; při miss/expiraci se zavolá API.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Generická TTL cache raw odpovědí list-endpointů (ligy, týmy, seznamy zápasů).
+model ApiCache {
+  key       String   @id
+  payload   Json
+  expiresAt DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([expiresAt])
+}
+
+/// Per-tým per-zápas statistiky (TRVALÁ cache – historická data jsou neměnná).
+/// Přímo odpovídá doménovému typu MatchStat; metriky jako sloupce (xG bývá null).
+model MatchStatCache {
+  teamId           Int
+  fixtureId        Int
+  context          String // "league" | "euro"
+  date             DateTime
+  isHome           Boolean
+  isNeutral        Boolean
+  competitive      Boolean
+  season           Int
+  goalsFor         Int?
+  goalsAgainst     Int?
+  corners          Float?
+  fouls            Float?
+  shots            Float?
+  xg               Float?
+  /// xG, které tým v zápase INKASOVAL (= xG soupeře). Kvalita obrany bez šumu z toho, kolik
+  /// šancí soupeř proměnil – backtest: s ním klesne 1X2 log-loss 1.0191 → 1.0116. Plní se
+  /// z téže odpovědi `/fixtures/statistics` (nese oba týmy) → 0 volání navíc.
+  xgAgainst        Float?
+  shotsOnTarget    Float?
+  shotsOffTarget   Float?
+  blockedShots     Float?
+  shotsInsideBox   Float?
+  shotsOutsideBox  Float?
+  offsides         Float?
+  possession       Float?
+  passesTotal      Float?
+  passesAccurate   Float?
+  passAccuracy     Float?
+  yellowCards      Float?
+  redCards         Float?
+  saves            Float?
+  /// Soupeř v zápase – pro zobrazení loga/jména u „posledních 5 zápasů" formy.
+  opponentId       Int?
+  opponentName     String?
+  opponentLogo     String?
+  /// Verze sady metrik. Čte se vše od `MIN_READABLE_CACHE_VERSION` výš; řádky pod prahem
+  /// se ignorují a dotáhnou znovu (viz cache.ts).
+  schemaVersion    Int      @default(1)
+  cachedAt         DateTime @default(now())
+
+  @@id([teamId, fixtureId, context])
+  @@index([teamId, context, schemaVersion])
+  /// `getCachedFixtureStats` (přehled JEDNOHO zápasu, hot path `/api/match-report`)
+  /// filtruje na samotné `fixtureId`. PK i index výše začínají `teamId`, takže se ani
+  /// jeden nedal použít a dotaz skenoval celou tabulku – dnes ~9 000 zápasů × 2 řádky
+  /// a poroste dál.
+  @@index([fixtureId])
+}
+
+// ───────────────────────── Účty / auth / tiering ─────────────────────────
+// Standardní modely Auth.js v5 (@auth/prisma-adapter) + naše pole tier/trial.
+
+enum Tier {
+  FREE
+  PRO
+}
+
+/// Uživatel (Auth.js). `tier` rozhoduje o PRO funkcích; `proTrialUsed` = spotřebovaný 1× trial.
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  tier          Tier      @default(FREE)
+  proTrialUsed  Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  // Stripe předplatné. `tier` zůstává jediným spínačem PRO – tahle pole jsou jen
+  // mapování na Stripe (webhook hledá uživatele dle `stripeCustomerId`) + období
+  // pro UI. Allowlist PRO_EMAILS je dál nadřazený (řeší session callback v auth.ts).
+  stripeCustomerId     String?   @unique
+  stripeSubscriptionId String?
+  proUntil             DateTime?
+
+  accounts         Account[]
+  sessions         Session[]
+  savedComparisons SavedComparison[]
+  gameSave         GameSave?
+  tips             UserTip[]
+  favoriteLeagues  FavoriteLeague[]
+  favoriteFixtures FavoriteFixture[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+/// Predikce nadcházejícího zápasu + (po odehrání) skutečný výsledek.
+/// Plní cron na pozadí (predict-upcoming / settle-results); záložka i track-record
+/// jen ČTOU – nikdy se nepočítá živě per request. fixtureId = přirozený klíč.
+model FixturePrediction {
+  fixtureId     Int       @id
+  leagueId      Int
+  season        Int
+  kickoff       DateTime
+  homeTeamId    Int
+  awayTeamId    Int
+  homeName      String
+  awayName      String
+  homeLogo      String
+  awayLogo      String
+  // Predikce (snapshot modelu v čase výpočtu)
+  available     Boolean
+  /// λ PŘED zostřením = základní výstup modelu. Pravděpodobnosti níž z něj jdou
+  /// kdykoli přepočítat jinými post-parametry (`npm run reprice`) – proto se ukládá
+  /// základ, ne zostřená hodnota.
+  lambdaHome    Float
+  lambdaAway    Float
+  homeWin       Float
+  draw          Float
+  awayWin       Float
+  bttsYes       Float
+  over25        Float
+  lowConfidence Boolean
+  /// Připravenost predikce: efektivní vzorek nejslabšího vstupu λ (gate na tipy +
+  /// odznak „málo dat" na startu sezóny). 0 = neznámo / řádek z doby před readiness.
+  readinessSample Float   @default(0)
+  /// Verze modelu = co GENERUJE λ (okna, váhy, xG zpevnění, build týmů). Bump vynuluje
+  /// dataset (kalibrace/track-record běží per verzi), proto ho NEbumpuj kvůli ρ/zostření –
+  /// ty jsou post-parametry nad λ a přepočítají se (viz `rho`/`sharpen`).
+  modelVersion  Int       @default(1)
+  /// Post-parametry, kterými byly z λ odvozeny pravděpodobnosti výše (Dixon–Coles ρ,
+  /// zostření λ). Umožňují ladit model bez ztráty historie: `npm run reprice` najde
+  /// řádky s jinými hodnotami než aktuální konstanty a přepočte je z λ. null = řádek
+  /// z doby před zavedením polí (default ρ=−0.13, zostření 1.0).
+  rho           Float?
+  sharpen       Float?
+  /// Platt kalibrace 1X2 (`p' = σ(a·logit(p) + b)`), aplikovaná AŽ na hotové V/R/P
+  /// (po ρ+zostření) – oprava tvaru chyby (přesebevědomí na favoritech, viz predict.ts).
+  /// Stejný cyklus jako rho/sharpen: post-parametr nad λ, `reprice` ho umí dorovnat.
+  /// null = řádek z doby před zavedením (default a=1, b=0 = no-op).
+  calibA        Float?
+  calibB        Float?
+  /// λ ROHŮ a KARET (`lib/picks/corners.ts`, `cards.ts`) pro tentýž zápas. Modely
+  /// existovaly, ale volal je JEN backtest – v produkci se nikdy nic neuložilo, takže
+  /// jsme na tyhle trhy sbírali kurzy a **neměli je proti čemu měřit** (CLV = otevřená
+  /// otázka č. 1). Počítají se v `runPredictUpcoming` z týchž zápasů, ze kterých vzniká
+  /// gólová λ → **0 volání API navíc**. Jen klubové ligy; null = model neměl z čeho
+  /// (nováček bez historie rohů) nebo řádek vznikl před zavedením polí.
+  ///
+  /// **Pod `modelVersion` NEPATŘÍ**: verzuje se to, co vyrábí gólovou λ, a bump vynuluje
+  /// dataset predikcí. Tyhle sloupce jsou paralelní stopa, ne jiný výpočet 1X2.
+  lambdaCornersHome Float?
+  lambdaCornersAway Float?
+  lambdaCardsHome   Float?
+  lambdaCardsAway   Float?
+  /// Faktor rozhodčího použitý u karet a velikost vzorku, ze kterého vyšel. `1`/`0`
+  /// = rozhodčí se nepromítl (index se v produkci zatím nestaví) – ať je poznat
+  /// „neutrální faktor" od „změřeného faktoru, který vyšel 1".
+  refereeFactor     Float?
+  refereeSample     Int?
+  predictedAt   DateTime  @default(now())
+  // Výsledek (doplní settle cron po odehrání)
+  status        String    @default("NS")
+  homeGoals     Int?
+  awayGoals     Int?
+  settledAt     DateTime?
+  // Interní benchmark: predikce API-Footballu (1X2) pro tentýž zápas. Paralelní
+  // sloupec na témže řádku → settle skóruje oba modely zadarmo. Nikdy se nevystavuje
+  // ve FREE/PRO API, jen pro offline srovnání (scripts/calibrate.ts). Jen klubové ligy.
+  benchAvailable Boolean  @default(false)
+  benchHomeWin   Float?
+  benchDraw      Float?
+  benchAwayWin   Float?
+  benchFetchedAt DateTime?
+  // Kurzy referenční sázkovky (decimal odds) pro EV/value tipy. Stejný životní cyklus
+  // jako benchmark: fetch 1×/zápas, jen klubové ligy, jen blízko výkopu (kurzy jsou
+  // pak actionable). Ukládáme syrové kurzy → implied prob i edge se dopočítají čistou
+  // funkcí (lib/picks/value.ts), takže přepočet při změně modelu nevyžaduje nový fetch.
+  oddsBookmaker String?
+  oddsHome      Float?
+  oddsDraw      Float?
+  oddsAway      Float?
+  oddsOver25    Float?
+  oddsBtts      Float?
+  // Protistrany dvoustranných trhů. `fetchOdds` je stahoval odjakživa, ale zahazovaly se –
+  // a bez nich NELZE odmaržovat, takže u Over 2.5 a BTTS nešlo spočítat férovou cenu ani
+  // market benchmark. 0 volání API navíc (jsou v téže odpovědi).
+  oddsUnder25   Float?
+  oddsBttsNo    Float?
+  oddsFetchedAt DateTime?
+  // VŠECH ~13 sázkovek z téže odpovědi (`BookOdds[]` jako JSON). Dřív se 12 z nich
+  // zahazovalo a zůstala jediná „preferovaná" – přitom **nejlepší cena napříč knihami
+  // byla jediná páka, která v backtestu prokazatelně zabrala** (ROI −7.7 % → −5.2 %,
+  // overround 0.11 % vs. 2.99 % u jedné knihy). 0 volání API navíc, jen se nezahazuje
+  // to, co už máme. Z toho se čte nejlepší cena (`bestPrice`) i sharp konsenzus
+  // (`sharpFair`) – obojí čistou funkcí v `lib/picks/books.ts`.
+  oddsBooks      Json?
+  oddsCloseBooks Json?
+  // DRUHÝ snímek: zavírací linie (těsně před výkopem). Rozdíl proti prvnímu snímku je CLV
+  // = jediný ukazatel hrany viditelný hned po výkopu, ne až po stovkách výsledků. Jeden
+  // snímek to změřit neumí – nešlo by odlišit „model měl pravdu" od „chytili jsme starší
+  // linii". Chybí u zápasů, které cron mezi prvním snímkem a výkopem už nezastihl.
+  oddsCloseHome    Float?
+  oddsCloseDraw    Float?
+  oddsCloseAway    Float?
+  oddsCloseOver25  Float?
+  oddsCloseUnder25 Float?
+  oddsCloseAt      DateTime?
+  /// ČASOVÁ ŘADA kurzů (`lib/picks/oddsSeries.ts`): jak se linie hýbala od otevření
+  /// k výkopu. Dva snímky výše řeknou *kolik* se hnula, řada *kdy* – a „hnulo se to
+  /// hodinu před výkopem" (peníze) je něco jiného než „hned po otevření" (dorovnání).
+  /// Slouží ke steamu, k robustnímu odhadu zavření a jako kontext k tipu.
+  ///
+  /// Ukládá se KOMPAKTNÍ bod (sharp kniha + nejlepší cena + O/U, ~100 B), NE celé knihy:
+  /// plný snímek každou hodinu po 72 h by dal 2.8 GB/rok proti 500 MB na Neon free tier.
+  /// Takhle to vyjde na ~12 MB/rok. Plné knihy zůstávají u dvou snímků, na kterých stojí
+  /// EV a CLV. Kadence se zužuje k výkopu (12 h → 3 h → 1 h), délka je stropovaná.
+  oddsSeries   Json?
+  /// Kdy do řady naposled přibyl bod – řídí kadenci (`seriesDue`). Bez toho by se
+  /// interval musel dopočítávat z JSON pole při každém běhu cronu.
+  oddsSeriesAt DateTime?
+
+  @@index([leagueId, kickoff])
+  @@index([status, kickoff])
+  /// Track-record, kalibrace i benchmark čtou **jen aktuální `MODEL_VERSION`**
+  /// (`getSettledPredictionRows` filtruje defaultně), takže je to nejčastější predikát
+  /// nad touhle tabulkou – a bez indexu se skenovala celá.
+  @@index([modelVersion])
+}
+
+/// Přestup hráče (záložka Přestupy, top-5 lig). Plní cron na pozadí (refresh-transfers);
+/// záložka i bilance jen ČTOU. Řádek je z perspektivy dotazovaného klubu (`clubId`):
+/// in/out strany nesou oba kluby, `clubId` říká, čí pohled to je → jednoznačná bilance.
+/// `feeEur` je best-effort parse z volného textu `type` (často null – API nedává částky).
+model Transfer {
+  id           String   @id // `${clubId}:${playerId}:${dateISO}:${inId|0}:${outId|0}`
+  clubId       Int
+  clubLeagueId Int
+  season       Int
+  playerId     Int
+  playerName   String
+  date         DateTime
+  type         String?
+  feeEur       Float?
+  marketValueEur Float?
+  inTeamId     Int?
+  inTeamName   String?
+  inTeamLogo   String?
+  outTeamId    Int?
+  outTeamName  String?
+  outTeamLogo  String?
+  fetchedAt    DateTime @default(now())
+
+  @@index([clubLeagueId, date])
+  @@index([clubId])
+}
+
+/// Oblíbené porovnání (PRO). Drží IDs pro re-run i JSON snapshot pro okamžité zobrazení.
+model SavedComparison {
+  id              String   @id @default(cuid())
+  // Stabilní vlastnický klíč = e-mail (přežije re-login/reset User řádku). `userId` je
+  // už jen volitelná reference. Viz UserTip.
+  email           String
+  userId          String?
+  mode            String // "CLUB" | "NATIONAL"
+  homeTeamId      Int
+  homeLeagueId    Int
+  awayTeamId      Int
+  awayLeagueId    Int
+  label           String?
+  /// Celý CompareResult v čase uložení (zobrazení „jak to bylo" bez fetchu).
+  snapshot        Json
+  /// Verze tvaru snapshotu; při nesouladu se preferuje re-query (viz cache.ts logika).
+  snapshotVersion Int      @default(1)
+  savedAt         DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([email, homeTeamId, awayTeamId, homeLeagueId, awayLeagueId])
+  @@index([email, savedAt])
+}
+
+/// Osobní tip uživatele (záložka Tipovačka = tréninkový deník intuice). Uživatel tipuje
+/// nadcházející příležitost (1X2 / Over-Under 2.5 gólů / BTTS) BEZ zobrazení kurzu; kurz se
+/// snapshotuje na pozadí při vložení a odhalí se až u vyhodnocení → z něj úspěšnost a ROI.
+/// Meta zápasu je snapshot (jako SavedComparison), aby výpis nevyžadoval refetch. Výsledek
+/// dotáhne cron settle-tips (join na fixtureId). Jeden tip na trh a zápas.
+model UserTip {
+  id         String   @id @default(cuid())
+  // Stabilní vlastnický klíč = e-mail účtu (fallback `user:<id>`, kdyby chyběl). Přežije
+  // re-login i smazání/přegenerování `User` řádku (reset DB) → tipy se neztratí, jak se
+  // stalo dřív s kaskádou na userId. Identita tipů běží přes `email`, ne přes `userId`.
+  email      String
+  // `userId` je už jen volitelná reference na aktuální účet (SetNull při smazání User,
+  // aby řádek tipu přežil). NENÍ klíč vlastnictví.
+  userId     String?
+  fixtureId  Int
+  // snapshot zápasu pro zobrazení bez refetche
+  leagueId   Int
+  leagueName String
+  kickoff    DateTime
+  homeTeamId Int
+  awayTeamId Int
+  homeName   String
+  awayName   String
+  homeLogo   String?
+  awayLogo   String?
+  national   Boolean  @default(false)
+  // příležitost: market "win"|"over25"|"btts"; selection dle trhu
+  // (win → home|draw|away, over25 → over|under, btts → yes|no). `line` pro over/under.
+  market     String
+  selection  String
+  line       Float?
+  stake      Float    @default(1)
+  note       String?
+  // snapshot kurzu (skrytý při tipování, odhalený u vyhodnocení). null = kurz nebyl k dispozici.
+  odds       Float?
+  oddsBook   String?
+  oddsAt     DateTime?
+  // výsledek (doplní settle cron po odehrání; skóre po 90 min jako u predikcí)
+  status     String    @default("NS")
+  homeGoals  Int?
+  awayGoals  Int?
+  hit        Boolean?
+  settledAt  DateTime?
+  placedAt   DateTime  @default(now())
+
+  // SetNull (ne Cascade): smazání User řádku tip NEODSTRANÍ, jen odpojí `userId`.
+  // GDPR úklid „na přání" řeší account-delete route mazáním dle e-mailu.
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([email, fixtureId, market])
+  @@index([email, placedAt])
+  @@index([status, fixtureId])
+}
+
+/// Uložená rozehraná hra „Manažer" (klubový simulátor ligy) – vázaná na profil.
+/// Jeden save na uživatele; celý SaveState (sezóna + historie kariéry) jako JSON.
+/// Herní modul je offline/samostatný – nesahá na predikční ani cache tabulky.
+model GameSave {
+  // Stabilní vlastnický klíč = e-mail (přežije re-login/reset User řádku) → rozehraná
+  // kariéra se neztratí. `userId` je už jen volitelná reference. Viz UserTip.
+  email     String   @id
+  // @unique kvůli one-to-one relaci User.gameSave (nullable → víc NULL je v Postgresu OK).
+  userId    String?  @unique
+  /// Celý SaveState (lib/game/types.ts) – aktuální sezóna + kompaktní historie sezón.
+  state     Json
+  updatedAt DateTime @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+/// Oblíbená liga uživatele (PRO) – v Programu Zápasů se všechny její zápasy počítají jako
+/// oblíbené (primární sekce + filtr „Jen oblíbené"). Bez snapshot meta – filtr pracuje jen
+/// nad už načteným 7denním Programem, stačí id.
+model FavoriteLeague {
+  // Stabilní vlastnický klíč = e-mail (přežije re-login/reset User řádku). Viz UserTip.
+  email     String
+  userId    String?
+  leagueId  Int
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@id([email, leagueId])
+}
+
+/// Oblíbený konkrétní zápas uživatele (PRO). Sjednocení s FavoriteLeague řídí „oblíbenost".
+model FavoriteFixture {
+  // Stabilní vlastnický klíč = e-mail (přežije re-login/reset User řádku). Viz UserTip.
+  email     String
+  userId    String?
+  fixtureId Int
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@id([email, fixtureId])
+}

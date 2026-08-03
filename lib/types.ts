@@ -1,0 +1,957 @@
+// Doménové typy aplikace pro porovnání fotbalových týmů.
+
+export type EntityType = "CLUB" | "NATIONAL";
+
+export type Venue = "HOME" | "AWAY" | "TOTAL";
+
+export type Metric =
+  | "GOALS_FOR"
+  | "GOALS_AGAINST"
+  | "XG"
+  | "SHOTS"
+  | "SHOTS_ON_TARGET"
+  | "SHOTS_OFF_TARGET"
+  | "BLOCKED_SHOTS"
+  | "SHOTS_INSIDE_BOX"
+  | "SHOTS_OUTSIDE_BOX"
+  | "POSSESSION"
+  | "PASSES_TOTAL"
+  | "PASSES_ACCURATE"
+  | "PASS_ACCURACY"
+  | "CORNERS"
+  | "OFFSIDES"
+  | "FOULS"
+  | "YELLOW_CARDS"
+  | "RED_CARDS"
+  | "SAVES"
+  // Odvozené metriky (počítá je `metricOf` v aggregate.ts z gólů, NEukládají se a nejsou
+  // v `ALL_METRICS` → nezobrazují se v UI a nevyžadují bump cache). Vážený průměr přes ně
+  // dá **frekvenci jevu**: „jak často tým vůbec skóroval" / „jak často udržel nulu".
+  // Poisson tyhle jevy jen ODVOZUJE z průměru gólů (P(≥1) = 1 − e^−λ); tady je měříme přímo.
+  | "SCORED"
+  | "CLEAN_SHEET"
+  /**
+   * xG, které tým **inkasoval** (= xG soupeře v tom zápase). Kvalita obrany: kolik šancí
+   * tým pouští, nezávisle na tom, kolik z nich soupeř proměnil. Do `MatchStat` ho plní
+   * ten, kdo má po ruce statistiky obou stran (`/fixtures/statistics` je vrací v jedné
+   * odpovědi). Mimo `ALL_METRICS` → v UI se nezobrazuje.
+   */
+  | "XG_AGAINST"
+  /**
+   * Rohy, které tým **inkasoval** (= rohy soupeře v tom zápase) – obranný protějšek
+   * `CORNERS`, přesně jako `XG_AGAINST` u xG. Model rohů (`lib/picks/corners.ts`) ho
+   * potřebuje na druhou stranu λ: kolik rohů tým soupeři pouští. Mimo `ALL_METRICS`
+   * → v UI se nezobrazuje a nevyžaduje bump cache verze.
+   */
+  | "CORNERS_AGAINST"
+  /**
+   * **Karty celkem** (žluté + červené) jedné strany. `YELLOW_CARDS`/`RED_CARDS` jsou
+   * v `ALL_METRICS` zvlášť kvůli UI; model karet (`lib/picks/cards.ts`) ale sází na
+   * jejich **součet**, protože přesně tak je postavená nabídka trhu. Plní se offline
+   * z football-data (`HY+HR`), mimo `ALL_METRICS` → v UI se nezobrazuje a nebumpuje cache.
+   */
+  | "CARDS"
+  /**
+   * Karty, které dostal **soupeř** – tedy jak moc tým kartu u protihráčů *vyvolá*
+   * (tvrdá hra, provokace, tempo). Obranný protějšek `CARDS`, přesně jako
+   * `CORNERS_AGAINST` u rohů. Mimo `ALL_METRICS`.
+   */
+  | "CARDS_AGAINST"
+  /**
+   * Fauly, které tým **schytal** (= fauly soupeře v tom zápase). Obranný protějšek
+   * `FOULS`: jak moc tým soupeře provokuje k zákrokům. Model karet (`lib/picks/cards.ts`)
+   * ho míchá k `CARDS_AGAINST` – faulů je ~11 na tým a zápas proti ~2 kartám, takže
+   * nesou tutéž informaci s menším šumem. Mimo `ALL_METRICS`.
+   */
+  | "FOULS_AGAINST";
+
+/** Okna pro kluby (počtová) a reprezentace (časová). */
+export type WindowKey =
+  | "SEASON"
+  | "LAST10"
+  | "LAST5" // kluby
+  | "BASE"
+  | "LAST12"
+  | "LAST6"; // reprezentace
+
+/** Zdroj dat zvolený rozhodovacím stromem (§3.2 plánu). */
+export type DataSource =
+  | "LEAGUE"
+  | "EURO_CUPS"
+  | "FALLBACK"
+  | "NATIONAL"
+  | "NATIONAL_FB";
+
+/** Pořadí = pořadí řádků v UI (logické skupiny: góly → střely → držení/přihrávky → standardky → disciplína). */
+export const ALL_METRICS: Metric[] = [
+  "GOALS_FOR",
+  "GOALS_AGAINST",
+  "XG",
+  "SHOTS",
+  "SHOTS_ON_TARGET",
+  "SHOTS_OFF_TARGET",
+  "BLOCKED_SHOTS",
+  "SHOTS_INSIDE_BOX",
+  "SHOTS_OUTSIDE_BOX",
+  "POSSESSION",
+  "PASSES_TOTAL",
+  "PASSES_ACCURATE",
+  "PASS_ACCURACY",
+  "CORNERS",
+  "OFFSIDES",
+  "FOULS",
+  "YELLOW_CARDS",
+  "RED_CARDS",
+  "SAVES",
+];
+
+/**
+ * Metriky, které u reprezentací v API reálně chybí – pro NATIONAL je vynecháme.
+ *
+ * Seznam byl dřív mnohem širší (držení, přihrávky, střely z/mimo vápno, zákroky,
+ * zblokované) s odůvodněním „u reprezentací statistiky typicky chybí". **Změřeno na
+ * 1 533 reprezentačních řádcích `MatchStatCache` a je to jinak:** chybí-li něco, chybí
+ * CELÁ odpověď `/fixtures/statistics` (~třetina reprezentačních zápasů) – ne jednotlivé
+ * metriky. Mezi zápasy, které statistiky vůbec mají, je držení míče v **99,5 %**
+ * (přesnost přihrávek 99,1 %, střely z vápna 99,4 %) – tedy stejně dostupné jako střely
+ * a rohy, které jsme celou dobu zobrazovali. Ta chybějící třetina se řeší sama: metrika
+ * bez dat prostě nemá vzorek (`weightedAverage` renormalizuje váhy, `lowConfidence`
+ * odznak upozorní).
+ *
+ * `XG` je jediná skutečná výjimka: jen **30,9 %** reprezentačních zápasů se statistikami
+ * ho má (soutěžní 40,5 %, přáteláky **2,0 %**) → zůstává vyloučené. Predikce ho u
+ * reprezentací proto nepoužívá (λ jede na gólech).
+ */
+const NATIONAL_EXCLUDED: Metric[] = ["XG"];
+
+export const METRICS_BY_ENTITY: Record<EntityType, Metric[]> = {
+  CLUB: ALL_METRICS,
+  NATIONAL: ALL_METRICS.filter((m) => !NATIONAL_EXCLUDED.includes(m)),
+};
+
+/** Metriky, u kterých je NIŽŠÍ hodnota lepší (obrácená logika zvýraznění). */
+export const LOWER_IS_BETTER: Set<Metric> = new Set<Metric>([
+  "GOALS_AGAINST",
+  "FOULS",
+  "YELLOW_CARDS",
+  "RED_CARDS",
+  "OFFSIDES",
+]);
+
+export const METRIC_LABELS: Record<Metric, string> = {
+  GOALS_FOR: "Vstřelené góly",
+  GOALS_AGAINST: "Obdržené góly",
+  XG: "xG",
+  SHOTS: "Střely",
+  SHOTS_ON_TARGET: "Střely na branku",
+  SHOTS_OFF_TARGET: "Střely mimo",
+  BLOCKED_SHOTS: "Zblokované střely",
+  SHOTS_INSIDE_BOX: "Střely z vápna",
+  SHOTS_OUTSIDE_BOX: "Střely mimo vápno",
+  POSSESSION: "Držení míče (%)",
+  PASSES_TOTAL: "Přihrávky",
+  PASSES_ACCURATE: "Přesné přihrávky",
+  PASS_ACCURACY: "Přesnost přihrávek (%)",
+  CORNERS: "Rohy",
+  OFFSIDES: "Ofsajdy",
+  FOULS: "Fauly",
+  YELLOW_CARDS: "Žluté karty",
+  RED_CARDS: "Červené karty",
+  SAVES: "Zákroky brankáře",
+  // Odvozené (mimo `ALL_METRICS` → v UI se nezobrazují); label jen kvůli úplnosti typu.
+  SCORED: "Skóroval (podíl zápasů)",
+  CLEAN_SHEET: "Čisté konto (podíl zápasů)",
+  XG_AGAINST: "Inkasované xG",
+  CORNERS_AGAINST: "Inkasované rohy",
+  CARDS: "Karty celkem",
+  CARDS_AGAINST: "Karty soupeře",
+  FOULS_AGAINST: "Schytané fauly",
+};
+
+/**
+ * Krátká vysvětlení metrik (nápověda „ⓘ" u řádku v UI).
+ *
+ * **Pokrývá všech 19 metrik z `ALL_METRICS`** – dřív jich mělo nápovědu 9 a u zbylých
+ * deseti nebylo poznat ani to, že jde o *průměr na zápas* (ne součet za sezónu). Kryto
+ * testem, aby nová metrika nemohla přibýt bez vysvětlivky.
+ *
+ * Všechny hodnoty v UI jsou **vážený průměr na zápas** ze tří oken – proto to formulace
+ * říkají tam, kde by šlo číslo splést se součtem.
+ */
+export const METRIC_HINTS: Partial<Record<Metric, string>> = {
+  GOALS_FOR: "Vstřelené góly – průměr na zápas.",
+  GOALS_AGAINST: "Obdržené góly – průměr na zápas. Nižší je lepší.",
+  XG: "Očekávané góly (expected goals): kolik gólů by tým měl vstřelit podle kvality svých šancí. Výrazně víc gólů než xG = buď skvělá koncovka, nebo štěstí.",
+  SHOTS: "Všechny střelecké pokusy za zápas – včetně zablokovaných a mimo branku.",
+  SHOTS_ON_TARGET: "Střely směřující do branky (gólman musel zasáhnout nebo skončily gólem).",
+  SHOTS_OFF_TARGET: "Střely, které minuly branku a nikdo je nezblokoval.",
+  BLOCKED_SHOTS: "Střely zablokované bránícím hráčem ještě před brankářem.",
+  SHOTS_INSIDE_BOX: "Střely z pokutového území (z vápna) – zpravidla mnohem gólovější než zdálky.",
+  SHOTS_OUTSIDE_BOX: "Střely mimo pokutové území.",
+  POSSESSION: "Průměrný podíl času s míčem na noze (% z hrací doby). Vysoké držení samo o sobě neznamená víc gólů.",
+  PASSES_TOTAL: "Počet přihrávek za zápas – ukazatel toho, jak moc tým kombinuje.",
+  PASSES_ACCURATE: "Počet přihrávek, které našly spoluhráče.",
+  PASS_ACCURACY: "Podíl úspěšných (přesných) přihrávek ze všech. Krátká kombinace nahoru, dlouhé nákopy dolů.",
+  CORNERS: "Rohové kopy zahrané týmem – průměr na zápas.",
+  OFFSIDES: "Počet odpískaných ofsajdů týmu.",
+  FOULS: "Fauly, které tým sám udělal – průměr na zápas. Souvisí s kartami.",
+  YELLOW_CARDS: "Žluté karty – průměr na zápas.",
+  RED_CARDS: "Červené karty – průměr na zápas. Bývá to malé číslo (vyloučení je vzácné).",
+  SAVES: "Počet zákroků (chytů) brankáře za zápas. Vysoké číslo znamená hodně práce, tedy spíš tlak soupeře.",
+};
+
+export const WINDOW_LABELS: Record<WindowKey, string> = {
+  SEASON: "Minulá sezóna",
+  LAST10: "Posl. 10 zápasů",
+  LAST5: "Posl. 5 zápasů",
+  BASE: "Předchozí rok",
+  LAST12: "Posl. 12 měsíců",
+  LAST6: "Posl. 6 měsíců",
+};
+
+/** Statistiky jednoho odehraného zápasu z pohledu jednoho týmu. */
+export interface MatchStat {
+  fixtureId: number;
+  date: string; // ISO 8601
+  isHome: boolean;
+  isNeutral: boolean; // turnaje na neutrální půdě (reprezentace)
+  competitive: boolean; // false = přátelák
+  season: number; // ligová sezóna zápasu (rok začátku); 0 = nerelevantní (reprez.)
+  /** Patří do baseline („minulá sezóna") okna – dopočítáno při sestavení. */
+  isBaseline: boolean;
+  metrics: Partial<Record<Metric, number>>; // xG může chybět
+  /** Soupeř v zápase (pro zobrazení loga/jména u formy). Chybí u starších cache řádků. */
+  opponent?: { id: number; name: string; logoUrl: string | null } | null;
+}
+
+/**
+ * Ligové měřítko **počtových** metrik (⌀ na stranu doma/venku) – vstup pro λ rohů
+ * a karet, protějšek gólového `LeagueBaseline`. `null` u metriky = liga ji nemá dost
+ * (nedopočítává se odhadem; volající vezme publikovaný default).
+ */
+export interface CountBaselines {
+  corners: { home: number; away: number } | null;
+  cards: { home: number; away: number } | null;
+  fouls: { home: number; away: number } | null;
+}
+
+export interface League {
+  id: number;
+  name: string;
+  country: string;
+  logoUrl: string;
+  kind: "CLUB_LEAGUE" | "NATIONAL_COMP";
+  confederation?: string;
+}
+
+/**
+ * Lehký záznam nadcházejícího zápasu pro záložku „Zápasy" (seznam = navigace,
+ * predikce se počítá až klikem přes deep-link do Porovnání). `national` = reprezentační
+ * soutěž → klik míří do NATIONAL módu, kde „ligou" týmu je jeho **konfederace**
+ * (`home/awayCompareLeagueId`); klubový zápas → CLUB mód s `leagueId` u obou.
+ * Když u reprezentačního zápasu konfederaci nedohledáme (`null`), řádek je neklikací.
+ */
+export interface UpcomingFixture {
+  fixtureId: number;
+  leagueId: number;
+  leagueName: string;
+  leagueLogoUrl: string;
+  kickoff: string;
+  home: { id: number; name: string; logoUrl: string };
+  away: { id: number; name: string; logoUrl: string };
+  national: boolean;
+  /** Mód cílového Porovnání (klub vs. reprezentace). */
+  compareMode: EntityType;
+  /** „Liga" pro deep-link: klub → `leagueId`, reprezentace → konfederace týmu (či null). */
+  homeCompareLeagueId: number | null;
+  awayCompareLeagueId: number | null;
+  /** Pozice v ligové tabulce (FREE kontext; jen kluby, doplněno server-side). */
+  homeRank?: number | null;
+  awayRank?: number | null;
+  /** Zápas právě běží (SSR snapshot z denního rozpisu; klient obnovuje pollem). */
+  live?: boolean;
+  /** Uplynulé minuty živého zápasu (null u pauzy/penalt). */
+  elapsed?: number | null;
+  /** Živé skóre (jen když `live`). */
+  liveHome?: number | null;
+  liveAway?: number | null;
+  /** Stav zápasu z API (`1H`/`HT`/`2H`…) – živý přehled podle něj váží, co smí tvrdit. */
+  liveStatus?: string;
+  /** Stav o přestávce; smysluplný až od druhého poločasu (viz `LiveScore`). */
+  halftimeHome?: number | null;
+  halftimeAway?: number | null;
+}
+
+/**
+ * Náš tip k odehranému zápasu – **překryv**, ne součást zápasu. Existuje jen u zápasů,
+ * ke kterým jsme stihli uložit dostupnou predikci; zbytek Výsledků žije i bez něj.
+ */
+export interface FixtureTip {
+  side: "home" | "draw" | "away";
+  prob: number;
+  hit: boolean;
+}
+
+/**
+ * Lehký záznam **odehraného** zápasu pro záložku „Výsledky". Protějšek
+ * `UpcomingFixture` ze stejného denního rozpisu – proto stejná deep-link pole.
+ *
+ * **Zdrojem je rozpis, ne naše predikce.** Zápas se do Výsledků dostane, jakmile ho API
+ * hlásí jako dohraný; náš tip a ✓/✗ je nepovinný `tip` navíc. Dřív se Výsledky četly
+ * výhradně z `FixturePrediction`, takže zápas bez uložené predikce (nebo settlnutý až
+ * ranním cronem) v nich prostě nebyl – u večerního zápasu klidně 17 h.
+ */
+export interface PlayedFixture {
+  fixtureId: number;
+  leagueId: number;
+  leagueName: string;
+  leagueLogoUrl: string;
+  kickoff: string;
+  home: { id: number; name: string; logoUrl: string };
+  away: { id: number; name: string; logoUrl: string };
+  /** Skóre po 90 minutách (co predikuje model) – u AET/PEN tedy NE koncové skóre. */
+  homeGoals: number;
+  awayGoals: number;
+  /** Zápas se rozhodl až v prodloužení/na penalty → skóre výše je stav po 90 min. */
+  afterExtraTime: boolean;
+  national: boolean;
+  compareMode: EntityType;
+  homeCompareLeagueId: number | null;
+  awayCompareLeagueId: number | null;
+  /** Náš tip, pokud k zápasu existuje dostupná predikce (doplňuje `mergeTips`). */
+  tip?: FixtureTip;
+}
+
+/**
+ * Zápasy jednoho dne (`date` = `YYYY-MM-DD`) pro záložku „Zápasy". Jeden den nese
+ * **oba** seznamy z téhož rozpisu: `fixtures` (Program – nezačaté a živé) a `played`
+ * (Výsledky – dohrané). Dělí se **jedním** voláním `/fixtures?date=`, takže druhá
+ * záložka nestojí ani jedno volání navíc.
+ */
+export interface FixtureDay {
+  date: string;
+  fixtures: UpcomingFixture[];
+  played: PlayedFixture[];
+}
+
+/**
+ * Živý stav jednoho zápasu z lehkého `/api/fixtures/live` endpointu. Klient jím
+ * autoritativně přepisuje SSR snapshot (minuta/skóre/status), zápas mimo tuto sadu
+ * je dohraný → z Programu zmizí.
+ */
+export interface LiveScore {
+  fixtureId: number;
+  status: string;
+  elapsed: number | null;
+  homeGoals: number | null;
+  awayGoals: number | null;
+  /**
+   * Stav o přestávce – jde s toutéž odpovědí, tedy **0 volání navíc**. Platí až od
+   * druhého poločasu: v prvním API do tohohle pole sype průběžné skóre (viz komentář
+   * u `fixtureItemSchema`). Živý přehled ho proto používá jen podle stavu zápasu.
+   */
+  halftimeHome: number | null;
+  halftimeAway: number | null;
+}
+
+export interface Team {
+  id: number;
+  name: string;
+  logoUrl: string;
+  country: string;
+  entityType: EntityType;
+  leagueId: number; // domácí liga (klub) / „pseudoliga" reprezentací
+  /** Zápasy v domácí lize / soutěžní internacionály. */
+  leagueMatches: MatchStat[];
+  /** Zápasy v evropských pohárech (UCL/UEL/UECL), pokud tým hraje. */
+  euroMatches?: MatchStat[];
+}
+
+/** Výsledek jednoho zápasu z pohledu týmu (forma). */
+export type MatchResult = "W" | "D" | "L";
+
+/**
+ * Souhrn aktuální výkonnosti týmu pro jednu variantu (Doma/Venku/Celkově).
+ * Forma = posledních 5 zápasů; čisté konto / bez gólu = % z posledních 10.
+ * Mimo vážený průměr – procenta mají jeden jasný jmenovatel (`sampleSize`).
+ */
+export interface TeamSummary {
+  venue: Venue;
+  form: MatchResult[]; // nejnovější první, max 5
+  /** Soupeř ke každé položce `form` (stejné pořadí/délka). `null` = neznámý (starší cache). */
+  formOpponents: ({ id: number; name: string; logoUrl: string | null } | null)[];
+  formSampleSize: number; // kolik zápasů reálně tvoří formu (0–5)
+  cleanSheetPct: number | null; // 0–100, null když je vzorek prázdný
+  failedToScorePct: number | null; // 0–100, null když je vzorek prázdný
+  sampleSize: number; // jmenovatel pro CS/FTS (0–10)
+}
+
+/**
+ * Jak si tým vedl v jednom zápase formy **výkonově**, ne jen výsledkově.
+ * `null` u xG polí = zápas xG nemá (třetina reprezentačních, část Fortuna ligy).
+ */
+export interface FormMatchQuality {
+  fixtureId: number;
+  date: string; // ISO 8601
+  result: MatchResult;
+  goalsFor: number;
+  goalsAgainst: number;
+  xgFor: number | null;
+  xgAgainst: number | null;
+  /** Skutečné body (3/1/0). */
+  points: number;
+  /** Očekávané body z xG obou stran (0–3). `null` bez xG. */
+  expectedPoints: number | null;
+  /** `points − expectedPoints`; kladné = víc bodů, než výkon zasloužil. */
+  edge: number | null;
+  /** Kategorie pro UI. `null` bez xG. */
+  verdict: "lucky" | "matched" | "unlucky" | null;
+}
+
+/**
+ * **Kvalita formy**: sedí posledních 5 výsledků s výkony? Doplněk `TeamSummary`
+ * (ta říká jen W/D/L) postavený nad **týmiž zápasy** – viz `orderedMatches`.
+ * Popisný kontext, **ne signál**: do λ ani do tipů nevstupuje (pět zápasů je z valné
+ * části šum, proto má LAST5 v `PREDICTION_WINDOW_WEIGHTS` jen 5 %).
+ */
+export interface FormQuality {
+  venue: Venue;
+  /** Nejnovější první, max 5 – index po indexu shodné s `TeamSummary.form`. */
+  matches: FormMatchQuality[];
+  /** Kolik z nich má xG = jmenovatel všeho níže. */
+  xgSampleSize: number;
+  /** Body a očekávané body **jen ze zápasů s xG** (jinak by se nedaly srovnat). */
+  points: number | null;
+  expectedPoints: number | null;
+  /** ⌀ rozdíl xG na zápas (vytvořené − povolené). */
+  xgDiffPerMatch: number | null;
+  /** Verdikt nad oknem. `null` při vzorku pod prahem – tam by nic neznamenal. */
+  level: "overperforming" | "inline" | "underperforming" | null;
+  /** Jedna popisná věta. Prázdná, když není z čeho. */
+  note: string;
+}
+
+/** Zraněný hráč (samostatná, líně načítaná data – ne ze zápasových statistik). */
+export interface Injury {
+  playerId: number;
+  name: string;
+  reason: string;
+}
+
+/**
+ * Hráč ze špičky střelců ligy patřící k danému týmu (FREE kontext v Porovnání – „kdo
+ * z tohoto týmu střílí góly v lize"). Líně načítané mimo compareTeams; jen kluby.
+ */
+export interface Scorer {
+  playerId: number;
+  name: string;
+  goals: number;
+}
+
+/** Bilance jedné části tabulky (celkově / doma / venku). */
+export interface StandingSplit {
+  played: number;
+  win: number;
+  draw: number;
+  lose: number;
+  goalsFor: number;
+  goalsAgainst: number;
+}
+
+/**
+ * Postavení týmu v ligové tabulce (samostatná, líně načítaná statistika – FREE kontext,
+ * mimo compareTeams i predikci). Jen kluby; reprezentace tabulku nemají (→ null).
+ */
+export interface Standing {
+  rank: number;
+  points: number;
+  goalsDiff: number;
+  /** Krátká forma z tabulky, např. „WWDLW" (nejnovější vpravo) nebo `null`, když chybí. */
+  form: string | null;
+  all: StandingSplit;
+  home: StandingSplit;
+  away: StandingSplit;
+}
+
+/**
+ * Zóna řádku ligové tabulky odvozená z popisu místa (API-Football `description`).
+ * Slouží jen k barevnému zvýraznění v záložce Tabulky (LM/EL/KL, postup, sestup).
+ */
+export type LeagueTableZone =
+  | "champions"
+  | "europa"
+  | "conference"
+  | "promotion"
+  | "relegation";
+
+/** Jeden řádek celé ligové tabulky (záložka Tabulky). Kompletní V-R-P + góly + body. */
+export interface LeagueTableRow {
+  rank: number;
+  teamId: number;
+  name: string;
+  logoUrl: string;
+  played: number;
+  win: number;
+  draw: number;
+  lose: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  goalsDiff: number;
+  points: number;
+  /** Krátká forma z tabulky, např. „WWDLW" (nejnovější vpravo), nebo `null`. */
+  form: string | null;
+  /** Zóna pro barevné zvýraznění (evropský pohár / postup / sestup), nebo `null`. */
+  zone: LeagueTableZone | null;
+}
+
+/** Celá ligová tabulka + ligový průměr gólů na zápas (FREE, sdílí `standings:` cache). */
+export interface LeagueTable {
+  rows: LeagueTableRow[];
+  leagueAvg: LeagueGoalsAvg | null;
+}
+
+/**
+ * Hráč ze špičky střelců/nahrávek CELÉ ligy (na rozdíl od `Scorer`, který je vybraný
+ * pro jeden tým) – záložka Tabulky. Nese i klub, protože řádky napříč týmy. `value`
+ * je metrika-neutrální (góly, nebo asistence – rozlišuje volající UI popiskem).
+ */
+export interface LeagueScorer {
+  playerId: number;
+  name: string;
+  value: number;
+  teamId: number | null;
+  teamName: string;
+  teamLogo: string;
+}
+
+/** Jeden zápas posledního/příštího kola v Tabulkách. `goals` jsou `null` u nadcházejících. */
+export interface RoundFixture {
+  fixtureId: number;
+  kickoff: string;
+  home: { id: number; name: string; logoUrl: string };
+  away: { id: number; name: string; logoUrl: string };
+  homeGoals: number | null;
+  awayGoals: number | null;
+}
+
+/** Poslední odehrané a příští kolo vybrané ligy (Tabulky). `null` = liga bez dat. */
+export interface LeagueRound {
+  last: RoundFixture[];
+  next: RoundFixture[];
+}
+
+/**
+ * Jeden přestup (záložka Přestupy). `feeEur` je best-effort odhad z volného textu
+ * `type` z API – často `null` (API neuvádí spolehlivé částky). `in*` = kam hráč přišel,
+ * `out*` = odkud odešel.
+ */
+export interface Transfer {
+  playerId: number;
+  playerName: string;
+  date: string; // ISO
+  type: string | null; // surový text z API ("Loan" | "Free" | "€ 20M" | "N/A" …)
+  category: TransferCategory; // odvozená kategorie (klient filtruje bez serverového kódu)
+  feeEur: number | null; // částka přestupu v EUR (TM dataset), null/0 = neznámá/nezveřejněná
+  marketValueEur: number | null; // tržní hodnota hráče v čase přestupu (TM)
+  inTeamId: number | null;
+  inTeamName: string | null;
+  inTeamLogo: string | null;
+  outTeamId: number | null;
+  outTeamName: string | null;
+  outTeamLogo: string | null;
+  leagueId: number; // liga, pro kterou byl záznam stažen
+  season: number;
+}
+
+/**
+ * Kategorie přestupu odvozená z volného textu `type` z API. Peněžní částky API
+ * prakticky nedává (2 z tisíců), zato `type` nese typ pohybu → bilanci stavíme na něm.
+ */
+export type TransferCategory = "permanent" | "loan" | "loanReturn" | "free" | "other";
+
+/** Počty přestupů po kategoriích (pro jednu stranu – příchody nebo odchody). */
+export type TransferCategoryCounts = Record<TransferCategory, number>;
+
+/** Bilance přestupů jednoho klubu: peníze (z TM cen) + počty; kategorie ponechány (dead code). */
+export interface ClubTransferBalance {
+  teamId: number;
+  teamName: string;
+  teamLogo: string | null;
+  leagueId: number;
+  inCount: number;
+  outCount: number;
+  /** Součet cen příchozích / odchozích (jen kde fee>0). net = earn − spend. */
+  spendEur: number;
+  earnEur: number;
+  netEur: number;
+  /** Kolik přestupů má známou cenu (fee>0) – kvůli „neúplná data" poznámce. */
+  knownFeeCount: number;
+  /** Rozpad po kategoriích – ponecháno pro případný návrat ke kategoriovému zobrazení. */
+  inByCategory: TransferCategoryCounts;
+  outByCategory: TransferCategoryCounts;
+}
+
+/** Příspěvek jednoho časového okna do váženého průměru (pro tooltip). */
+export interface WindowBreakdown {
+  window: WindowKey;
+  label: string;
+  value: number | null;
+  weight: number;
+}
+
+/** Spočítaná hodnota jedné metriky v jedné variantě pro jeden tým. */
+export interface MetricValue {
+  metric: Metric;
+  venue: Venue;
+  value: number | null;
+  /** Nízká spolehlivost = malý efektivní vzorek (§3.4c). */
+  lowConfidence: boolean;
+  sampleSize: number;
+  /** Rozpad váženého průměru po oknech (Sezóna/L10/L5 …). */
+  breakdown: WindowBreakdown[];
+}
+
+export interface TeamComparison {
+  team: Pick<Team, "id" | "name" | "logoUrl" | "country">;
+  values: MetricValue[];
+  /** Souhrn formy a CS/FTS pro každou variantu (HOME/AWAY/TOTAL). */
+  summary: TeamSummary[];
+  /** Kvalita formy (výsledky vs. výkony) pro každou variantu – stejné pořadí jako `summary`. */
+  formQuality: FormQuality[];
+}
+
+/** Predikce zápasu z očekávaných gólů (Poisson). Domácí = první tým. */
+/** Jedno přesné skóre s pravděpodobností (z téže opravené mřížky jako 1X2). */
+export interface ScoreProbability {
+  home: number; // góly domácích
+  away: number; // góly hostů
+  prob: number; // 0–1
+}
+
+/** Úroveň připravenosti predikce (kolik dat za ní stojí) – pro odznak. */
+export type ReadinessLevel = "low" | "medium" | "ok";
+
+/** Připravenost predikce: efektivní vzorek nejslabšího vstupu λ + skóre 0–1 + úroveň. */
+export interface Readiness {
+  sample: number;
+  score: number;
+  level: ReadinessLevel;
+}
+
+export interface MatchPrediction {
+  /** false = chybí gólová i xG data → predikci nelze vydat (UI zobrazí hlášku). */
+  available: boolean;
+  lambdaHome: number; // očekávané góly domácích (po zostření – souhlasí s mřížkou)
+  lambdaAway: number; // očekávané góly hostů (po zostření)
+  /**
+   * λ **před** zostřením – to, co generuje model (`MODEL_VERSION`). Ukládá se do
+   * `FixturePrediction`, protože z něj jde predikci přepočítat při změně post-parametrů
+   * (ρ / zostření) bez nového fetchu. Při `sharpen = 1` shodné s `lambdaHome/Away`.
+   */
+  lambdaHomeBase: number;
+  lambdaAwayBase: number;
+  homeWin: number; // 0–1
+  draw: number; // 0–1
+  awayWin: number; // 0–1
+  bttsYes: number; // 0–1 (oba skórují)
+  over25: number; // 0–1 (3+ gólů celkem)
+  /** Nejpravděpodobnější přesná skóre (sestupně), z téže opravené mřížky. Prázdné, když available=false. */
+  topScores: ScoreProbability[];
+  lowConfidence: boolean; // malý vzorek pod predikcí
+  /** Připravenost predikce (kolik dat za λ stojí) – pro odznak „málo dat" na startu sezóny. */
+  readiness: Readiness;
+}
+
+/** Kategorie signálu (pro ikonu, vyvážení top N a ladění vah). */
+export type InsightCategory =
+  | "attack"
+  | "defense"
+  | "form"
+  | "tempo"
+  | "setpiece"
+  | "discipline"
+  | "keeper"
+  | "efficiency"
+  | "matchup";
+
+export type InsightSeverity = "info" | "warning" | "positive";
+
+/** Jeden ohodnocený signál z rule-enginu (s konkrétními čísly v textu). */
+export interface ScoredInsight {
+  id: string; // id pravidla (+ scope)
+  category: InsightCategory;
+  severity: InsightSeverity;
+  score: number; // 0–1 důležitost (řazení)
+  text: string; // lokalizovaný, s čísly
+  metric?: Metric;
+  scope: "home" | "away" | "matchup";
+  lowConfidence: boolean; // malý vzorek pod signálem
+}
+
+/** Výstup insights enginu pro jedno porovnání. */
+export interface InsightReport {
+  verdict: string; // jednovětné shrnutí
+  keySignals: ScoredInsight[]; // top N napříč scope (řazené dle score)
+  home: ScoredInsight[]; // per-tým (řazené)
+  away: ScoredInsight[];
+}
+
+/**
+ * Uložená predikce nadcházejícího zápasu (+ výsledek po odehrání). Zdrojově
+ * nezávislý tvar (real = DB `FixturePrediction`, mock = generátor) – čte ho
+ * predikční záložka, track-record i kalibrace. `kickoff` je ISO 8601.
+ */
+export interface PredictionRow {
+  fixtureId: number;
+  leagueId: number;
+  season: number;
+  kickoff: string;
+  homeTeamId: number;
+  awayTeamId: number;
+  homeName: string;
+  awayName: string;
+  homeLogo: string;
+  awayLogo: string;
+  available: boolean;
+  /** λ **před** zostřením (základní výstup modelu) → pravděpodobnosti níž jdou přepočítat. */
+  lambdaHome: number;
+  lambdaAway: number;
+  homeWin: number;
+  draw: number;
+  awayWin: number;
+  bttsYes: number;
+  over25: number;
+  lowConfidence: boolean;
+  /** Efektivní vzorek nejslabšího vstupu λ (připravenost predikce); 0 = neznámo/starý řádek. */
+  readinessSample: number;
+  /** Verze modelu, který spočítal λ (okna/váhy/xG/build týmů). Bump = reset datasetu. */
+  modelVersion: number;
+  /**
+   * Post-parametry, kterými byly z λ odvozeny pravděpodobnosti výše (Dixon–Coles ρ a
+   * zostření λ). Mimo `modelVersion` schválně: jde je změnit a historii **přepočítat**
+   * z uložených λ (`npm run reprice`) místo zahození. `null` = řádek z doby před
+   * zavedením polí (spočítaný publikovaným defaultem ρ=−0.13, zostření 1.0).
+   */
+  rho: number | null;
+  sharpen: number | null;
+  /**
+   * Platt kalibrace 1X2 (`a` = strmost, `b` = posun), aplikovaná AŽ na hotové V/R/P
+   * (po ρ+zostření). Stejný cyklus jako `rho`/`sharpen` – `null` = řádek z doby před
+   * zavedením polí (spočítaný no-opem a=1, b=0).
+   */
+  calibA: number | null;
+  calibB: number | null;
+  /**
+   * λ rohů a karet pro tentýž zápas (`lib/picks/corners.ts`, `cards.ts`). Paralelní
+   * stopa vedle gólové λ, **ne jiný výpočet 1X2** – proto stojí mimo `modelVersion`.
+   * `null` = model neměl z čeho (nováček bez historie) nebo řádek vznikl dřív.
+   *
+   * **Volitelné schválně:** syntetické řádky (backtest, kalibrace, testy) je nestaví
+   * a nutit je do nich by znamenalo šest `null` navíc v každém takovém literálu bez
+   * jediného čtenáře. Kdo je čte, ošetřuje `null` stejně jako `undefined`.
+   */
+  lambdaCornersHome?: number | null;
+  lambdaCornersAway?: number | null;
+  lambdaCardsHome?: number | null;
+  lambdaCardsAway?: number | null;
+  /** Faktor rozhodčího u karet; `1`/`0` = neutrální (index se zatím nestaví). */
+  refereeFactor?: number | null;
+  refereeSample?: number | null;
+  status: string; // "NS" | "FT" | "AET" | "PEN" | …
+  homeGoals: number | null;
+  awayGoals: number | null;
+  // Interní benchmark: predikce API-Footballu (1X2) pro tentýž zápas. Mimo FREE/PRO API.
+  benchAvailable: boolean;
+  benchHomeWin: number | null;
+  benchDraw: number | null;
+  benchAwayWin: number | null;
+  // Referenční kurzy sázkovky (decimal odds) pro EV/value tipy; null = nedotaženo.
+  oddsBookmaker: string | null;
+  oddsHome: number | null;
+  oddsDraw: number | null;
+  oddsAway: number | null;
+  oddsOver25: number | null;
+  oddsBtts: number | null;
+  /**
+   * Protistrany dvoustranných trhů – bez nich nejde odmaržovat, takže u Over 2.5 a BTTS
+   * nelze spočítat férovou cenu. Starší řádky (před 26. 7. 2026) je mají `null`.
+   */
+  oddsUnder25: number | null;
+  oddsBttsNo: number | null;
+  /**
+   * Zavírací snímek kurzu (druhý). Rozdíl proti prvnímu snímku = CLV (`lib/picks/clv.ts`).
+   * `null` u zápasů, které cron mezi prvním snímkem a výkopem už nezastihl.
+   */
+  oddsCloseHome: number | null;
+  oddsCloseDraw: number | null;
+  oddsCloseAway: number | null;
+  oddsCloseOver25: number | null;
+  oddsCloseUnder25: number | null;
+  /**
+   * Kurzy **všech ~13 sázkovek** obou snímků (`BookOdds[]` jako JSON; typ je volný,
+   * protože sloupec je `Json?` – validuje ho `parseBooks` v `lib/picks/books.ts`).
+   * Z nich nejlepší cena (jediná v backtestu prokazatelně funkční páka) i sharp
+   * konsenzus. `null` u řádků z doby před zavedením (do 27. 7. 2026).
+   *
+   * **Volitelné schválně:** řádky z backtestu a mocku knihy nemají a mít nemusí (jejich
+   * zdrojem je football-data, ne `/odds`), takže by je jinak musely povinně vyplňovat
+   * nullem – povinné pole, které nikdo z nich nenaplní, by nic neuhlídalo.
+   */
+  oddsBooks?: unknown;
+  oddsCloseBooks?: unknown;
+}
+
+/** Trh, na který pravidlo cílí. */
+export type PickMarket = "win" | "over25" | "btts";
+
+/** Pravidlo výběru zápasů do predikční záložky. */
+export interface PickRule {
+  market: PickMarket;
+  /** Jen pro market "win": strana favorita. */
+  venue: "home" | "away" | "any";
+  /** Minimální pravděpodobnost (0–1). */
+  minProb: number;
+  /**
+   * Volitelný minimální edge (EV) = p_model × kurz − 1. Když je nastaven, tip projde
+   * jen se známým kurzem a dostatečnou hranou nad trhem (value betting). Bez něj se
+   * kurzy ignorují → chování jako dnes (čistě pravděpodobnostní práh `minProb`).
+   */
+  minEdge?: number;
+  /**
+   * Volitelný minimální efektivní vzorek za predikcí (`readinessSample`). Když je
+   * nastaven, tip projde jen s dost daty (gate „nevydat tip pod N zápasů" na startu
+   * sezóny). Bez něj se připravenost nehlídá.
+   */
+  minReadiness?: number;
+}
+
+/** Jeden vybraný tip = nadcházející zápas, který splnil pravidlo. */
+export interface MatchPick {
+  fixtureId: number;
+  kickoff: string;
+  leagueId: number;
+  home: { id: number; name: string; logoUrl: string };
+  away: { id: number; name: string; logoUrl: string };
+  prediction: MatchPrediction;
+  market: PickMarket;
+  /** Pro "win" strana favorita, jinak null. */
+  side: "home" | "away" | null;
+  /** Pravděpodobnost relevantní pro pravidlo (0–1). */
+  prob: number;
+  /**
+   * Rozdíl tipu proti trhu. `edge` je EV proti **vyplácenému** kurzu (nese marži),
+   * `edgeFair` je rozdíl proti **odmaržované** ceně – jen to druhé má vypovídací hodnotu
+   * (a i tak jde o „kde se lišíme", ne o příslib zisku; viz měření v CLAUDE.md).
+   * `null`, když kurz nebyl dotažen. Tvar odpovídá `ValueEstimate` (`lib/picks/value.ts`) –
+   * zde inline, aby `types.ts` nezáviselo na `value.ts`.
+   */
+  value: {
+    odds: number;
+    impliedProb: number;
+    edge: number;
+    fairProb: number | null;
+    edgeFair: number | null;
+    /** Nejlepší cena napříč sázkovkami (line-shopping); `null` u starších řádků. */
+    best: {
+      odds: number;
+      bookmaker: string;
+      books: number;
+      edge: number;
+    } | null;
+  } | null;
+  /** Krátké vysvětlení (z uložených hodnot). */
+  explanation: string;
+  /** Mód cílového Porovnání (klub vs. reprezentace) – pro deep-link prokliku. */
+  compareMode: EntityType;
+  /**
+   * „Liga" pro deep-link: klub → `leagueId` u obou; reprezentační turnaj →
+   * konfederace každého týmu (dotahuje `/api/picks`; `null` = neklikací řádek).
+   */
+  homeCompareLeagueId: number | null;
+  awayCompareLeagueId: number | null;
+  /** Pozice v ligové tabulce (FREE kontext; jen klubové tipy, doplněno server-side). */
+  homeRank?: number | null;
+  awayRank?: number | null;
+  /**
+   * Očekávané počty rohů a karet za celý zápas (součet obou stran) z **uložené** λ.
+   *
+   * Vlastní stopa vedle gólové λ – ne jiný výpočet 1X2 (viz `MODEL_VERSION` v CLAUDE.md).
+   * Od 2. 8. 2026 se v produkci ukládá (`lambdaCorners*`/`lambdaCards*`), ale předzápasově
+   * se nikde nezobrazovala; člověk ji viděl až zpětně v přehledu dohraného zápasu.
+   * `null` = řádek je starší než ukládání, nebo model neměl dost dat. **0 volání API.**
+   */
+  counts: { corners: number | null; cards: number | null };
+}
+
+/**
+ * Dohraný zápas s vyhodnocenou predikcí pro záložku „Výsledky" (jak dopadly naše
+ * predikce). Odvozeno z odehraných `PredictionRow` (status FINISHED, známé skóre).
+ * Deep-link pole jako u `MatchPick` (klik = porovnání týmů).
+ */
+export interface SettledMatch {
+  fixtureId: number;
+  leagueId: number;
+  leagueLogoUrl: string;
+  kickoff: string;
+  home: { id: number; name: string; logoUrl: string };
+  away: { id: number; name: string; logoUrl: string };
+  /** Skóre po 90 minutách (co predikuje model) – u AET/PEN tedy NE koncové skóre. */
+  homeGoals: number;
+  awayGoals: number;
+  /** Zápas se rozhodl až v prodloužení/na penalty → skóre výše je stav po 90 min. */
+  afterExtraTime: boolean;
+  /** Predikovaný výsledek 1X2 (argmax) a jeho pravděpodobnost. */
+  predictedSide: "home" | "draw" | "away";
+  predictedProb: number;
+  /** Trefila predikce 1X2 skutečný výsledek? */
+  outcomeHit: boolean;
+  compareMode: EntityType;
+  homeCompareLeagueId: number | null;
+  awayCompareLeagueId: number | null;
+}
+
+export type CategoryKey =
+  | "attack"
+  | "defense"
+  | "ball_control"
+  | "chance_creation"
+  | "discipline";
+
+export interface CategoryScore {
+  key: CategoryKey;
+  label: string;
+  homeScore: number;
+  awayScore: number;
+  lowConfidence: boolean;
+  available: boolean;
+}
+
+export interface PlayStyleDimension {
+  key: "possession" | "buildup" | "pressing" | "efficiency";
+  label: string;
+  leftLabel: string;
+  rightLabel: string;
+  homeScore: number;
+  awayScore: number;
+  available: boolean;
+}
+
+export interface LeagueGoalsAvg {
+  goalsFor: number;
+  goalsAgainst: number;
+}
+
+export interface CompareResult {
+  source: DataSource;
+  /** Lidsky čitelné upozornění k zdroji dat (badge), pokud je relevantní. */
+  sourceNote?: string;
+  metrics: Metric[];
+  home: TeamComparison;
+  away: TeamComparison;
+  /** Predikce výsledku (domácí vs host). PRO – ve FREE výsledku chybí (viz `locked`). */
+  prediction?: MatchPrediction;
+  /** Insights: verdikt, klíčové signály a per-tým výroky. PRO – ve FREE chybí. */
+  insightReport?: InsightReport;
+  /** true = PRO sekce (predikce/insights/zranění) jsou zamčené (FREE bez trialu). */
+  locked?: boolean;
+}
