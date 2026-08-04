@@ -6,6 +6,7 @@ import type {
   LeagueGoalsAvg,
   LeagueRound,
   LeagueScorer,
+  LeagueStyleSnapshot,
   LeagueTable,
   LiveScore,
   MatchStat,
@@ -101,6 +102,10 @@ import {
 } from "./catalog";
 import { localizeStadiumSurface } from "@/lib/stadium";
 import type { SearchableTeam } from "@/lib/teamSearch";
+import { buildTeamProfileCore } from "@/lib/teamProfile";
+import { buildLeagueStyleSnapshot } from "@/lib/stats/leagueStyle";
+import { readLeagueStyleSnapshot, writeLeagueStyleSnapshot } from "./styleSnapshotStore";
+const STYLE_BASELINE_TTL = 60 * 60 * 24 * 30;
 
 const LIST_TTL = 60 * 60 * 24; // 24 h pro seznamy (dokončené sezóny jsou stabilní)
 const INJ_TTL = 60 * 60 * 6; // 6 h pro zranění (soupiska se mění průběžně)
@@ -269,6 +274,55 @@ export async function getTeamsByLeague(leagueId: number): Promise<TeamLite[]> {
         : undefined,
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "cs"));
+}
+
+/** Pouze DB čtení; veřejná stránka tím nikdy nespustí API-Football. */
+export function getLeagueStyleSnapshot(leagueId: number): Promise<LeagueStyleSnapshot | null> {
+  return readLeagueStyleSnapshot(leagueId, CURRENT_SEASON);
+}
+
+/**
+ * Denní ligový import. Dva seznamové requesty pokryjí všechny týmy; statistika jednoho
+ * fixture se stáhne nejvýš jednou a `assemble` uloží obě strany do trvalé cache.
+ */
+export async function refreshLeagueStyleSnapshot(leagueId: number): Promise<LeagueStyleSnapshot> {
+  const teams = await getTeamsByLeague(leagueId);
+  const [currentRaw, previousRaw] = await Promise.all([
+    cachedJson(`stylefix:${leagueId}:${CURRENT_SEASON}`, LIST_TTL, () =>
+      fetchLeagueRecentFixtures(leagueId, CURRENT_SEASON, 80)
+    ),
+    cachedJson(`stylefix:${leagueId}:${PREVIOUS_SEASON}`, STYLE_BASELINE_TTL, () =>
+      fetchLeagueRecentFixtures(leagueId, PREVIOUS_SEASON, 80)
+    ),
+  ]);
+  const current = onlyFinished(currentRaw);
+  const previous = onlyFinished(previousRaw);
+  const profiles = [];
+
+  for (const meta of teams) {
+    const belongs = (fixture: ApiFixture) =>
+      fixture.teams.home.id === meta.id || fixture.teams.away.id === meta.id;
+    const recent = byDateDescFx(current.filter(belongs)).slice(0, FORM_FIXTURES);
+    const baseline = spreadSample(previous.filter(belongs), BASELINE_SAMPLE);
+    const fixtures = dedupeFixtures([...recent, ...baseline]);
+    const matches = tagBaseline(
+      await assemble(meta.id, "league", fixtures, () => ({ competitive: true, isNeutral: false })),
+      PREVIOUS_SEASON
+    );
+    profiles.push(buildTeamProfileCore({
+      id: meta.id,
+      name: meta.name,
+      logoUrl: meta.logoUrl,
+      country: meta.country,
+      entityType: "CLUB",
+      leagueId,
+      leagueMatches: matches,
+    }));
+  }
+
+  const snapshot = buildLeagueStyleSnapshot(leagueId, CURRENT_SEASON, profiles);
+  await writeLeagueStyleSnapshot(snapshot);
+  return snapshot;
 }
 
 /** Jeden denní katalog pro globální hledání; jednotlivé ligové seznamy mají vlastní cache. */

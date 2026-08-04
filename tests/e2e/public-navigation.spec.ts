@@ -94,6 +94,27 @@ test("detail týmu přepíná výkon celkem, doma a venku", async ({ page }) => 
   await expect(page.getByRole("link", { name: "Doma", exact: true })).toHaveAttribute("aria-current", "page");
 });
 
+test("ligové žebříčky přepínají pohled bez dalších datových požadavků", async ({ page }) => {
+  let styleRequests = 0;
+  page.on("request", (request) => {
+    if (request.url().includes("/api/standings/style")) styleRequests++;
+  });
+  await page.goto("/tabulky", { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { name: "Herní profil ligy" })).toBeVisible();
+  const loadedRequests = styleRequests;
+  await page.getByRole("button", { name: "Doma", exact: true }).click();
+  await page.getByRole("button", { name: /Obranná odolnost/ }).click();
+  await expect(page.getByRole("heading", { name: "Obranná odolnost" })).toBeVisible();
+  expect(styleRequests).toBe(loadedRequests);
+
+  await page.getByRole("button", { name: /Premier League/ }).first().click();
+  const dialog = page.getByRole("dialog", { name: "Vybrat ligu" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("textbox", { name: "Vyhledat ligu" }).fill("Fortuna");
+  await dialog.getByRole("option", { name: /Fortuna Liga/ }).click();
+  await expect(page.getByRole("button", { name: /Fortuna Liga/ }).first()).toBeVisible();
+});
+
 test("chyba přihlášení má srozumitelný návratový stav", async ({ page }) => {
   await page.goto("/auth/chyba?error=Configuration", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Přihlášení není správně nastavené" })).toBeVisible();

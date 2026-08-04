@@ -1,5 +1,6 @@
 import type { MetricValue, PlayStyleDimension, Venue } from "@/lib/types";
-import { valueOrTotal } from "./metricLookup";
+import { sampleOrTotal, valueOrTotal } from "./metricLookup";
+import { LOW_CONFIDENCE_SAMPLE } from "./aggregate";
 
 function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
@@ -59,7 +60,14 @@ interface DimDef {
   leftLabel: string;
   rightLabel: string;
   score: ScoreFn;
+  sample: (values: MetricValue[], venue: Venue) => number;
 }
+
+const sampleOf = (metric: MetricValue["metric"]) =>
+  (values: MetricValue[], venue: Venue) => sampleOrTotal(values, metric, venue);
+const minSampleOf = (...metrics: MetricValue["metric"][]) =>
+  (values: MetricValue[], venue: Venue) =>
+    Math.min(...metrics.map((metric) => sampleOrTotal(values, metric, venue)));
 
 const DIMS: DimDef[] = [
   {
@@ -68,6 +76,7 @@ const DIMS: DimDef[] = [
     leftLabel: "Přímá hra",
     rightLabel: "Kontrola",
     score: possessionScore,
+    sample: sampleOf("POSSESSION"),
   },
   {
     key: "buildup",
@@ -75,6 +84,7 @@ const DIMS: DimDef[] = [
     leftLabel: "Nakopávané",
     rightLabel: "Kombinační",
     score: buildupScore,
+    sample: sampleOf("SHOTS_INSIDE_BOX"),
   },
   {
     key: "pressing",
@@ -82,6 +92,7 @@ const DIMS: DimDef[] = [
     leftLabel: "Nižší aktivita",
     rightLabel: "Aktivní napadání",
     score: pressingScore,
+    sample: sampleOf("FOULS"),
   },
   {
     key: "efficiency",
@@ -89,6 +100,7 @@ const DIMS: DimDef[] = [
     leftLabel: "Nízká",
     rightLabel: "Klinická",
     score: efficiencyScore,
+    sample: minSampleOf("SHOTS", "SHOTS_ON_TARGET"),
   },
   {
     key: "defense",
@@ -96,6 +108,9 @@ const DIMS: DimDef[] = [
     leftLabel: "Propustná",
     rightLabel: "Pevná",
     score: defenseScore,
+    sample: (values, venue) =>
+      sampleOrTotal(values, "XG_AGAINST", venue) ||
+      sampleOrTotal(values, "GOALS_AGAINST", venue),
   },
 ];
 
@@ -106,6 +121,8 @@ export interface SingleTeamPlayStyleDimension {
   rightLabel: string;
   score: number;
   available: boolean;
+  sampleSize: number;
+  lowConfidence: boolean;
 }
 
 export function computeSingleTeamPlayStyle(
@@ -114,6 +131,7 @@ export function computeSingleTeamPlayStyle(
 ): SingleTeamPlayStyleDimension[] {
   return DIMS.map((dim) => {
     const score = dim.score(values, venue);
+    const sampleSize = dim.sample(values, venue);
     return {
       key: dim.key,
       label: dim.label,
@@ -121,6 +139,8 @@ export function computeSingleTeamPlayStyle(
       rightLabel: dim.rightLabel,
       score: round1(score ?? 5),
       available: score !== null,
+      sampleSize,
+      lowConfidence: score !== null && sampleSize < LOW_CONFIDENCE_SAMPLE,
     };
   });
 }
@@ -153,6 +173,9 @@ export function computePlayStyle(
       homeScore: dim.score,
       awayScore: opponent.score,
       available: dim.available && opponent.available,
+      homeSampleSize: dim.sampleSize,
+      awaySampleSize: opponent.sampleSize,
+      lowConfidence: dim.lowConfidence || opponent.lowConfidence,
     };
   });
 }

@@ -105,6 +105,14 @@ proto dělá upsert (ne createMany). Po nasazení případně urychli přes `/ap
 - Ověření, že úlohy skutečně běží: GitHub → Actions → Cron (zelená/červená u každého běhu
   a v logu odpověď endpointu). Vercel dashboard už crony neukazuje, protože tam žádné nejsou.
 
+### Herní profil ligy
+
+- GitHub Actions spouští denně úlohu `refresh-league-styles` pro všech 18 klubových lig. První naplnění je rotační po třech studených ligách denně; po inicializaci se všechny snapshoty obnovují denně.
+- Každá liga běží v samostatném chráněném requestu `GET /api/cron/refresh-league-styles?league=ID`, aby nepřekročila 60s limit Vercel Hobby.
+- Import používá dva ligové seznamy zápasů (aktuální a předchozí sezona) a dotahuje jen chybějící statistiky. Jedna odpověď `/fixtures/statistics` se ukládá pro oba týmy.
+- Uživatelské routy `/api/standings/style` a `/api/standings/style/full` snapshot pouze čtou; při chybějícím snapshotu nikdy nespouštějí upstream API.
+- Veřejná route vrací Top 5, úplná route je serverově uzamčená pro PRO. Poslední platný snapshot se čte i po expiraci, pokud další obnova selže.
+
 ## Deployment
 GitHub `Daifyyy/VSPredictApp` → Vercel (auto-deploy na push do `main`). Env na Vercelu:
 `API_FOOTBALL_KEY`, `DATABASE_URL` (Neon pooled), `AUTH_SECRET`, `AUTH_URL`,

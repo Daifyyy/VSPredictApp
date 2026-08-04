@@ -6,6 +6,7 @@ import type {
   LeagueGoalsAvg,
   LeagueRound,
   LeagueScorer,
+  LeagueStyleSnapshot,
   LeagueTable,
   LeagueTableRow,
   LiveScore,
@@ -53,6 +54,9 @@ import {
 import * as real from "./realRepository";
 import type { SearchableTeam } from "@/lib/teamSearch";
 import { leagueDisplayName } from "./catalog";
+import { buildTeamProfileCore } from "@/lib/teamProfile";
+import { buildLeagueStyleSnapshot } from "@/lib/stats/leagueStyle";
+import { CURRENT_SEASON } from "./catalog";
 
 /**
  * Datová vrstva aplikace. Při nakonfigurovaném API klíči + DB čte reálná data
@@ -648,6 +652,12 @@ export async function getLeagueTable(leagueId: number): Promise<LeagueTable | nu
   return mockLeagueTable(leagueId);
 }
 
+export async function getLeagueStyleSnapshot(leagueId: number): Promise<LeagueStyleSnapshot | null> {
+  if (useReal) return real.getLeagueStyleSnapshot(leagueId);
+  const profiles = mockLeagueClubTeams(leagueId).map((team) => buildTeamProfileCore(team));
+  return profiles.length ? buildLeagueStyleSnapshot(leagueId, CURRENT_SEASON, profiles) : null;
+}
+
 function mockLeagueTable(leagueId: number): LeagueTable | null {
   const teams = allMockTeams().filter(
     (t) => t.leagueId === leagueId && t.entityType !== "NATIONAL"
@@ -662,6 +672,7 @@ function mockLeagueTable(leagueId: number): LeagueTable | null {
       const played = wins + draws + losses;
       const goalsFor = 45 - rank;
       const goalsAgainst = 12 + rank;
+      const half = (value: number) => Math.round(value / 2);
       const zone =
         rank <= 2
           ? ("champions" as const)
@@ -685,6 +696,16 @@ function mockLeagueTable(leagueId: number): LeagueTable | null {
         points: wins * 3 + draws,
         form: "WWDLW",
         zone,
+        all: { played, win: wins, draw: draws, lose: losses, goalsFor, goalsAgainst },
+        home: {
+          played: half(played), win: half(wins), draw: half(draws), lose: half(losses),
+          goalsFor: half(goalsFor), goalsAgainst: half(goalsAgainst),
+        },
+        away: {
+          played: played - half(played), win: wins - half(wins), draw: draws - half(draws),
+          lose: losses - half(losses), goalsFor: goalsFor - half(goalsFor),
+          goalsAgainst: goalsAgainst - half(goalsAgainst),
+        },
       };
     })
     .sort((a, b) => a.rank - b.rank);

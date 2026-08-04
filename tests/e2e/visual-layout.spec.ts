@@ -22,4 +22,14 @@ for (const width of widths) {
       contentType: "image/png",
     });
   });
+
+  test(`ligové žebříčky při šířce ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/tabulky", { waitUntil: "networkidle" });
+    await expect(page.getByRole("heading", { name: "Herní profil ligy" })).toBeVisible();
+    await testInfo.attach(`standings-${width}.png`, {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: "image/png",
+    });
+  });
 }

@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const getSearchableTeams = vi.fn();
-const allowRequest = vi.fn(() => true);
+const { getSearchableTeams, allowRequest } = vi.hoisted(() => ({
+  getSearchableTeams: vi.fn(),
+  allowRequest: vi.fn(() => true),
+}));
 
 vi.mock("@/lib/data/repository", () => ({ getSearchableTeams }));
 vi.mock("@/lib/logError", () => ({ logError: vi.fn() }));

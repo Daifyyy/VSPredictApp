@@ -190,11 +190,6 @@ body {
   .app-page {
     padding: 1.5rem 2rem 4rem 19rem;
   }
-
-  .app-topbar {
-    padding-left: 18rem;
-    padding-right: 2rem;
-  }
 }
 
 @media (max-width: 767px) {

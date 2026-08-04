@@ -1,15 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { AppHeader } from "./AppHeader";
 import { TeamLogo } from "./TeamLogo";
 import { StandingsTable, ZoneLegend } from "./StandingsTable";
 import { LeagueScorerList } from "./LeagueScorerList";
 import { buildCompareHref } from "./compareHref";
 import { CLUB_LEAGUES, leagueDisplayName } from "@/lib/data/catalog";
-import type { LeagueRound, LeagueScorer, LeagueTable, RoundFixture } from "@/lib/types";
+import type { LeagueRound, LeagueScorer, LeagueStyleKey, LeagueStyleSnapshot, LeagueTable, RoundFixture, Venue } from "@/lib/types";
 import { useCurrentUser } from "./useCurrentUser";
+import { leagueRowsForVenue } from "@/lib/leagueTable";
+import { LEAGUE_STYLE_KEYS, LEAGUE_STYLE_META } from "@/lib/stats/leagueStyle";
 
 const DEFAULT_LEAGUE = 39; // Premier League
 const STORAGE_KEY = "tabulky:league";
@@ -31,6 +33,28 @@ async function loadTable(
     const d: { table: LeagueTable | null } = await r.json();
     if (!isActive()) return;
     setTable(d.table);
+    setStatus("ok");
+  } catch {
+    if (isActive()) setStatus("error");
+  }
+}
+
+async function loadStyle(
+  leagueId: number,
+  pro: boolean,
+  isActive: () => boolean,
+  setSnapshot: (snapshot: LeagueStyleSnapshot | null) => void,
+  setStatus: (status: Status) => void
+): Promise<void> {
+  setStatus("loading");
+  setSnapshot(null);
+  try {
+    const endpoint = pro ? "/api/standings/style/full" : "/api/standings/style";
+    const response = await fetch(`${endpoint}?league=${leagueId}`);
+    if (!response.ok) throw new Error("http");
+    const data = await response.json() as { snapshot: LeagueStyleSnapshot | null };
+    if (!isActive()) return;
+    setSnapshot(data.snapshot);
     setStatus("ok");
   } catch {
     if (isActive()) setStatus("error");
@@ -105,6 +129,8 @@ function restoreLeague(apply: (id: number) => void): void {
 export function TabulkyApp() {
   const user = useCurrentUser();
   const [leagueId, setLeagueId] = useState(DEFAULT_LEAGUE);
+  const [venue, setVenue] = useState<Venue>("TOTAL");
+  const [styleKey, setStyleKey] = useState<LeagueStyleKey>("possession");
   const [table, setTable] = useState<LeagueTable | null>(null);
   const [status, setStatus] = useState<Status>("loading");
   const [round, setRound] = useState<LeagueRound | null>(null);
@@ -114,6 +140,8 @@ export function TabulkyApp() {
     assists: [],
   });
   const [scorersStatus, setScorersStatus] = useState<Status>("loading");
+  const [styleSnapshot, setStyleSnapshot] = useState<LeagueStyleSnapshot | null>(null);
+  const [styleStatus, setStyleStatus] = useState<Status>("loading");
 
   // Po mountu obnov poslední zvolenou ligu (bez SSR hydration mismatchu).
   useEffect(() => {
@@ -130,6 +158,12 @@ export function TabulkyApp() {
     };
   }, [leagueId]);
 
+  useEffect(() => {
+    let active = true;
+    void loadStyle(leagueId, user?.tier === "PRO", () => active, setStyleSnapshot, setStyleStatus);
+    return () => { active = false; };
+  }, [leagueId, user?.tier]);
+
   function select(id: number) {
     setLeagueId(id);
     try {
@@ -140,10 +174,11 @@ export function TabulkyApp() {
   }
 
   const league = CLUB_LEAGUES.find((l) => l.id === leagueId);
-  const rows = table?.rows ?? [];
+  const totalRows = table?.rows ?? [];
+  const rows = leagueRowsForVenue(totalRows, venue);
   // Předsezóna: API vrací týmy, ale všechny s 0 odehranými (tabulka samých nul) →
   // ber to jako prázdný stav (informativní hláška místo bezcenné tabulky).
-  const hasPlayed = rows.some((r) => r.played > 0);
+  const hasPlayed = totalRows.some((r) => r.played > 0);
 
   return (
     <main className="app-page">
@@ -154,7 +189,7 @@ export function TabulkyApp() {
         Aktuální pořadí vybrané ligy – pozice, body, skóre a forma.
       </p>
 
-      <LeaguePicker selected={leagueId} onSelect={select} />
+      <LeagueToolbar selected={leagueId} venue={venue} onSelect={select} onVenue={setVenue} />
 
       <section className="mt-4">
         {status === "loading" ? (
@@ -176,10 +211,22 @@ export function TabulkyApp() {
                 {(table.leagueAvg.goalsFor * 2).toFixed(2)} gólu)
               </p>
             )}
-            <ZoneLegend rows={rows} />
+            {venue === "TOTAL" ? <ZoneLegend rows={rows} /> : (
+              <p className="mt-2 text-xs text-muted">Dílčí pořadí podle bodů získaných {venue === "HOME" ? "doma" : "venku"}; nejde o oficiální tabulku ligy.</p>
+            )}
           </>
         )}
       </section>
+
+      <LeagueStyleSection
+        snapshot={styleSnapshot}
+        status={styleStatus}
+        venue={venue}
+        selected={styleKey}
+        onSelect={setStyleKey}
+        isPro={user?.tier === "PRO"}
+        leagueId={leagueId}
+      />
 
       {/* Obě podsekce se dotahují samostatně, proto mají vlastní stav. Dřív se jen tiše
           objevily o pár vteřin později a posunuly obsah pod sebou. */}
@@ -300,45 +347,47 @@ function RoundList({
   );
 }
 
-function LeaguePicker({
-  selected,
-  onSelect,
-}: {
-  selected: number;
-  onSelect: (id: number) => void;
+function LeagueToolbar({ selected, venue, onSelect, onVenue }: {
+  selected: number; venue: Venue; onSelect: (id: number) => void; onVenue: (venue: Venue) => void;
 }) {
-  const activeRef = useRef<HTMLButtonElement>(null);
-
-  // Zajisti, že aktivní liga je vidět v horizontálním pásku (po obnově z localStorage).
-  useEffect(() => {
-    activeRef.current?.scrollIntoView({ inline: "center", block: "nearest" });
-  }, [selected]);
-
-  return (
-    <div className="mt-4 -mx-4 overflow-x-auto px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      <div className="flex gap-2 pb-1">
-        {CLUB_LEAGUES.map((l) => {
-          const active = l.id === selected;
-          return (
-            <button
-              key={l.id}
-              ref={active ? activeRef : undefined}
-              type="button"
-              onClick={() => onSelect(l.id)}
-              className={`flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition ${
-                active
-                  ? "border-home bg-home/10 text-foreground"
-                  : "border-border bg-surface text-muted hover:text-foreground"
-              }`}
-            >
-              <TeamLogo src={l.logoUrl} alt={l.name} size={18} />
-              <span className="whitespace-nowrap">{leagueDisplayName(l)}</span>
-            </button>
-          );
-        })}
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const selectedLeague = CLUB_LEAGUES.find((league) => league.id === selected)!;
+  const needle = query.trim().toLocaleLowerCase("cs");
+  const filtered = CLUB_LEAGUES.filter((league) => `${leagueDisplayName(league)} ${league.country}`.toLocaleLowerCase("cs").includes(needle));
+  return <div className="sticky top-0 z-20 mt-5 rounded-xl border border-border bg-background/95 p-2 shadow-sm backdrop-blur">
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <button type="button" onClick={() => setOpen(true)} aria-haspopup="dialog" className="ui-control flex min-w-0 items-center gap-2 px-3 text-left font-semibold text-foreground hover:border-positive/40">
+        <TeamLogo src={selectedLeague.logoUrl} alt={selectedLeague.name} size={24} /><span className="min-w-0 flex-1 truncate">{leagueDisplayName(selectedLeague)}</span><span aria-hidden className="text-muted">⌄</span>
+      </button>
+      <div className="grid grid-cols-3 rounded-lg border border-border bg-surface p-1" aria-label="Místo výkonu">
+        {(["TOTAL", "HOME", "AWAY"] as Venue[]).map((item) => <button key={item} type="button" onClick={() => onVenue(item)} aria-pressed={venue === item} className={`min-h-9 rounded-md px-3 text-sm font-semibold ${venue === item ? "bg-accent/40 text-foreground" : "text-muted hover:text-foreground"}`}>{item === "TOTAL" ? "Celkem" : item === "HOME" ? "Doma" : "Venku"}</button>)}
       </div>
     </div>
-  );
+    {open ? <div className="fixed inset-0 z-[80] grid place-items-center bg-foreground/20 p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Vybrat ligu" onKeyDown={(event) => { if (event.key === "Escape") { setOpen(false); setQuery(""); } }}>
+      <div className="flex max-h-[min(42rem,90vh)] w-full max-w-lg flex-col rounded-2xl border border-border bg-surface p-3 shadow-xl">
+        <div className="flex items-center gap-2"><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Vyhledat ligu…" aria-label="Vyhledat ligu" className="ui-control min-w-0 flex-1 px-3 text-sm outline-none focus:border-positive" /><button type="button" onClick={() => { setOpen(false); setQuery(""); }} className="min-h-11 rounded-lg px-3 text-sm font-semibold text-muted">Zavřít</button></div>
+        <div className="mt-2 overflow-y-auto" role="listbox" aria-label="Ligy">
+          {filtered.map((league) => <button key={league.id} type="button" role="option" aria-selected={league.id === selected} onClick={() => { onSelect(league.id); setOpen(false); setQuery(""); }} className={`flex min-h-12 w-full items-center gap-3 rounded-lg px-3 text-left ${league.id === selected ? "bg-accent/25" : "hover:bg-background"}`}><TeamLogo src={league.logoUrl} alt={league.name} size={26} /><span className="min-w-0"><span className="block truncate text-sm font-semibold text-foreground">{leagueDisplayName(league)}</span><span className="block text-xs text-muted">{league.country}</span></span></button>)}
+          {filtered.length === 0 ? <p className="p-4 text-sm text-muted">Žádná liga nebyla nalezena.</p> : null}
+        </div>
+      </div>
+    </div> : null}
+  </div>;
+}
+
+function LeagueStyleSection({ snapshot, status, venue, selected, onSelect, isPro, leagueId }: { snapshot: LeagueStyleSnapshot | null; status: Status; venue: Venue; selected: LeagueStyleKey; onSelect: (key: LeagueStyleKey) => void; isPro: boolean; leagueId: number; }) {
+  if (status === "loading") return <section className="mt-8"><CardsSkeleton /></section>;
+  if (!snapshot) return <section className="mt-8"><Note>{status === "error" ? "Herní žebříčky se nepodařilo načíst." : "Žebříček připravujeme. Návštěva stránky nespouští žádné placené API volání."}</Note></section>;
+  const current = snapshot.rankings[venue][selected];
+  const coverage = snapshot.coverage[venue];
+  const updated = new Date(snapshot.updatedAt).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" });
+  return <section className="mt-8" aria-labelledby="league-style-title">
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between"><div><h2 id="league-style-title" className="text-xl font-bold text-foreground">Herní profil ligy</h2><p className="mt-1 text-sm text-muted">Kurátorované charakteristiky, ne surový výpis statistik ani univerzální hodnocení kvality.</p></div><p className="text-xs text-muted">Aktualizováno {updated} · data pro {coverage.eligible}/{coverage.total} týmů</p></div>
+    <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">{LEAGUE_STYLE_KEYS.map((key) => { const leader = snapshot.rankings[venue][key][0]; const meta = LEAGUE_STYLE_META[key]; return <button key={key} type="button" onClick={() => onSelect(key)} aria-pressed={selected === key} className={`data-card min-h-24 p-3 text-left ${selected === key ? "border-positive ring-2 ring-positive/10" : ""}`}><span className="block text-xs font-semibold text-muted">{meta.label}</span><span className="mt-2 flex items-center gap-2 text-sm font-bold text-foreground">{leader ? <><TeamLogo src={leader.logoUrl} alt={leader.name} size={22} /><span className="truncate">{leader.name}</span><span className="ml-auto tabular-nums text-positive">{leader.score.toFixed(1)}</span></> : "Málo dat"}</span></button>; })}</div>
+    <div className="ui-panel mt-3 overflow-hidden"><div className="border-b border-border px-4 py-3"><h3 className="font-bold text-foreground">{LEAGUE_STYLE_META[selected].label}</h3><p className="mt-1 text-xs leading-5 text-muted">{LEAGUE_STYLE_META[selected].note}</p></div><ol className="divide-y divide-border">{current.map((entry) => <li key={entry.teamId} className="grid min-h-14 grid-cols-[2rem_1fr_auto] items-center gap-2 px-4 py-2"><span className="text-center text-sm font-bold tabular-nums text-muted">{entry.rank}.</span><Link href={`/tym/${entry.teamId}?league=${leagueId}&venue=${venue}`} className="flex min-w-0 items-center gap-2 rounded hover:text-positive"><TeamLogo src={entry.logoUrl} alt={entry.name} size={26} /><span className="truncate text-sm font-semibold">{entry.name}</span></Link><span className="text-right"><span className="block font-bold tabular-nums text-foreground">{entry.score.toFixed(1)}/10</span><span className={`block text-[10px] ${entry.lowConfidence ? "text-warning" : "text-muted"}`}>{entry.lowConfidence ? "málo dat" : `${entry.sampleSize} zápasů`}</span></span></li>)}</ol>{!isPro ? <div className="border-t border-border bg-background px-4 py-4 text-center text-sm text-muted">Zobrazeno Top 5. <Link href="/api/auth/signin" className="font-semibold text-positive hover:underline">Přihlásit se k PRO pro celý žebříček</Link>.</div> : null}</div>
+    <p className="mt-2 text-[11px] leading-5 text-muted">Aktivita bez míče a styl útoku jsou orientační proxy z dostupných zápasových statistik. Přepnutí pohledu ani metriky nevolá API-Football.</p>
+  </section>;
 }
 
 function TableSkeleton() {

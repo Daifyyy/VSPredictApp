@@ -29,6 +29,7 @@ on:
     # okamžik, kdy by seděly dva rozvrhy naráz.
     - cron: "20 * * * *"
     # Denní údržba (časy odpovídají původnímu vercel.json).
+    - cron: "0 3 * * *" # refresh-league-styles
     - cron: "0 4 * * *" # warm
     - cron: "30 4 * * *" # predict-upcoming
     - cron: "0 5 * * *" # refresh-transfers
@@ -52,6 +53,7 @@ on:
         type: choice
         options:
           - snapshot-odds
+          - refresh-league-styles
           - warm
           - predict-upcoming
           - refresh-transfers
@@ -83,6 +85,7 @@ jobs:
           fi
           case "$SCHEDULE" in
             "20 * * * *")   path="snapshot-odds" ;;
+            "0 3 * * *")    path="refresh-league-styles" ;;
             "0 4 * * *")    path="warm" ;;
             "30 4 * * *")   path="predict-upcoming" ;;
             "0 5 * * *")    path="refresh-transfers" ;;
@@ -109,6 +112,26 @@ jobs:
           fi
           # `warm` má jinou cestu než ostatní (není pod /cron/).
           if [ "$JOB" = "warm" ]; then url="$APP_URL/api/warm"; else url="$APP_URL/api/cron/$JOB"; fi
+          if [ "$JOB" = "refresh-league-styles" ]; then
+            failed=0
+            index=0
+            cold_start=$(( (10#$(date -u +%j) * 3) % 18 ))
+            cold_next=$(( (cold_start + 1) % 18 ))
+            cold_last=$(( (cold_start + 2) % 18 ))
+            for league in 39 140 135 78 61 94 88 40 144 203 345 179 197 103 119 106 218 207; do
+              cold=0
+              if [ "$index" -eq "$cold_start" ] || [ "$index" -eq "$cold_next" ] || [ "$index" -eq "$cold_last" ]; then cold=1; fi
+              url="$APP_URL/api/cron/refresh-league-styles?league=$league&cold=$cold"
+              echo "→ $url"
+              curl --fail-with-body --silent --show-error --location \
+                   --max-time 90 --retry 1 --retry-delay 10 \
+                   --header "Authorization: Bearer $CRON_SECRET" "$url" || failed=$((failed + 1))
+              echo
+              index=$((index + 1))
+            done
+            if [ "$failed" -gt 0 ]; then echo "$failed ligových snapshotů selhalo." >&2; exit 1; fi
+            exit 0
+          fi
           echo "→ $url"
           # `--fail-with-body` = nenulový exit u 4xx/5xx, ale tělo se pořád vypíše,
           # takže je v logu vidět DŮVOD. Statusy, které sem chodí:

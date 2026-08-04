@@ -514,12 +514,41 @@ export interface LeagueTableRow {
   form: string | null;
   /** Zóna pro barevné zvýraznění (evropský pohár / postup / sestup), nebo `null`. */
   zone: LeagueTableZone | null;
+  /** Všechny venue splity pocházejí ze stejné odpovědi `/standings`. */
+  all: StandingSplit;
+  home: StandingSplit;
+  away: StandingSplit;
 }
 
 /** Celá ligová tabulka + ligový průměr gólů na zápas (FREE, sdílí `standings:` cache). */
 export interface LeagueTable {
   rows: LeagueTableRow[];
   leagueAvg: LeagueGoalsAvg | null;
+}
+
+export type LeagueStyleKey =
+  | "possession"
+  | "buildup"
+  | "pressing"
+  | "efficiency"
+  | "defense";
+
+export interface LeagueStyleRankingEntry {
+  rank: number;
+  teamId: number;
+  name: string;
+  logoUrl: string;
+  score: number;
+  sampleSize: number;
+  lowConfidence: boolean;
+}
+
+export interface LeagueStyleSnapshot {
+  leagueId: number;
+  season: number;
+  updatedAt: string;
+  coverage: Record<Venue, { eligible: number; total: number }>;
+  rankings: Record<Venue, Record<LeagueStyleKey, LeagueStyleRankingEntry[]>>;
 }
 
 /**
@@ -946,6 +975,9 @@ export interface PlayStyleDimension {
   homeScore: number;
   awayScore: number;
   available: boolean;
+  homeSampleSize: number;
+  awaySampleSize: number;
+  lowConfidence: boolean;
 }
 
 export interface LeagueGoalsAvg {

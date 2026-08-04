@@ -130,6 +130,8 @@ export function normalizeLeagueTable(raw: ApiStandingRow[]): LeagueTableRow[] {
   return raw
     .map((r) => {
       const all = split(r.all);
+      const home = split(r.home);
+      const away = split(r.away);
       return {
         rank: r.rank,
         teamId: r.team.id,
@@ -145,6 +147,9 @@ export function normalizeLeagueTable(raw: ApiStandingRow[]): LeagueTableRow[] {
         points: r.points ?? 0,
         form: r.form ?? null,
         zone: zoneFromDescription(r.description),
+        all,
+        home,
+        away,
       };
     })
     .sort((a, b) => a.rank - b.rank);
