@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computePlayStyle } from "./playStyle";
+import { computePlayStyle, computeSingleTeamPlayStyle } from "./playStyle";
 import type { Metric, MetricValue, Venue } from "@/lib/types";
 
 function mv(
@@ -18,6 +18,20 @@ const both = (metric: Metric, hv: number, av: number) =>
   computePlayStyle([mv(metric, hv)], [mv(metric, av)], "TOTAL");
 
 describe("computePlayStyle", () => {
+  it("vytvoří samostatný profil týmu bez umělého soupeře", () => {
+    const profile = computeSingleTeamPlayStyle(
+      [mv("POSSESSION", 62), mv("FOULS", 14)],
+      "TOTAL"
+    );
+    expect(profile.find((item) => item.key === "possession")).toMatchObject({
+      score: 8,
+      available: true,
+    });
+    expect(profile.find((item) => item.key === "pressing")).toMatchObject({
+      score: 5,
+      available: true,
+    });
+  });
   it("škáluje ABSOLUTNĚ, ne vůči soupeři", () => {
     // Tohle je celý rozdíl proti `categories.ts`: „hraje kombinačně" musí platit
     // nezávisle na tom, kdo stojí proti. Stejný tým proti různým soupeřům = stejné číslo.

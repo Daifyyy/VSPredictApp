@@ -84,6 +84,32 @@ const DIMS: DimDef[] = [
   },
 ];
 
+export interface SingleTeamPlayStyleDimension {
+  key: PlayStyleDimension["key"];
+  label: string;
+  leftLabel: string;
+  rightLabel: string;
+  score: number;
+  available: boolean;
+}
+
+export function computeSingleTeamPlayStyle(
+  values: MetricValue[],
+  venue: Venue
+): SingleTeamPlayStyleDimension[] {
+  return DIMS.map((dim) => {
+    const score = dim.score(values, venue);
+    return {
+      key: dim.key,
+      label: dim.label,
+      leftLabel: dim.leftLabel,
+      rightLabel: dim.rightLabel,
+      score: round1(score ?? 5),
+      available: score !== null,
+    };
+  });
+}
+
 /**
  * Spočítá 4 stylové dimenze (0–10) pro oba týmy najednou.
  * Hodnoty jsou absolutní (fixní škála), ne relativní vůči soupeři —
@@ -99,19 +125,19 @@ export function computePlayStyle(
   awayValues: MetricValue[],
   venue: Venue
 ): PlayStyleDimension[] {
-  return DIMS.map((dim) => {
-    const hs = dim.score(homeValues, venue);
-    const as_ = dim.score(awayValues, venue);
-    const available = hs !== null && as_ !== null;
+  const home = computeSingleTeamPlayStyle(homeValues, venue);
+  const away = computeSingleTeamPlayStyle(awayValues, venue);
+  return home.map((dim, index) => {
+    const opponent = away[index];
 
     return {
       key: dim.key,
       label: dim.label,
       leftLabel: dim.leftLabel,
       rightLabel: dim.rightLabel,
-      homeScore: round1(hs ?? 5),
-      awayScore: round1(as_ ?? 5),
-      available,
+      homeScore: dim.score,
+      awayScore: opponent.score,
+      available: dim.available && opponent.available,
     };
   });
 }

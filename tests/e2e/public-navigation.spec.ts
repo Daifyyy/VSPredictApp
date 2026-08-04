@@ -66,3 +66,19 @@ test("mobilní navigace je viditelná a nepřekrývá konec stránky", async ({ 
     viewport?.height ?? 0
   );
 });
+
+test("detail týmu přepíná výkon celkem, doma a venku", async ({ page }) => {
+  await page.goto("/tym/50?league=39", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { level: 1, name: "Manchester City" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Herní profil" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Statistická výkonnost" })).toBeVisible();
+  await page.getByRole("link", { name: "Doma", exact: true }).click();
+  await expect(page).toHaveURL(/venue=HOME/);
+  await expect(page.getByRole("link", { name: "Doma", exact: true })).toHaveAttribute("aria-current", "page");
+});
+
+test("chyba přihlášení má srozumitelný návratový stav", async ({ page }) => {
+  await page.goto("/auth/chyba?error=Configuration", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Přihlášení není správně nastavené" })).toBeVisible();
+  await expect(page.getByText("Kód chyby: Configuration")).toBeVisible();
+});

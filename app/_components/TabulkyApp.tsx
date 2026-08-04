@@ -168,7 +168,7 @@ export function TabulkyApp() {
           </Note>
         ) : (
           <>
-            <StandingsTable rows={rows} />
+            <StandingsTable rows={rows} leagueId={leagueId} />
             {table?.leagueAvg && (
               <p className="mt-2 text-xs text-muted">
                 ⌀ tým v lize vstřelí {table.leagueAvg.goalsFor.toFixed(2)} gólu na zápas

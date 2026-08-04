@@ -111,15 +111,15 @@ GitHub `Daifyyy/statapp` → Vercel (auto-deploy na push do `main`). Env na Verc
 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, **`CRON_SECRET`** (povinný — bez něj se crony
 uzamknou na 503, viz „Plánované úlohy") a volitelně `PRO_EMAILS`
 (always-PRO allowlist; změna env vyžaduje redeploy). `postinstall:
-prisma generate` zajistí klienta při buildu. Live: https://statapp-uvol.vercel.app
+prisma generate` zajistí klienta při buildu. Live: https://vs-predict-app.vercel.app
 **Auth host (DŮLEŽITÉ):** `trustHost: true` → bez `AUTH_URL` bere Auth.js host z requestu,
 což je u Vercelu **deployment-specific URL** (`…-<hash>-…vercel.app`, mění se každým buildem)
 → `redirect_uri` neodpovídá whitelistu a Google vrací `Error 400: redirect_uri_mismatch`.
-Proto **`AUTH_URL=https://statapp-uvol.vercel.app`** (stabilní doména) → redirect je vždy
+Proto **`AUTH_URL=https://vs-predict-app.vercel.app`** (stabilní doména) → redirect je vždy
 konzistentní. Přihlašovat se přes produkční doménu, ne přes deployment URL.
 **Google OAuth (Cloud Console → Credentials):** Authorized redirect URI
-`https://statapp-uvol.vercel.app/api/auth/callback/google` + `http://localhost:3000/api/auth/callback/google`
-(lokál); Authorized JavaScript origin `https://statapp-uvol.vercel.app`. Musí sedět znak po
+`https://vs-predict-app.vercel.app/api/auth/callback/google` + `http://localhost:3000/api/auth/callback/google`
+(lokál); Authorized JavaScript origin `https://vs-predict-app.vercel.app`. Musí sedět znak po
 znaku (https, bez koncového `/`).
 **Pozn. (lokál):** Google token exchange = odchozí TLS → `npm run dev` spouštěj s
 `NODE_OPTIONS=--use-system-ca` (jako probe/prisma). Bez auth env app běží jako anonym (FREE).

@@ -11,7 +11,7 @@ const DESCRIPTION =
 export const metadata: Metadata = {
   // Základ pro absolutní URL OG/twitter obrázků (prod doména, fallback z AUTH_URL).
   metadataBase: new URL(
-    process.env.AUTH_URL ?? "https://statapp-uvol.vercel.app"
+    process.env.AUTH_URL ?? "https://vs-predict-app.vercel.app"
   ),
   title: {
     default: TITLE,

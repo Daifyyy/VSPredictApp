@@ -50,6 +50,16 @@ describe("selectCurrentInjuries", () => {
     expect(out).toEqual([{ playerId: 1, name: "A", reason: "Aktuální" }]);
   });
 
+  it("dedupuje stejné normalizované jméno i při rozdílném ID", () => {
+    const raw = [
+      inj(10, "  João   Félix ", daysAgo(1), "Aktuální"),
+      inj(11, "joao felix", daysAgo(2), "Starší"),
+    ];
+    expect(selectCurrentInjuries(raw, NOW)).toEqual([
+      { playerId: 10, name: "  João   Félix ", reason: "Aktuální" },
+    ]);
+  });
+
   it("fallback reason: type, pak 'Zranění'", () => {
     const a: ApiInjury = {
       player: { id: 1, name: "A" },
