@@ -45,6 +45,14 @@ const efficiencyScore: ScoreFn = (values, venue) => {
   return clamp(sot / s, 0, 1) * 10;
 };
 
+// Obranná odolnost = kolik kvalitních šancí tým dovolí. xGA má přednost; u starší cache
+// bez soupeřova xG použijeme skutečně inkasované góly a UI dál ukáže dostupný vzorek.
+const defenseScore: ScoreFn = (values, venue) => {
+  const xga = valueOrTotal(values, "XG_AGAINST", venue);
+  const conceded = xga ?? valueOrTotal(values, "GOALS_AGAINST", venue);
+  return conceded !== null ? clamp((2.5 - conceded) / 2, 0, 1) * 10 : null;
+};
+
 interface DimDef {
   key: PlayStyleDimension["key"];
   label: string;
@@ -70,9 +78,9 @@ const DIMS: DimDef[] = [
   },
   {
     key: "pressing",
-    label: "Pressing",
-    leftLabel: "Pasivní",
-    rightLabel: "Vysoký pressing",
+    label: "Aktivita bez míče (odhad)",
+    leftLabel: "Nižší aktivita",
+    rightLabel: "Aktivní napadání",
     score: pressingScore,
   },
   {
@@ -81,6 +89,13 @@ const DIMS: DimDef[] = [
     leftLabel: "Nízká",
     rightLabel: "Klinická",
     score: efficiencyScore,
+  },
+  {
+    key: "defense",
+    label: "Obranná odolnost",
+    leftLabel: "Propustná",
+    rightLabel: "Pevná",
+    score: defenseScore,
   },
 ];
 

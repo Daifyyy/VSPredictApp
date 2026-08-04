@@ -155,6 +155,7 @@ describe("computePlayStyle", () => {
       "buildup",
       "pressing",
       "efficiency",
+      "defense",
     ]);
     // Popisky pólů nesou význam směru – prohození by obrátilo čtení pruhu.
     expect(dim(dims, "possession").leftLabel).toBe("Přímá hra");

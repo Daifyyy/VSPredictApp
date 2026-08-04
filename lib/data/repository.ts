@@ -58,7 +58,7 @@ import * as real from "./realRepository";
  * Výpočetní jádro (lib/stats) je na zdroji nezávislé.
  */
 
-type TeamLite = Pick<Team, "id" | "name" | "logoUrl" | "country" | "entityType">;
+type TeamLite = Pick<Team, "id" | "name" | "logoUrl" | "country" | "entityType" | "stadium">;
 
 const useReal = isRealDataConfigured();
 
@@ -80,12 +80,13 @@ export async function getTeamsByLeague(
   if (useReal) return real.getTeamsByLeague(leagueId);
   return allMockTeams()
     .filter((t) => t.leagueId === leagueId)
-    .map(({ id, name, logoUrl, country, entityType }) => ({
+    .map(({ id, name, logoUrl, country, entityType, stadium }) => ({
       id,
       name,
       logoUrl,
       country,
       entityType,
+      stadium,
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "cs"));
 }

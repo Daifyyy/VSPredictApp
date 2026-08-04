@@ -119,7 +119,7 @@ const CLUB_FALLBACK_LAST = 20;
 type TeamLite = Pick<Team, "id" | "name" | "logoUrl" | "country" | "entityType">;
 
 /** Název/logo klubu, když ho nelze dohledat v seznamu týmů ligy (nováček, nová sezóna). */
-export type ClubMeta = Pick<Team, "name" | "logoUrl" | "country">;
+export type ClubMeta = Pick<Team, "name" | "logoUrl" | "country" | "stadium">;
 
 // ---- Veřejné API repository ----
 
@@ -230,7 +230,7 @@ export async function getTeamsByLeague(leagueId: number): Promise<TeamLite[]> {
   }
 
   const current = await cachedJson(
-    `teams:${leagueId}:${CURRENT_SEASON}`,
+    `teams:v2:${leagueId}:${CURRENT_SEASON}`,
     LIST_TTL,
     () => fetchLeagueTeams(leagueId, CURRENT_SEASON)
   );
@@ -242,7 +242,7 @@ export async function getTeamsByLeague(leagueId: number): Promise<TeamLite[]> {
   const teams = current.length
     ? current
     : await cachedJson(
-        `teams:${leagueId}:${PREVIOUS_SEASON}`,
+        `teams:v2:${leagueId}:${PREVIOUS_SEASON}`,
         LIST_TTL,
         () => fetchLeagueTeams(leagueId, PREVIOUS_SEASON)
       );
@@ -253,6 +253,17 @@ export async function getTeamsByLeague(leagueId: number): Promise<TeamLite[]> {
       logoUrl: t.team.logo,
       country: "",
       entityType: "CLUB" as const,
+      stadium: t.venue
+        ? {
+            id: t.venue.id ?? null,
+            name: t.venue.name ?? null,
+            address: t.venue.address ?? null,
+            city: t.venue.city ?? null,
+            capacity: t.venue.capacity ?? null,
+            surface: t.venue.surface ?? null,
+            imageUrl: t.venue.image ?? null,
+          }
+        : undefined,
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "cs"));
 }
@@ -1137,6 +1148,7 @@ async function buildClubTeam(
     logoUrl: meta.logoUrl,
     country: meta.country,
     entityType: "CLUB",
+    stadium: meta.stadium,
     leagueId,
     leagueMatches,
     euroMatches,

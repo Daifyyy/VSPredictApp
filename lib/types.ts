@@ -360,11 +360,23 @@ export interface Team {
   logoUrl: string;
   country: string;
   entityType: EntityType;
+  /** Domácí stadion z API-Football; u reprezentací a některých klubů nemusí být dostupný. */
+  stadium?: TeamStadium;
   leagueId: number; // domácí liga (klub) / „pseudoliga" reprezentací
   /** Zápasy v domácí lize / soutěžní internacionály. */
   leagueMatches: MatchStat[];
   /** Zápasy v evropských pohárech (UCL/UEL/UECL), pokud tým hraje. */
   euroMatches?: MatchStat[];
+}
+
+export interface TeamStadium {
+  id: number | null;
+  name: string | null;
+  address: string | null;
+  city: string | null;
+  capacity: number | null;
+  surface: string | null;
+  imageUrl: string | null;
 }
 
 /** Výsledek jednoho zápasu z pohledu týmu (forma). */
@@ -927,7 +939,7 @@ export interface CategoryScore {
 }
 
 export interface PlayStyleDimension {
-  key: "possession" | "buildup" | "pressing" | "efficiency";
+  key: "possession" | "buildup" | "pressing" | "efficiency" | "defense";
   label: string;
   leftLabel: string;
   rightLabel: string;

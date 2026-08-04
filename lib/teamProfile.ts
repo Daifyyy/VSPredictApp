@@ -15,7 +15,7 @@ import {
 } from "@/lib/stats/playStyle";
 
 export interface TeamProfileCore {
-  team: Pick<Team, "id" | "name" | "logoUrl" | "country" | "entityType" | "leagueId">;
+  team: Pick<Team, "id" | "name" | "logoUrl" | "country" | "entityType" | "leagueId" | "stadium">;
   values: MetricValue[];
   summaries: TeamSummary[];
   formQuality: FormQuality[];
@@ -24,7 +24,7 @@ export interface TeamProfileCore {
 
 export function buildTeamProfileCore(team: Team, now: Date = new Date()): TeamProfileCore {
   const matches = team.leagueMatches;
-  const metrics = METRICS_BY_ENTITY[team.entityType];
+  const metrics = [...METRICS_BY_ENTITY[team.entityType], "XG_AGAINST"] as const;
   const values = computeAllValues(matches, metrics, team.entityType, now);
   return {
     team: {
@@ -33,6 +33,7 @@ export function buildTeamProfileCore(team: Team, now: Date = new Date()): TeamPr
       logoUrl: team.logoUrl,
       country: team.country,
       entityType: team.entityType,
+      stadium: team.stadium,
       leagueId: team.leagueId,
     },
     values,
