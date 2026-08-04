@@ -44,7 +44,7 @@ export async function generateMetadata({
   ]);
   if (!hn || !an) return {}; // dědí statická metadata z layoutu
 
-  const title = `${hn} vs ${an} — porovnání | Predictapp`;
+  const title = `${hn} vs ${an} — porovnání | Football Insight`;
   const description = `Statistické porovnání ${hn} a ${an}: forma, doma/venku, predikce zápasu a klíčové signály.`;
   const ogUrl = `/og?h=${encodeURIComponent(hn)}&a=${encodeURIComponent(an)}`;
   const modeRaw = Array.isArray(sp.mode) ? sp.mode[0] : sp.mode;

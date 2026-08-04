@@ -26,10 +26,10 @@ export async function generateMetadata({
   const context = str(sp.context);
   const titles = str(sp.titles);
 
-  const title = club ? `${club} — ${headline} | Predictapp Manažer` : `${headline} | Predictapp Manažer`;
+  const title = club ? `${club} — ${headline} | Football Insight Manažer` : `${headline} | Football Insight Manažer`;
   const description = context
-    ? `${headline} · ${context} — hraj Manažera na Predictapp, klubový simulátor postavený na reálném predikčním modelu.`
-    : "Hraj Manažera na Predictapp, klubový simulátor postavený na reálném predikčním modelu.";
+    ? `${headline} · ${context} — hraj Manažera na Football Insight, klubový simulátor postavený na reálném predikčním modelu.`
+    : "Hraj Manažera na Football Insight, klubový simulátor postavený na reálném predikčním modelu.";
   const params = new URLSearchParams();
   if (club) params.set("club", club);
   if (headline) params.set("headline", headline);
@@ -69,8 +69,8 @@ export default async function VysledekPage({
     <div className="flex-1">
       <main className="mx-auto w-full max-w-md px-4 py-10 text-center">
         <Image
-          src="/logoapp.png"
-          alt="Predictapp"
+          src="/brand-mark.svg"
+          alt="Football Insight"
           width={48}
           height={48}
           className="mx-auto rounded-xl"
@@ -83,7 +83,7 @@ export default async function VysledekPage({
         </div>
         <p className="mt-6 text-sm text-muted">
           Manažer je klubový simulátor postavený na stejném predikčním modelu, který na
-          Predictapp jinak tipuje reálné zápasy.
+          Football Insight jinak tipuje reálné zápasy.
         </p>
         <Link
           href="/hra"

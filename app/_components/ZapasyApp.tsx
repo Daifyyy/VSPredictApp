@@ -19,6 +19,8 @@ import { ViewTabs } from "./ViewTabs";
 import { LiveReportPanel } from "./LiveReportPanel";
 import { buildTipHref } from "./tipHref";
 import { useCurrentUser } from "./useCurrentUser";
+import { InstallLink } from "./InstallLink";
+import { preferredProgramDayIndex } from "@/lib/homeDashboard";
 
 type View = "program" | "results";
 
@@ -379,6 +381,7 @@ export function ZapasyApp({
   // Vlastní kurzor pro každý pohled – pásky jedou opačným směrem, sdílený index by
   // po přepnutí skočil na náhodný den.
   const [dayIdx, setDayIdx] = useState(0);
+  const [dayChosen, setDayChosen] = useState(false);
   const [resultIdx, setResultIdx] = useState(0);
   const [onlyFav, setOnlyFav] = useState(false);
   const [proCta, setProCta] = useState(false);
@@ -413,7 +416,11 @@ export function ZapasyApp({
     return future.length > 0 ? future : days.slice(resultDays);
   }, [days, clientToday, resultDays]);
 
-  const active = visibleDays[dayIdx] ?? visibleDays[0];
+  const nearestDayIdx = preferredProgramDayIndex(visibleDays);
+  const effectiveDayIdx = !dayChosen && dayIdx === 0 && visibleDays[0]?.fixtures.length === 0 && nearestDayIdx > 0
+    ? nearestDayIdx
+    : dayIdx;
+  const active = visibleDays[effectiveDayIdx] ?? visibleDays[0];
   const isPro = user?.tier === "PRO";
 
   const {
@@ -476,30 +483,16 @@ export function ZapasyApp({
     <main className="app-page">
       <AppHeader user={user} />
 
-      <section className="editorial-card stagger-in mt-6 bg-surface p-5 text-foreground sm:p-7 lg:grid lg:grid-cols-[1.35fr_.65fr] lg:gap-8">
-        <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between lg:block">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-home">Fotbalový přehled</p>
-            <h1 className="editorial-title mt-3 max-w-3xl text-foreground">
-              Zápasy bez zbytečného hledání
-            </h1>
-            <p className="mt-3 max-w-xl text-sm leading-6 text-muted sm:text-base">
-              Program, živé skóre a výsledky na jednom místě. Otevři zápas a uvidíš
-              porovnání týmů i srozumitelnou předzápasovou analýzu.
-            </p>
-          </div>
-          <Link
-            href="/porovnani"
-            className="mt-5 inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg bg-foreground px-5 py-2.5 text-sm font-bold text-white transition hover:bg-foreground/85"
-          >
-            Porovnat dva týmy
-          </Link>
-        </div>
-        <div className="mt-7 border-t border-border pt-5 lg:mt-0 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
-          <p className="page-kicker text-muted">Rychlý rozcestník</p>
-          <QuickActions />
-        </div>
-      </section>
+      <DashboardHeader
+        today={clientToday}
+        todayCount={visibleDays.find((day) => day.date === clientToday)?.fixtures.length ?? 0}
+        selectedDate={active?.date ?? null}
+        selectedCount={dayFixtures.length}
+        liveCount={dayFixtures.filter((fixture) => fixture.live).length}
+        showingNearest={Boolean(clientToday && active?.date !== clientToday && (visibleDays.find((day) => day.date === clientToday)?.fixtures.length ?? 0) === 0)}
+      />
+
+      {dayFixtures.length > 0 ? <FeaturedFixture fixture={dayFixtures.find((fixture) => fixture.live) ?? dayFixtures[0]} /> : null}
 
       <ViewTabs
         tabs={[
@@ -517,11 +510,11 @@ export function ZapasyApp({
         <>
           <DayTabs
             days={visibleDays}
-            active={dayIdx}
+            active={effectiveDayIdx}
             today={clientToday}
             direction="future"
             count={(d) => d.fixtures.length}
-            onSelect={setDayIdx}
+            onSelect={(index) => { setDayChosen(true); setDayIdx(index); }}
           />
 
           {proCta && (
@@ -596,18 +589,68 @@ export function ZapasyApp({
           )}
         </>
       )}
+      <QuickActions />
     </main>
   );
 }
 
+function DashboardHeader({ today, todayCount, selectedDate, selectedCount, liveCount, showingNearest }: { today: string | null; todayCount: number; selectedDate: string | null; selectedCount: number; liveCount: number; showingNearest: boolean }) {
+  const selectedLabel = selectedDate
+    ? new Date(`${selectedDate}T12:00:00`).toLocaleDateString("cs-CZ", { weekday: "long", day: "numeric", month: "long" })
+    : "Program";
+  return (
+    <section className="mt-5 rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="page-kicker">Přehled zápasů</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">{showingNearest ? "Nejbližší fotbalový program" : "Dnešní fotbal"}</h1>
+          <p className="mt-1 text-sm text-muted">
+            {showingNearest
+              ? `Dnes se ve sledovaných ligách nehraje. Zobrazujeme ${selectedLabel}.`
+              : today ? `${selectedLabel} · ${todayCount} ${matchWord(todayCount)}` : "Aktuální program sledovaných lig"}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {liveCount > 0 ? <span className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-negative/10 px-3 text-sm font-bold text-negative"><LiveDot /> {liveCount} živě</span> : null}
+          <span className="inline-flex min-h-10 items-center rounded-xl border border-border bg-background px-3 text-sm font-semibold text-foreground">{selectedCount} {matchWord(selectedCount)}</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FeaturedFixture({ fixture }: { fixture: UpcomingFixture }) {
+  const href = buildCompareHref(fixture);
+  const time = new Date(fixture.kickoff).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" });
+  const content = (
+    <div className="grid items-center gap-4 sm:grid-cols-[1fr_auto_1fr]">
+      <div className="flex items-center gap-3 sm:justify-end sm:text-right"><TeamLogo src={fixture.home.logoUrl} alt={fixture.home.name} size={44} /><span className="font-bold text-foreground">{fixture.home.name}</span></div>
+      <div className="text-center"><p className={`text-xs font-bold ${fixture.live ? "text-negative" : "text-muted"}`}>{fixture.live ? `${fixture.elapsed ?? ""}' · ŽIVĚ` : time}</p><p className="mt-1 text-xl font-black tabular-nums text-foreground">{fixture.live ? `${fixture.liveHome ?? 0} : ${fixture.liveAway ?? 0}` : "vs."}</p></div>
+      <div className="flex items-center gap-3"><TeamLogo src={fixture.away.logoUrl} alt={fixture.away.name} size={44} /><span className="font-bold text-foreground">{fixture.away.name}</span></div>
+    </div>
+  );
+  return (
+    <section className="mt-3 overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
+      <div className="flex items-center justify-between border-b border-border bg-background/70 px-4 py-2 text-xs"><span className="font-semibold text-muted">{fixture.live ? "Právě se hraje" : "Nejbližší zápas"}</span><span className="text-muted">{fixture.leagueName}</span></div>
+      {href ? <Link href={href} className="block p-4 transition hover:bg-accent/5 sm:p-5">{content}</Link> : <div className="p-4 sm:p-5">{content}</div>}
+    </section>
+  );
+}
+
+function matchWord(count: number): string {
+  return count === 1 ? "zápas" : count >= 2 && count <= 4 ? "zápasy" : "zápasů";
+}
+
 function QuickActions() {
   const actions = [
-    { href: "/predikce", eyebrow: "Co se čeká", label: "Nadcházející analýzy" },
+    { href: "/porovnani", eyebrow: "Tým proti týmu", label: "Porovnat dva týmy" },
     { href: "/tabulky", eyebrow: "Aktuální pořadí", label: "Ligové tabulky" },
     { href: "/tipovacka", eyebrow: "Tvůj přehled", label: "Zapsat vlastní tip" },
   ];
   return (
-    <nav aria-label="Rychlé volby" className="mt-3 grid gap-2 sm:grid-cols-1">
+    <section className="mt-5 border-t border-border pt-5">
+      <div className="flex items-center justify-between gap-3"><p className="page-kicker text-muted">Rychlé nástroje</p><div className="text-xs text-muted"><InstallLink /></div></div>
+    <nav aria-label="Rychlé volby" className="mt-3 grid gap-2 sm:grid-cols-3">
       {actions.map((action) => (
         <Link
           key={action.href}
@@ -622,6 +665,7 @@ function QuickActions() {
         </Link>
       ))}
     </nav>
+    </section>
   );
 }
 

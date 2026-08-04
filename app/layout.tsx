@@ -4,7 +4,7 @@ import "./globals.css";
 import { PWARegister } from "./_components/PWARegister";
 import { InstallPrompt } from "./_components/InstallPrompt";
 
-const TITLE = "Predictapp — zápasy, analýzy a fotbalové statistiky";
+const TITLE = "Football Insight — zápasy, analýzy a fotbalové statistiky";
 const DESCRIPTION =
   "Fotbalový program, výsledky, živé skóre a srozumitelné analýzy klubů i reprezentací na jednom místě.";
 
@@ -15,10 +15,10 @@ export const metadata: Metadata = {
   ),
   title: {
     default: TITLE,
-    template: "%s | Predictapp",
+    template: "%s | Football Insight",
   },
   description: DESCRIPTION,
-  applicationName: "Predictapp",
+  applicationName: "Football Insight",
   category: "sports",
   keywords: [
     "fotbalové zápasy",
@@ -30,7 +30,7 @@ export const metadata: Metadata = {
   // iOS: chování instalované PWA (fullscreen, název na ploše, status bar).
   appleWebApp: {
     capable: true,
-    title: "Predictapp",
+    title: "Football Insight",
     statusBarStyle: "black-translucent",
   },
   icons: {
@@ -41,12 +41,12 @@ export const metadata: Metadata = {
   // titulek „Tým A vs Tým B" by vyžadoval serverový lookup názvů (backlog).
   openGraph: {
     type: "website",
-    siteName: "Predictapp",
+    siteName: "Football Insight",
     title: TITLE,
     description: DESCRIPTION,
     locale: "cs_CZ",
     url: "/",
-    images: [{ url: "/icon-512.png", width: 512, height: 512, alt: "Predictapp" }],
+    images: [{ url: "/icon-512.png", width: 512, height: 512, alt: "Football Insight" }],
   },
   twitter: {
     card: "summary",

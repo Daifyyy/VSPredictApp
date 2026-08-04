@@ -1,7 +1,7 @@
 // Drobná window-event sběrnice: umožní z menu/patičky ručně vyvolat instalační
 // pomůcku (InstallPrompt ji poslouchá). Žádná závislost, jen DOM event.
 
-const INSTALL_EVENT = "predictapp:install";
+const INSTALL_EVENT = "football-insight:install";
 
 export function requestInstall(): void {
   if (typeof window !== "undefined") {

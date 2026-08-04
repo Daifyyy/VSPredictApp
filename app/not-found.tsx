@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Stránka nenalezena — Predictapp",
+  title: "Stránka nenalezena — Football Insight",
   // Neindexovat 404 – ať se prázdné cesty nedostanou do vyhledávače.
   robots: { index: false, follow: false },
 };

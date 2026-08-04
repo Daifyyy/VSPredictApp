@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/authUser";
 import type { SessionUser } from "../_components/sessionUser";
 
 export const metadata: Metadata = {
-  title: "Tipovačka — vyzkoušej si svou intuici | Predictapp",
+  title: "Tipovačka — vyzkoušej si svou intuici | Football Insight",
   description:
     "Tipuj výsledky zápasů na intuici (bez kurzů) a sleduj svou úspěšnost i ROI vůči kurzům. Osobní tréninkový deník tipů.",
 };

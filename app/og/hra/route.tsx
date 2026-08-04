@@ -48,7 +48,7 @@ export function GET(req: Request) {
             marginBottom: 40,
           }}
         >
-          Predictapp · Manažer
+          Football Insight · Manažer
         </div>
 
         {club && (

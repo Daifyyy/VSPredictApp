@@ -1,10 +1,10 @@
 import type { MetadataRoute } from "next";
 
-// PWA manifest (Next metadata route). Ikony vygenerované z public/logoapp.png.
+// PWA manifest (Next metadata route). Ikony generuje scripts/generateBrandIcons.mjs.
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Predictapp — fotbalové zápasy a analýzy",
-    short_name: "Predictapp",
+    name: "Football Insight — fotbalové zápasy a analýzy",
+    short_name: "Football Insight",
     description:
       "Program, výsledky, živé skóre a srozumitelné analýzy fotbalových týmů.",
     start_url: "/",

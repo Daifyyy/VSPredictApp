@@ -48,7 +48,7 @@ export function GET(req: Request) {
             marginBottom: 48,
           }}
         >
-          Predictapp
+          Football Insight
         </div>
 
         {hasMatch ? (

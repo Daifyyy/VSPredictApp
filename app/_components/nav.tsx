@@ -100,11 +100,11 @@ export function DesktopSidebar() {
   const pathname = usePathname();
   return (
     <aside className="fixed inset-y-0 left-0 z-50 hidden w-[17rem] flex-col border-r border-border bg-sidebar p-5 text-foreground lg:flex">
-      <Link href="/" className="flex items-center gap-3 border-b border-border pb-5" aria-label="Predictapp – domů">
-        <span className="grid h-10 w-10 place-items-center rounded-lg bg-accent text-lg font-black text-accent-ink">P</span>
+      <Link href="/" className="flex items-center gap-3 border-b border-border pb-5" aria-label="Football Insight – domů">
+        <span className="grid h-10 w-10 place-items-center rounded-lg bg-accent text-sm font-black text-accent-ink">FI</span>
         <span>
-          <span className="block font-display text-xl font-bold tracking-tight">Predictapp</span>
-          <span className="block text-[10px] font-bold uppercase tracking-[.14em] text-muted">Football intelligence</span>
+          <span className="block font-display text-xl font-bold tracking-tight">Football Insight</span>
+          <span className="block text-[10px] font-bold uppercase tracking-[.14em] text-muted">Fotbal v souvislostech</span>
         </span>
       </Link>
 

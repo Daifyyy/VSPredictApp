@@ -1,7 +1,7 @@
 import { TabulkyApp } from "../_components/TabulkyApp";
 
 export const metadata = {
-  title: "Ligové tabulky — Predictapp",
+  title: "Ligové tabulky — Football Insight",
   description: "Aktuální tabulky top evropských klubových lig – pozice, body, forma.",
 };
 

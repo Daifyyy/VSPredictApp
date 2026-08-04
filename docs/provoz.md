@@ -106,7 +106,7 @@ proto dělá upsert (ne createMany). Po nasazení případně urychli přes `/ap
   a v logu odpověď endpointu). Vercel dashboard už crony neukazuje, protože tam žádné nejsou.
 
 ## Deployment
-GitHub `Daifyyy/statapp` → Vercel (auto-deploy na push do `main`). Env na Vercelu:
+GitHub `Daifyyy/VSPredictApp` → Vercel (auto-deploy na push do `main`). Env na Vercelu:
 `API_FOOTBALL_KEY`, `DATABASE_URL` (Neon pooled), `AUTH_SECRET`, `AUTH_URL`,
 `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, **`CRON_SECRET`** (povinný — bez něj se crony
 uzamknou na 503, viz „Plánované úlohy") a volitelně `PRO_EMAILS`
@@ -117,17 +117,22 @@ což je u Vercelu **deployment-specific URL** (`…-<hash>-…vercel.app`, měn�
 → `redirect_uri` neodpovídá whitelistu a Google vrací `Error 400: redirect_uri_mismatch`.
 Proto **`AUTH_URL=https://vs-predict-app.vercel.app`** (stabilní doména) → redirect je vždy
 konzistentní. Přihlašovat se přes produkční doménu, ne přes deployment URL.
-**Google OAuth (Cloud Console → Credentials):** Authorized redirect URI
-`https://vs-predict-app.vercel.app/api/auth/callback/google` + `http://localhost:3000/api/auth/callback/google`
-(lokál); Authorized JavaScript origin `https://vs-predict-app.vercel.app`. Musí sedět znak po
-znaku (https, bez koncového `/`).
+**Google Auth Platform:** v konzoli vyber správný projekt. V `Branding` nastav název
+`Football Insight`, support e-mail a produkční doménu. V `Audience` použij `External`
+(v testovacím režimu přidej testovací účty; pro veřejnost aplikaci publikuj). V `Clients`
+otevři klienta typu `Web application` a nastav Authorized redirect URI
+`https://vs-predict-app.vercel.app/api/auth/callback/google` +
+`http://localhost:3000/api/auth/callback/google` (lokál); Authorized JavaScript origins
+`https://vs-predict-app.vercel.app` + `http://localhost:3000`. Hodnoty musí sedět znak po
+znaku (https, bez koncového `/`); změna může mít zpoždění. Pro produkční ověření Google
+vyžaduje veřejnou domovskou stránku a odkazy na zásady ochrany soukromí a podmínky.
 **Pozn. (lokál):** Google token exchange = odchozí TLS → `npm run dev` spouštěj s
 `NODE_OPTIONS=--use-system-ca` (jako probe/prisma). Bez auth env app běží jako anonym (FREE).
 
 ## PWA (instalace na iOS/Android)
 - Manifest `app/manifest.ts` (Next metadata route → `/manifest.webmanifest`), ikony
   v `public/` (`icon-192/512`, `icon-maskable-512`, `apple-touch-icon`) generované ze
-  `logoapp.png` přes `sharp`. iOS meta (`appleWebApp`) + `themeColor` v `app/layout.tsx`.
+  `brand-mark.svg` přes `scripts/generateBrandIcons.mjs`. iOS meta (`appleWebApp`) + `themeColor` v `app/layout.tsx`.
 - Service worker `public/sw.js` (app-shell cache, **necachuje** `/api/*` ani HTML porovnání),
   registrace `PWARegister.tsx` **jen v produkci**.
 - **Interaktivní instalační pomůcka** `InstallPrompt.tsx`: Android/Chromium nativní

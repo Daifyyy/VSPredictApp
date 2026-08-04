@@ -51,6 +51,8 @@ import {
   isProgramClubLeague,
 } from "./catalog";
 import * as real from "./realRepository";
+import type { SearchableTeam } from "@/lib/teamSearch";
+import { leagueDisplayName } from "./catalog";
 
 /**
  * Datová vrstva aplikace. Při nakonfigurovaném API klíči + DB čte reálná data
@@ -89,6 +91,23 @@ export async function getTeamsByLeague(
       stadium,
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "cs"));
+}
+
+export async function getSearchableTeams(): Promise<SearchableTeam[]> {
+  if (useReal) return real.getSearchableTeams();
+  const leagues = new Map(getLeagues().map((league) => [league.id, league]));
+  return allMockTeams().flatMap((team) => {
+    const league = leagues.get(team.leagueId);
+    if (!league) return [];
+    return [{
+      id: team.id,
+      name: team.name,
+      logoUrl: team.logoUrl,
+      leagueId: league.id,
+      leagueName: leagueDisplayName(league),
+      country: league.country || team.country,
+    }];
+  });
 }
 
 export async function getCompareTeam(

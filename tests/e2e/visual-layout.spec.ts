@@ -3,7 +3,7 @@ import { expect, test } from "playwright/test";
 const widths = [360, 390, 768, 1280, 1440] as const;
 
 for (const width of widths) {
-  test(`redakční shell při šířce ${width}px`, async ({ page }, testInfo) => {
+  test(`produktový dashboard při šířce ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/", { waitUntil: "domcontentloaded" });
 
