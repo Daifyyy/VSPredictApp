@@ -88,6 +88,7 @@ import type { GameTeam, LeagueAccess } from "@/lib/game/types";
 import {
   CLUB_LEAGUES,
   CURRENT_SEASON,
+  EURO_CUP_LEAGUES,
   EURO_LEAGUE_IDS,
   FIXTURE_LIST_LEAGUE_IDS,
   FRIENDLIES_LEAGUE_ID,
@@ -95,6 +96,7 @@ import {
   NATIONAL_LEAGUES,
   PREVIOUS_SEASON,
   getConfederation,
+  isEuroCupLeague,
   isNationalLeague,
   isNeutralNationalLeague,
   leagueDisplayName,
@@ -132,7 +134,9 @@ export type ClubMeta = Pick<Team, "name" | "logoUrl" | "country" | "stadium">;
 // ---- Veřejné API repository ----
 
 export function getLeagues(): League[] {
-  return [...CLUB_LEAGUES, ...NATIONAL_LEAGUES];
+  // Evropské poháry jsou první v Porovnání a globálním katalogu, ale zůstávají mimo
+  // `CLUB_LEAGUES`, takže se pro ně nikdy nevytváří tabulka ani stylový snapshot.
+  return [...EURO_CUP_LEAGUES, ...CLUB_LEAGUES, ...NATIONAL_LEAGUES];
 }
 
 /**
@@ -371,6 +375,56 @@ export async function getCompareTeam(
     return buildNationalTeam(teamId, leagueId);
   }
   return buildClubTeam(teamId, leagueId, includeEuro, meta);
+}
+
+/**
+ * Klub v evropském poháru. Nejprve dohledá jeho domácí ligu v našem katalogu a použije
+ * plný ligový profil doplněný Evropou. Neznámý kvalifikant dostane přiznaný fallback
+ * z posledních soutěžních zápasů napříč soutěžemi; `leagueId` u něj zůstane pohárové ID,
+ * aby predikční pipeline mohla vynutit nízkou spolehlivost.
+ */
+export async function getCompareEuroCupTeamFromFixture(
+  teamId: number,
+  competitionId: number,
+  metaOverride?: ClubMeta
+): Promise<Team | null> {
+  const meta = metaOverride?.name
+    ? metaOverride
+    : (await getTeamsByLeague(competitionId).catch(() => []))
+        .find((team) => team.id === teamId);
+  if (!meta) return null;
+  const catalogs = await Promise.all(
+    CLUB_LEAGUES.map(async (league) => ({
+      league,
+      teams: await getTeamsByLeague(league.id).catch(() => []),
+    }))
+  );
+  const domestic = catalogs.find(({ teams }) => teams.some((team) => team.id === teamId));
+  if (domestic) {
+    return buildClubTeam(teamId, domestic.league.id, true, meta);
+  }
+
+  const raw = await cachedJson(`cupfix:${teamId}`, LIST_TTL, () =>
+    fetchLastFixtures(teamId, CLUB_FALLBACK_LAST)
+  );
+  const finished = onlyFinished(raw);
+  if (finished.length === 0) return null;
+  const matches = tagBaseline(
+    await assemble(teamId, "euro", finished, (fixture) => ({
+      competitive: !isFriendly(fixture.league.name),
+      isNeutral: false,
+    })),
+    PREVIOUS_SEASON
+  );
+  return {
+    id: teamId,
+    name: meta.name,
+    logoUrl: meta.logoUrl,
+    country: meta.country,
+    entityType: "CLUB",
+    leagueId: competitionId,
+    leagueMatches: matches,
+  };
 }
 
 /**
@@ -927,7 +981,7 @@ export async function getRanks(
   const map = new Map<number, number>();
   const leagueIds = [
     ...new Set(teams.filter((t) => !t.national).map((t) => t.leagueId)),
-  ].filter((id) => !isNationalLeague(id));
+  ].filter((id) => !isNationalLeague(id) && !isEuroCupLeague(id));
   const byLeague = new Map<number, ApiStandingRow[]>();
   await Promise.all(
     leagueIds.map(async (id) => {
@@ -940,7 +994,7 @@ export async function getRanks(
     })
   );
   for (const t of teams) {
-    if (t.national) continue;
+    if (t.national || isEuroCupLeague(t.leagueId)) continue;
     const table = byLeague.get(t.leagueId);
     // Předsezónní tabulka (0 odehraných) má `rank` daný jen tím, jak ji API seřadilo
     // (často abecedně) → pozice by nic neznamenala. Radši žádný odznak než falešný.

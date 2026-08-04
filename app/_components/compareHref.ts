@@ -10,10 +10,11 @@ import type { EntityType } from "@/lib/types";
  */
 export interface CompareLinkSource {
   compareMode: EntityType;
-  home: { id: number };
-  away: { id: number };
+  home: { id: number; name?: string; logoUrl?: string };
+  away: { id: number; name?: string; logoUrl?: string };
   homeCompareLeagueId: number | null;
   awayCompareLeagueId: number | null;
+  europeanCup?: boolean;
 }
 
 export function buildCompareHref(x: CompareLinkSource): string | null {
@@ -25,5 +26,12 @@ export function buildCompareHref(x: CompareLinkSource): string | null {
     home: String(x.home.id),
     away: String(x.away.id),
   });
+  if (x.europeanCup) {
+    params.set("context", "EURO_CUP");
+    if (x.home.name) params.set("homeName", x.home.name);
+    if (x.away.name) params.set("awayName", x.away.name);
+    if (x.home.logoUrl) params.set("homeLogo", x.home.logoUrl);
+    if (x.away.logoUrl) params.set("awayLogo", x.away.logoUrl);
+  }
   return `/porovnani?${params.toString()}`;
 }

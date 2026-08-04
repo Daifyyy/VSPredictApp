@@ -4,7 +4,7 @@ import type {
   PredictionRow,
   SettledMatch,
 } from "@/lib/types";
-import { isNationalTournamentLeague, leagueLogoUrl } from "@/lib/data/catalog";
+import { isEuroCupLeague, isNationalTournamentLeague, leagueLogoUrl } from "@/lib/data/catalog";
 import { actualOutcome, argmaxOutcome, probOfSide } from "./trackRecord";
 
 /**
@@ -19,6 +19,7 @@ export function summarizeSettled(rows: PredictionRow[]): SettledMatch[] {
     if (!r.available || r.homeGoals == null || r.awayGoals == null) continue;
     const predictedSide = argmaxOutcome(r);
     const national = isNationalTournamentLeague(r.leagueId);
+    const europeanCup = isEuroCupLeague(r.leagueId);
     out.push({
       fixtureId: r.fixtureId,
       leagueId: r.leagueId,
@@ -33,6 +34,7 @@ export function summarizeSettled(rows: PredictionRow[]): SettledMatch[] {
       predictedProb: probOfSide(r, predictedSide),
       outcomeHit: predictedSide === actualOutcome(r.homeGoals, r.awayGoals),
       compareMode: national ? "NATIONAL" : "CLUB",
+      europeanCup,
       homeCompareLeagueId: national ? null : r.leagueId,
       awayCompareLeagueId: national ? null : r.leagueId,
     });

@@ -13,6 +13,7 @@ import type {
   Standing,
   Venue,
 } from "@/lib/types";
+import { isEuroCupLeague } from "@/lib/data/catalog";
 import { METRIC_LABELS, METRIC_HINTS, LOWER_IS_BETTER } from "@/lib/types";
 import { leagueDisplayName } from "@/lib/data/catalog";
 import { MetricRow } from "./MetricRow";
@@ -55,6 +56,7 @@ export interface InitialSelection {
   awayLeague?: number;
   home?: number;
   away?: number;
+  context?: "EURO_CUP";
 }
 
 const VENUE_LABELS: Record<Venue, string> = {
@@ -223,6 +225,7 @@ async function runCompare(
   homeLeague: number,
   awayLeague: number,
   unlock: boolean,
+  europeanCup: boolean,
   isActive: () => boolean,
   { setLoading, setError, setResult }: CompareSetters
 ): Promise<CompareResult | null> {
@@ -231,6 +234,8 @@ async function runCompare(
   try {
     const r = await fetch(
       `/api/compare?home=${homeId}&away=${awayId}&homeLeague=${homeLeague}&awayLeague=${awayLeague}${
+        europeanCup ? "&context=EURO_CUP" : ""
+      }${
         unlock ? "&unlock=1" : ""
       }`
     );
@@ -264,6 +269,10 @@ export function CompareApp({
   const [awayLeagueId, setAwayLeagueId] = useState<number | null>(
     initial?.awayLeague ?? firstLeagueId(leagues, initialMode)
   );
+  const europeanCup =
+    homeLeagueId != null &&
+    homeLeagueId === awayLeagueId &&
+    isEuroCupLeague(homeLeagueId);
   const [homeId, setHomeId] = useState<number | null>(initial?.home ?? null);
   const [awayId, setAwayId] = useState<number | null>(initial?.away ?? null);
   const [venue, setVenue] = useState<Venue>("TOTAL");
@@ -295,12 +304,12 @@ export function CompareApp({
   );
 
   // Ligová tabulka (FREE kontext) – líně, až je výsledek na obrazovce.
-  const { standing: homeStanding, leagueAvg: homeLeagueAvg } = useStanding(homeId, homeLeagueId, result != null);
-  const { standing: awayStanding } = useStanding(awayId, awayLeagueId, result != null);
+  const { standing: homeStanding, leagueAvg: homeLeagueAvg } = useStanding(homeId, homeLeagueId, result != null && !europeanCup);
+  const { standing: awayStanding } = useStanding(awayId, awayLeagueId, result != null && !europeanCup);
 
   // Nejlepší střelci ligy (FREE kontext) – líně, jako tabulka.
-  const homeScorers = useScorers(homeId, homeLeagueId, result != null);
-  const awayScorers = useScorers(awayId, awayLeagueId, result != null);
+  const homeScorers = useScorers(homeId, homeLeagueId, result != null && !europeanCup);
+  const awayScorers = useScorers(awayId, awayLeagueId, result != null && !europeanCup);
 
   const modeLeagues = useMemo(
     () =>
@@ -376,13 +385,14 @@ export function CompareApp({
       homeLeagueId,
       awayLeagueId,
       false,
+      europeanCup,
       () => active,
       { setLoading, setError, setResult }
     );
     return () => {
       active = false;
     };
-  }, [canCompare, homeId, awayId, homeLeagueId, awayLeagueId]);
+  }, [canCompare, homeId, awayId, homeLeagueId, awayLeagueId, europeanCup]);
 
   // Načti uložené porovnání: ukaž snapshot okamžitě, bez nového fetchu.
   function applyFavorite(fav: SavedFavorite) {
@@ -407,6 +417,7 @@ export function CompareApp({
       homeLeagueId,
       awayLeagueId,
       false,
+      europeanCup,
       () => true,
       { setLoading, setError, setResult }
     );
@@ -428,6 +439,7 @@ export function CompareApp({
       homeLeagueId,
       awayLeagueId,
       true,
+      europeanCup,
       () => true,
       { setLoading, setError, setResult }
     );
@@ -444,8 +456,9 @@ export function CompareApp({
     if (awayLeagueId != null) params.set("awayLeague", String(awayLeagueId));
     if (homeId != null) params.set("home", String(homeId));
     if (awayId != null) params.set("away", String(awayId));
+    if (europeanCup) params.set("context", "EURO_CUP");
     window.history.replaceState(null, "", `?${params.toString()}`);
-  }, [mode, homeLeagueId, awayLeagueId, homeId, awayId]);
+  }, [mode, homeLeagueId, awayLeagueId, homeId, awayId, europeanCup]);
 
   // Klubový režim = výběr ligy, reprezentační = výběr konfederace (obojí per tým).
   const leagueLabel = mode === "CLUB" ? "Liga" : "Konfederace";
@@ -589,6 +602,7 @@ export function CompareApp({
         homeLeagueAvg={homeLeagueAvg}
         homeLeagueId={homeLeagueId}
         awayLeagueId={awayLeagueId}
+        europeanCup={europeanCup}
         user={user}
         trialAvailable={trialAvailable}
         unlocking={unlocking}
@@ -618,6 +632,7 @@ function ResultPanel({
   homeLeagueAvg,
   homeLeagueId,
   awayLeagueId,
+  europeanCup,
   user,
   trialAvailable,
   unlocking,
@@ -639,6 +654,7 @@ function ResultPanel({
   homeLeagueAvg: LeagueGoalsAvg | null;
   homeLeagueId: number | null;
   awayLeagueId: number | null;
+  europeanCup: boolean;
   user: SessionUser | null;
   trialAvailable: boolean;
   unlocking: boolean;
@@ -649,7 +665,7 @@ function ResultPanel({
     result?.source === "NATIONAL" || result?.source === "NATIONAL_FB" ? "NATIONAL" : "CLUB";
   // Ligová tabulka jen pro klub vs. klub stejné ligy (FREE, i pro zamčený výsledek).
   const sameLeague =
-    entityMode === "CLUB" && homeLeagueId != null && homeLeagueId === awayLeagueId;
+    entityMode === "CLUB" && !europeanCup && homeLeagueId != null && homeLeagueId === awayLeagueId;
   const leagueTable = useLeagueTable(
     sameLeague ? homeLeagueId : null,
     sameLeague && result != null

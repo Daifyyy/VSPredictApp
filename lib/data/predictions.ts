@@ -2,6 +2,7 @@ import type { CountBaselines, Team } from "@/lib/types";
 import { MODEL_VERSION } from "./modelVersion";
 import {
   getCompareTeam,
+  getCompareEuroCupTeamFromFixture,
   getLeagueBaseline,
   getLeagueRatings,
   getNationalRatings,
@@ -25,8 +26,10 @@ import {
 import {
   ALL_NATIONAL_PREDICTION_LEAGUE_IDS,
   CLUB_LEAGUES,
+  EURO_LEAGUE_IDS,
   dayOfYear,
   isNationalTournamentLeague,
+  isEuroCupLeague,
   isNationalHomeAwayLeague,
   isNeutralNationalLeague,
   rotateLeagues,
@@ -116,6 +119,9 @@ export const ALL_PREDICTION_LEAGUES = [
   ...PREDICTION_LEAGUES,
   ...ALL_NATIONAL_PREDICTION_LEAGUE_IDS,
 ];
+
+/** Evropské poháry běží samostatnými cron requesty kvůli 60s limitu Vercelu. */
+export const EURO_CUP_PREDICTION_LEAGUES = EURO_LEAGUE_IDS;
 
 /** Kolik nejbližších zápasů ligy predikovat (pokryje kolo + rezervu). */
 const UPCOMING_PER_LEAGUE = 15;
@@ -292,23 +298,32 @@ export async function runPredictUpcoming(
     // reprezentační finálový turnaj → venue-neutrální (meta z fixture); Liga národů →
     // venue-split (home/away z fixtures → predikce má domácí výhodu).
     const national = isNationalTournamentLeague(leagueId);
+    const europeanCup = isEuroCupLeague(leagueId);
     const homeAway = national && isNationalHomeAwayLeague(leagueId);
     // Ligové měřítko pro λ – 1× per liga, z už cachované tabulky (0 API navíc).
     // Reprezentace tabulku nemají → null → predikce použije typický default.
-    const baseline = (await getLeagueBaseline(leagueId)) ?? undefined;
+    const baseline = europeanCup ? undefined : (await getLeagueBaseline(leagueId)) ?? undefined;
     // Síly s korekcí na soupeře (C2): klub → ratingy jeho ligy (z cachovaných zápasů, 0 API);
     // reprezentace → **globální pool všech národů** (srovnatelný napříč konfederacemi).
-    const ratings = national
+    const ratings = europeanCup
+      ? null
+      : national
       ? await getNationalRatings()
       : await getLeagueRatings(leagueId);
     // Měřítko rohů/karet ligy – 1× per liga z už cachovaných zápasů (0 API).
     // Reprezentace ho nemají a `*_AGAINST` okna by stejně stála na přátelácích → null.
-    const counts = national ? null : await getLeagueCountBaseline(leagueId);
+    const counts = national || europeanCup ? null : await getLeagueCountBaseline(leagueId);
     // Turnaje se hrají na neutrální půdě (Liga národů a kvalifikace ne).
     const neutral = isNeutralNationalLeague(leagueId);
     const buildSide = (t: { id: number; name: string; logo: string }) => {
       // Meta z fixture i pro kluby: seznam týmů nové sezóny nemusí být publikovaný
       // a nováček v něm chybí i pak – bez toho by se celý zápas tiše přeskočil.
+      if (europeanCup)
+        return getCompareEuroCupTeamFromFixture(t.id, leagueId, {
+          name: t.name,
+          logoUrl: t.logo,
+          country: "",
+        });
       if (!national)
         return getCompareTeam(t.id, leagueId, false, {
           name: t.name,
@@ -331,10 +346,11 @@ export async function runPredictUpcoming(
         // Ratingy jen když je má liga pro OBA týmy (nováček bez historie → okenní model).
         const rh = ratings?.get(f.teams.home.id);
         const ra = ratings?.get(f.teams.away.id);
+        const fixtureNeutral = neutral || (europeanCup && /(?:^|\s)final(?:\s|$)/i.test(f.league.round ?? ""));
         const result = compareTeams(home, away, new Date(), {
           baseline,
           strength: rh && ra ? { home: rh, away: ra } : undefined,
-          neutral,
+          neutral: fixtureNeutral,
         });
         const p = result.prediction;
         if (!p) continue;
@@ -344,7 +360,7 @@ export async function runPredictUpcoming(
         // a neměli je proti čemu měřit – a CLV byl jediný způsob, jak o nich rozhodnout.
         // Reprezentace vynechané: `CORNERS_AGAINST`/`CARDS_AGAINST` okna by u nich
         // stála hlavně na přátelácích.
-        const countLambdas = national
+        const countLambdas = national || europeanCup
           ? null
           : countPredictionsFor(home, away, new Date(), counts);
         await upsertPrediction({
@@ -368,8 +384,10 @@ export async function runPredictUpcoming(
           awayWin: p.awayWin,
           bttsYes: p.bttsYes,
           over25: p.over25,
-          lowConfidence: p.lowConfidence,
-          readinessSample: p.readiness.sample,
+          lowConfidence: p.lowConfidence || (europeanCup && (home.leagueId === leagueId || away.leagueId === leagueId)),
+          readinessSample: europeanCup && (home.leagueId === leagueId || away.leagueId === leagueId)
+            ? Math.min(3, p.readiness.sample)
+            : p.readiness.sample,
           modelVersion: MODEL_VERSION,
           lambdaCornersHome: countLambdas?.corners?.lambdaHome ?? null,
           lambdaCornersAway: countLambdas?.corners?.lambdaAway ?? null,
@@ -483,7 +501,7 @@ export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
   const candidates = await fixturesNeedingOdds({
     // Jen klubové ligy: reprezentace kurzy prakticky nemají a napříč konfederacemi
     // by stejně nebyly srovnatelné (týž důvod jako u benchmarku).
-    leagueIds: PREDICTION_LEAGUES,
+    leagueIds: [...PREDICTION_LEAGUES, ...EURO_CUP_PREDICTION_LEAGUES],
     now,
     lookaheadHours: ODDS_LOOKAHEAD_HOURS,
     limit,

@@ -3,6 +3,7 @@ import { FINISHED_STATUSES, LIVE_STATUSES, type ApiFixture } from "./apiFootball
 import {
   FIXTURE_LIST_LEAGUE_IDS,
   catalogLeagueName,
+  isEuroCupLeague,
   isNationalTournamentLeague,
   leagueLogoUrl,
 } from "./catalog";
@@ -71,6 +72,7 @@ export function normalizeUpcomingFixtures(
     })
     .map((f) => {
       const national = isNationalTournamentLeague(f.league.id);
+      const europeanCup = isEuroCupLeague(f.league.id);
       const live = LIVE_STATUSES.has(f.fixture.status.short);
       return {
         fixtureId: f.fixture.id,
@@ -81,6 +83,8 @@ export function normalizeUpcomingFixtures(
         home: { id: f.teams.home.id, name: f.teams.home.name, logoUrl: f.teams.home.logo },
         away: { id: f.teams.away.id, name: f.teams.away.name, logoUrl: f.teams.away.logo },
         national,
+        europeanCup,
+        competitionRound: f.league.round ?? null,
         compareMode: national ? ("NATIONAL" as const) : ("CLUB" as const),
         homeCompareLeagueId: national ? null : f.league.id,
         awayCompareLeagueId: national ? null : f.league.id,
@@ -117,6 +121,7 @@ export function normalizeFinishedFixtures(raw: ApiFixture[]): PlayedFixture[] {
     const ft = fullTimeGoals(f);
     if (!ft) continue;
     const national = isNationalTournamentLeague(f.league.id);
+    const europeanCup = isEuroCupLeague(f.league.id);
     out.push({
       fixtureId: f.fixture.id,
       leagueId: f.league.id,
@@ -129,6 +134,8 @@ export function normalizeFinishedFixtures(raw: ApiFixture[]): PlayedFixture[] {
       awayGoals: ft.away,
       afterExtraTime: status === "AET" || status === "PEN",
       national,
+      europeanCup,
+      competitionRound: f.league.round ?? null,
       compareMode: national ? "NATIONAL" : "CLUB",
       homeCompareLeagueId: national ? null : f.league.id,
       awayCompareLeagueId: national ? null : f.league.id,

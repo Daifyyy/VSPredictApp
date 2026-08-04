@@ -241,6 +241,8 @@ function toPlayedFixture(
     awayGoals: last.awayGoals,
     afterExtraTime: false,
     national: f.national,
+    europeanCup: f.europeanCup,
+    competitionRound: f.competitionRound,
     compareMode: f.compareMode,
     homeCompareLeagueId: f.homeCompareLeagueId,
     awayCompareLeagueId: f.awayCompareLeagueId,
@@ -847,7 +849,7 @@ type LeagueGroup = LeagueGroupOf<UpcomingFixture>;
  * nepatří žádné vlastní řazení, které by se s ním rozešlo.
  */
 function groupByLeague<
-  T extends { leagueId: number; leagueName: string; leagueLogoUrl: string },
+  T extends { leagueId: number; leagueName: string; leagueLogoUrl: string; europeanCup?: boolean },
 >(fixtures: T[]): LeagueGroupOf<T>[] {
   const map = new Map<number, LeagueGroupOf<T>>();
   for (const f of fixtures) {
@@ -863,7 +865,9 @@ function groupByLeague<
     }
     g.fixtures.push(f);
   }
-  return [...map.values()];
+  return [...map.values()].sort((a, b) =>
+    Number(Boolean(b.fixtures[0]?.europeanCup)) - Number(Boolean(a.fixtures[0]?.europeanCup))
+  );
 }
 
 function LeagueGroups({
@@ -950,6 +954,11 @@ function LeagueContainer({
           <span className="min-w-0 truncate text-sm font-semibold text-foreground">
             {group.name}
           </span>
+          {group.fixtures[0]?.europeanCup && group.fixtures[0]?.competitionRound && (
+            <span className="hidden max-w-48 truncate text-[11px] text-muted sm:inline">
+              · {group.fixtures[0].competitionRound}
+            </span>
+          )}
           {hasLive && <LiveDot />}
           <span className="shrink-0 text-xs text-muted">({group.fixtures.length})</span>
           {!open && nextTime && (

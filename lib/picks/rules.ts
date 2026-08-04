@@ -6,7 +6,7 @@ import type {
   PickRule,
   PredictionRow,
 } from "@/lib/types";
-import { isNationalTournamentLeague } from "@/lib/data/catalog";
+import { isEuroCupLeague, isNationalTournamentLeague } from "@/lib/data/catalog";
 import { rowValue } from "./value";
 import { readinessOf } from "@/lib/stats/readiness";
 
@@ -155,10 +155,12 @@ export function buildPick(
   prob: number
 ): MatchPick {
   const national = isNationalTournamentLeague(row.leagueId);
+  const europeanCup = isEuroCupLeague(row.leagueId);
   return {
     fixtureId: row.fixtureId,
     kickoff: row.kickoff,
     leagueId: row.leagueId,
+    europeanCup,
     home: { id: row.homeTeamId, name: row.homeName, logoUrl: row.homeLogo },
     away: { id: row.awayTeamId, name: row.awayName, logoUrl: row.awayLogo },
     prediction: predictionOf(row),

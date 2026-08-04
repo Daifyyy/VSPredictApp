@@ -12,6 +12,7 @@ import { evaluateRule, ruleSchema } from "@/lib/picks/rules";
 import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
 import { publicCache } from "@/lib/cacheHeaders";
 import { logError } from "@/lib/logError";
+import { isEuroCupLeague } from "@/lib/data/catalog";
 
 // Track-record modelu + benchmark + backtest strategie z odehraných predikcí.
 // **FREE** (agregátní/historické metriky nic konkrétního neprozrazují a budují
@@ -33,7 +34,9 @@ export async function GET(req: Request) {
   }
 
   try {
-    const rows = await getSettledPredictionRows();
+    const allRows = await getSettledPredictionRows();
+    const rows = allRows.filter((row) => !isEuroCupLeague(row.leagueId));
+    const europeanRows = allRows.filter((row) => isEuroCupLeague(row.leagueId));
     // CLV navoleného pravidla: posunula se linie od našeho snímku k zavření směrem k nám?
     // Počítá se jen z řádků se DVĚMA snímky kurzu (od 26. 7. 2026), takže je zpočátku prázdné.
     const clvPicks = rows.flatMap((row) => {
@@ -50,6 +53,21 @@ export async function GET(req: Request) {
         backtest: backtestRule(rows, parsed.data),
         reliability: computeReliability(rows),
         clv: summarizeClv(clvPicks),
+        european: {
+          experimental: true,
+          promotionSample: 150,
+          trackRecord: computeTrackRecord(europeanRows),
+          benchmark: computeBenchmarkTrackRecord(europeanRows),
+          market: computeMarketBenchmark(europeanRows),
+          backtest: backtestRule(europeanRows, parsed.data),
+          reliability: computeReliability(europeanRows),
+          clv: summarizeClv(europeanRows.flatMap((row) => {
+            const match = evaluateRule(row, parsed.data);
+            if (!match.ok) return [];
+            const side = clvSideOf(parsed.data.market, match.side);
+            return side ? [{ row, side }] : [];
+          })),
+        },
       },
       // Odpověď **nezávisí na uživateli** (jen na pravidle v query) a vstupní data se
       // mění dvakrát denně se `settle-results`. Přitom to byl nejtěžší opakovaný dotaz

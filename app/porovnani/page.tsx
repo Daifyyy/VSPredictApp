@@ -49,7 +49,9 @@ export async function generateMetadata({
   const ogUrl = `/og?h=${encodeURIComponent(hn)}&a=${encodeURIComponent(an)}`;
   const modeRaw = Array.isArray(sp.mode) ? sp.mode[0] : sp.mode;
   const mode = modeRaw === "NATIONAL" ? "NATIONAL" : "CLUB";
-  const canonical = `/porovnani?mode=${mode}&homeLeague=${homeLeague}&awayLeague=${awayLeague}&home=${home}&away=${away}`;
+  const contextRaw = Array.isArray(sp.context) ? sp.context[0] : sp.context;
+  const context = contextRaw === "EURO_CUP" ? "&context=EURO_CUP" : "";
+  const canonical = `/porovnani?mode=${mode}&homeLeague=${homeLeague}&awayLeague=${awayLeague}&home=${home}&away=${away}${context}`;
 
   return {
     title,
@@ -96,6 +98,7 @@ export default async function PorovnaniPage({
     awayLeague: num(sp.awayLeague),
     home: num(sp.home),
     away: num(sp.away),
+    context: (Array.isArray(sp.context) ? sp.context[0] : sp.context) === "EURO_CUP" ? "EURO_CUP" : undefined,
   };
 
   return (

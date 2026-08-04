@@ -44,6 +44,11 @@ export function PickRow({ pick }: { pick: MatchPick }) {
       </div>
       <div className="mt-1 flex items-center justify-between gap-2">
         <span className="flex min-w-0 items-center gap-1.5">
+          {pick.europeanCup && (
+            <span className="shrink-0 rounded-full bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold text-warning" title="Pohárový model zatím nemá dostatečný samostatný vzorek pro ověřené doporučení.">
+              Experimentální · Evropa
+            </span>
+          )}
           {pick.prediction.readiness.level !== "ok" && (
             <ReadinessTag readiness={pick.prediction.readiness} />
           )}

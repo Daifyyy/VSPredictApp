@@ -132,6 +132,20 @@ jobs:
             if [ "$failed" -gt 0 ]; then echo "$failed ligových snapshotů selhalo." >&2; exit 1; fi
             exit 0
           fi
+          if [ "$JOB" = "predict-upcoming" ]; then
+            failed=0
+            # Běžné ligy/reprezentace a každý evropský pohár zvlášť. Samostatné requesty
+            # dávají každé soutěži vlastní 60s rozpočet Vercelu; upsert je idempotentní.
+            for target in "$url" "$url?league=2" "$url?league=3" "$url?league=848"; do
+              echo "→ $target"
+              curl --fail-with-body --silent --show-error --location \
+                   --max-time 90 --retry 1 --retry-delay 10 \
+                   --header "Authorization: Bearer $CRON_SECRET" "$target" || failed=$((failed + 1))
+              echo
+            done
+            if [ "$failed" -gt 0 ]; then echo "$failed predikčních běhů selhalo." >&2; exit 1; fi
+            exit 0
+          fi
           echo "→ $url"
           # `--fail-with-body` = nenulový exit u 4xx/5xx, ale tělo se pořád vypíše,
           # takže je v logu vidět DŮVOD. Statusy, které sem chodí:

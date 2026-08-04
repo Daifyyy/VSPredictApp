@@ -107,7 +107,17 @@ interface StatsSetters {
   setBacktest: (v: BacktestResult | null) => void;
   setReliability: (v: ReliabilityReport | null) => void;
   setClv: (v: ClvSummary | null) => void;
+  setEuropean: (v: EuropeanStats | null) => void;
   setStatsState: (v: "loading" | "ok" | "error") => void;
+}
+
+interface EuropeanStats {
+  experimental: boolean;
+  promotionSample: number;
+  trackRecord: TrackRecord;
+  benchmark: BenchmarkTrackRecord | null;
+  market: MarketBenchmark | null;
+  clv: ClvSummary | null;
 }
 
 /**
@@ -141,6 +151,7 @@ async function loadStats(
     s.setBacktest(d.backtest ?? null);
     s.setReliability(d.reliability ?? null);
     s.setClv(d.clv ?? null);
+    s.setEuropean(d.european ?? null);
     s.setStatsState("ok");
   } catch {
     if (isActive()) s.setStatsState("error");
@@ -149,6 +160,7 @@ async function loadStats(
 
 export function PicksApp({ user }: { user: SessionUser | null }) {
   const [view, setView] = useState<View>("picks");
+  const [competition, setCompetition] = useState<"all" | "league" | "europe">("all");
   const [market, setMarket] = useState<PickMarket>("win");
   const [venue, setVenue] = useState<Venue>("home");
   const [minProbInput, setMinProb] = useState(0.65);
@@ -173,7 +185,15 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
   const [backtest, setBacktest] = useState<BacktestResult | null>(null);
   const [reliability, setReliability] = useState<ReliabilityReport | null>(null);
   const [clv, setClv] = useState<ClvSummary | null>(null);
+  const [european, setEuropean] = useState<EuropeanStats | null>(null);
   const [statsState, setStatsState] = useState<"loading" | "ok" | "error">("loading");
+  const visiblePicks = picks?.filter((pick) =>
+    competition === "all"
+      ? true
+      : competition === "europe"
+        ? pick.europeanCup
+        : !pick.europeanCup
+  ) ?? null;
 
   const retry = useCallback(() => {
     void loadPicks(market, venue, minProb, minEdge, minReadiness, () => true, {
@@ -211,6 +231,7 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
     setBacktest,
     setReliability,
     setClv,
+    setEuropean,
     setStatsState,
   });
 
@@ -270,6 +291,28 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
             onPreset={applyPreset}
           />
 
+          <div className="mt-3 flex max-w-md rounded-xl border border-border bg-surface p-1" role="group" aria-label="Typ soutěže">
+            {([
+              ["all", "Vše"],
+              ["league", "Ligové soutěže"],
+              ["europe", "Evropské poháry"],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setCompetition(value)}
+                aria-pressed={competition === value}
+                className={`min-h-11 flex-1 rounded-lg px-3 text-xs font-semibold transition ${
+                  competition === value
+                    ? "bg-accent text-foreground"
+                    : "text-muted hover:bg-accent-soft hover:text-foreground"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           {/* Backtest NAVOLENÉHO pravidla patří k tipům, ne do diagnostiky: je to jediné
               číslo, které k rozhodnutí „mám tomuhle pravidlu věřit" stačí. */}
           {backtest && (
@@ -300,9 +343,9 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
                 ↻ Zkusit znovu
               </button>
             </Empty>
-          ) : picks && picks.length > 0 ? (
+          ) : visiblePicks && visiblePicks.length > 0 ? (
             <ul className="mt-4 space-y-2">
-              {picks.map((p) => (
+              {visiblePicks.map((p) => (
                 <PickRow key={p.fixtureId} pick={p} />
               ))}
             </ul>
@@ -321,6 +364,7 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
           track={track}
           benchmark={benchmark}
           state={statsState}
+          european={european}
           onRetry={retryStats}
         />
       )}
@@ -341,6 +385,7 @@ function ModelView({
   track,
   benchmark,
   state,
+  european,
   onRetry,
 }: {
   reliability: ReliabilityReport | null;
@@ -349,6 +394,7 @@ function ModelView({
   track: TrackRecord | null;
   benchmark: BenchmarkTrackRecord | null;
   state: "loading" | "ok" | "error";
+  european: EuropeanStats | null;
   onRetry: () => void;
 }) {
   // Verdikt se smí vykreslit až nad načtenými daty. Brána sama o sobě `null` vstupy snese
@@ -390,6 +436,24 @@ function ModelView({
       {/* Mimo bránu schválně: porazit predikce API-Footballu o ničem nerozhoduje –
           rozhodčím je trh (kritérium 2). Je to doplněk, ne kritérium. */}
       {benchmark && benchmark.n > 0 && <BenchmarkPanel benchmark={benchmark} />}
+      {european && (
+        <section className="rounded-2xl border border-warning/35 bg-warning/5 p-4 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <p className="page-kicker text-warning">Experimentální · evropské poháry</p>
+              <h3 className="mt-1 font-bold text-foreground">Samostatný pohárový track record</h3>
+              <p className="mt-1 text-xs leading-5 text-muted">Liga mistrů, Evropská liga a Konferenční liga se nezapočítávají do ověřených ligových výsledků. Označení zůstane nejméně do {european.promotionSample} uzavřených predikcí.</p>
+            </div>
+            <span className="rounded-full bg-warning/15 px-2.5 py-1 text-xs font-bold text-warning">{european.trackRecord.n} / {european.promotionSample}</span>
+          </div>
+          <div className="mt-3 space-y-3">
+            <TrackRecordPanel track={european.trackRecord} />
+            {european.market && european.market.n > 0 && <MarketPanel market={european.market} />}
+            {european.clv && european.clv.n > 0 && <ClvPanel clv={european.clv} />}
+            {european.benchmark && european.benchmark.n > 0 && <BenchmarkPanel benchmark={european.benchmark} />}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

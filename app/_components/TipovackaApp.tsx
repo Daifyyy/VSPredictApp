@@ -331,7 +331,9 @@ function LeagueGroups({
       }
       g.fixtures.push(f);
     }
-    return [...map.values()];
+    return [...map.values()].sort((a, b) =>
+      Number(Boolean(b.fixtures[0]?.europeanCup)) - Number(Boolean(a.fixtures[0]?.europeanCup))
+    );
   }, [fixtures]);
 
   return (

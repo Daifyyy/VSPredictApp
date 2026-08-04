@@ -121,6 +121,16 @@ describe("summarizeSettled", () => {
   });
 });
 
+describe("European cup settlement", () => {
+  it("marks the result for the separate European track record", () => {
+    const [out] = summarizeSettled([
+      row({ leagueId: 2, homeWin: 0.6, draw: 0.2, awayWin: 0.2, homeGoals: 2, awayGoals: 0 }),
+    ]);
+    expect(out.europeanCup).toBe(true);
+    expect(out.compareMode).toBe("CLUB");
+  });
+});
+
 /** Odehraný zápas z rozpisu (bez tipu) – vstup pro `mergeTips`. */
 function playedFixture(fixtureId: number): PlayedFixture {
   return {

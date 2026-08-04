@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   getCompareTeam,
+  getCompareEuroCupTeamFromFixture,
   getLeagueBaseline,
   getLeagueRatings,
   getNationalRatings,
@@ -23,6 +24,7 @@ export async function GET(req: Request) {
   const homeLeague = Number(sp.get("homeLeague"));
   const awayLeague = Number(sp.get("awayLeague"));
   const unlockTrial = sp.get("unlock") === "1";
+  const europeanCup = sp.get("context") === "EURO_CUP";
 
   if (
     !Number.isFinite(homeId) ||
@@ -48,12 +50,23 @@ export async function GET(req: Request) {
     // totéž → cross-league porovnání zůstává na okenním modelu. U REPREZENTACÍ je pool
     // globální, takže srovnání napříč konfederacemi je právě to, co ratingy opravují
     // (a „ligou" je tam konfederace, takže rovnost id se nesmí vyžadovat).
-    const national = isNationalLeague(homeLeague);
+    const national = !europeanCup && isNationalLeague(homeLeague);
+    const cupMeta = (side: "home" | "away") => ({
+      name: sp.get(`${side}Name`) ?? "",
+      logoUrl: sp.get(`${side}Logo`) ?? "",
+      country: "",
+    });
     const [home, away, baseline, ratings] = await Promise.all([
-      getCompareTeam(homeId, homeLeague, includeEuro),
-      getCompareTeam(awayId, awayLeague, includeEuro),
-      getLeagueBaseline(homeLeague),
-      national
+      europeanCup
+        ? getCompareEuroCupTeamFromFixture(homeId, homeLeague, cupMeta("home"))
+        : getCompareTeam(homeId, homeLeague, includeEuro),
+      europeanCup
+        ? getCompareEuroCupTeamFromFixture(awayId, awayLeague, cupMeta("away"))
+        : getCompareTeam(awayId, awayLeague, includeEuro),
+      europeanCup ? null : getLeagueBaseline(homeLeague),
+      europeanCup
+        ? null
+        : national
         ? getNationalRatings()
         : homeLeague === awayLeague
           ? getLeagueRatings(homeLeague)

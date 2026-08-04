@@ -24,7 +24,20 @@ export function transferWindowStart(now: Date = new Date()): Date {
 }
 
 /** Evropské poháry (TOP-3) pro cross-country kontext: UCL, UEL, UECL. */
-export const EURO_LEAGUE_IDS = [2, 3, 848];
+const leagueLogo = (id: number) =>
+  `https://media.api-sports.io/football/leagues/${id}.png`;
+
+export const EURO_CUP_LEAGUES: League[] = [
+  { id: 2, name: "Liga mistrů", country: "Evropa", logoUrl: leagueLogo(2), kind: "CLUB_LEAGUE" },
+  { id: 3, name: "Evropská liga", country: "Evropa", logoUrl: leagueLogo(3), kind: "CLUB_LEAGUE" },
+  { id: 848, name: "Konferenční liga", country: "Evropa", logoUrl: leagueLogo(848), kind: "CLUB_LEAGUE" },
+];
+
+export const EURO_LEAGUE_IDS = EURO_CUP_LEAGUES.map((league) => league.id);
+
+export function isEuroCupLeague(leagueId: number): boolean {
+  return EURO_LEAGUE_IDS.includes(leagueId);
+}
 
 /**
  * Pořadí soutěží pro dávkové běhy, **pootočené podle dne** (`dayOfYear`).
@@ -51,9 +64,6 @@ export function dayOfYear(now: Date = new Date()): number {
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   return Math.floor((today - start) / 86_400_000) + 1;
 }
-
-const leagueLogo = (id: number) =>
-  `https://media.api-sports.io/football/leagues/${id}.png`;
 
 /** Kurátorované top evropské klubové ligy (ID ověřena živě přes /leagues). */
 export const CLUB_LEAGUES: League[] = [
@@ -184,6 +194,7 @@ export function isProgramClubLeague(leagueId: number): boolean {
  * `/fixtures?date=`.
  */
 export const FIXTURE_LIST_LEAGUE_IDS = [
+  ...EURO_LEAGUE_IDS,
   ...PROGRAM_CLUB_LEAGUE_IDS,
   ...ALL_NATIONAL_PREDICTION_LEAGUE_IDS,
 ];
@@ -221,7 +232,7 @@ export function getConfederation(leagueId: number): Confederation | undefined {
 }
 
 const ALL_LEAGUES_BY_ID = new Map<number, League>(
-  [...CLUB_LEAGUES, ...NATIONAL_LEAGUES].map((l) => [l.id, l])
+  [...CLUB_LEAGUES, ...EURO_CUP_LEAGUES, ...NATIONAL_LEAGUES].map((l) => [l.id, l])
 );
 
 // Kolikrát se dané jméno v katalogu opakuje (dnes: „Bundesliga" pro Německo i Rakousko).

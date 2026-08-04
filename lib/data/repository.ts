@@ -48,7 +48,9 @@ import { logError } from "@/lib/logError";
 import { getLeagueTransfers, getClubBalances } from "./transferStore";
 import {
   ALL_NATIONAL_PREDICTION_LEAGUE_IDS,
+  EURO_LEAGUE_IDS,
   PROGRAM_CLUB_LEAGUE_IDS,
+  isEuroCupLeague,
   isProgramClubLeague,
 } from "./catalog";
 import * as real from "./realRepository";
@@ -270,7 +272,7 @@ export async function getRanks(
   if (useReal) return real.getRanks(teams);
   const map = new Map<number, number>();
   for (const t of teams) {
-    if (t.national) continue;
+    if (t.national || isEuroCupLeague(t.leagueId)) continue;
     const s = mockStanding(t.id);
     if (s) map.set(t.id, s.rank);
   }
@@ -283,7 +285,9 @@ export async function getRanks(
  */
 export async function stampPickRanks(picks: MatchPick[]): Promise<MatchPick[]> {
   const teams = picks
-    .filter((p) => p.compareMode === "CLUB")
+    // Evropský pohár nemá ligovou tabulku a jeho competitionId se nesmí posílat
+    // do `/standings`; pozice domácích lig se případně ukážou až v detailu týmu.
+    .filter((p) => p.compareMode === "CLUB" && !p.europeanCup)
     .flatMap((p) => [
       { id: p.home.id, leagueId: p.leagueId, national: false },
       { id: p.away.id, leagueId: p.leagueId, national: false },
@@ -291,7 +295,7 @@ export async function stampPickRanks(picks: MatchPick[]): Promise<MatchPick[]> {
   if (teams.length === 0) return picks;
   const ranks = await getRanks(teams);
   return picks.map((p) =>
-    p.compareMode === "CLUB"
+    p.compareMode === "CLUB" && !p.europeanCup
       ? {
           ...p,
           homeRank: ranks.get(p.home.id) ?? null,
@@ -369,12 +373,13 @@ export async function getRecentResults(days = 4): Promise<SettledMatch[]> {
         limit: 400,
         leagueIds: [
           ...PROGRAM_CLUB_LEAGUE_IDS,
+          ...EURO_LEAGUE_IDS,
           ...ALL_NATIONAL_PREDICTION_LEAGUE_IDS,
         ],
       })
     : mockSettledPredictions();
   const matches = summarizeSettled(rows).filter(
-    (m) => m.compareMode === "NATIONAL" || isProgramClubLeague(m.leagueId)
+    (m) => m.compareMode === "NATIONAL" || m.europeanCup || isProgramClubLeague(m.leagueId)
   );
 
   // Reprezentačním řádkům dohledej konfederaci každého týmu (deep-link do NATIONAL).
@@ -650,6 +655,15 @@ function mockMatchStats(fixtureId: number): {
 export async function getLeagueTable(leagueId: number): Promise<LeagueTable | null> {
   if (useReal) return real.getLeagueTable(leagueId);
   return mockLeagueTable(leagueId);
+}
+
+export async function getCompareEuroCupTeamFromFixture(
+  teamId: number,
+  competitionId: number,
+  meta?: real.ClubMeta
+): Promise<Team | null> {
+  if (useReal) return real.getCompareEuroCupTeamFromFixture(teamId, competitionId, meta);
+  return allMockTeams().find((team) => team.id === teamId) ?? null;
 }
 
 export async function getLeagueStyleSnapshot(leagueId: number): Promise<LeagueStyleSnapshot | null> {

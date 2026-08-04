@@ -260,6 +260,10 @@ export interface UpcomingFixture {
   home: { id: number; name: string; logoUrl: string };
   away: { id: number; name: string; logoUrl: string };
   national: boolean;
+  /** Evropská klubová soutěž (Liga mistrů / EL / KL), včetně předkol. */
+  europeanCup?: boolean;
+  /** Kolo soutěže ze zdrojových dat, např. "2nd Qualifying Round". */
+  competitionRound?: string | null;
   /** Mód cílového Porovnání (klub vs. reprezentace). */
   compareMode: EntityType;
   /** „Liga" pro deep-link: klub → `leagueId`, reprezentace → konfederace týmu (či null). */
@@ -315,6 +319,8 @@ export interface PlayedFixture {
   /** Zápas se rozhodl až v prodloužení/na penalty → skóre výše je stav po 90 min. */
   afterExtraTime: boolean;
   national: boolean;
+  europeanCup?: boolean;
+  competitionRound?: string | null;
   compareMode: EntityType;
   homeCompareLeagueId: number | null;
   awayCompareLeagueId: number | null;
@@ -877,6 +883,8 @@ export interface MatchPick {
   fixtureId: number;
   kickoff: string;
   leagueId: number;
+  /** Predikce evropského poháru – zatím samostatně měřený experimentální dataset. */
+  europeanCup?: boolean;
   home: { id: number; name: string; logoUrl: string };
   away: { id: number; name: string; logoUrl: string };
   prediction: MatchPrediction;
@@ -955,6 +963,7 @@ export interface SettledMatch {
   compareMode: EntityType;
   homeCompareLeagueId: number | null;
   awayCompareLeagueId: number | null;
+  europeanCup?: boolean;
 }
 
 export type CategoryKey =

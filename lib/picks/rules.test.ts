@@ -91,6 +91,19 @@ describe("evaluateRule", () => {
   });
 });
 
+describe("European cup picks", () => {
+  it("marks a cup pick as experimental while keeping CLUB comparison", () => {
+    const [pick] = filterPicks([row({ leagueId: 848, homeWin: 0.8 })], {
+      market: "win",
+      venue: "home",
+      minProb: 0.65,
+    });
+    expect(pick.compareMode).toBe("CLUB");
+    expect(pick.europeanCup).toBe(true);
+    expect([pick.homeCompareLeagueId, pick.awayCompareLeagueId]).toEqual([848, 848]);
+  });
+});
+
 describe("filterPicks", () => {
   it("vrátí jen splňující a seřadí dle nejbližšího výkopu", () => {
     const day = (n: number) => new Date(Date.now() + n * 86400000).toISOString();

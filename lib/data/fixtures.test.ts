@@ -367,3 +367,27 @@ describe("normalizeFinishedFixtures", () => {
     expect(f.national).toBe(false);
   });
 });
+
+describe("European cup fixtures", () => {
+  it("keeps qualifying round metadata and European compare context", () => {
+    const european = fx(70, 2, "NS", "2026-06-23T18:00:00+00:00", {
+      leagueName: "UEFA Champions League",
+    });
+    european.league.round = "3rd Qualifying Round";
+    const [out] = normalizeUpcomingFixtures([european], NOW);
+    expect(out.leagueName).toBe("Liga mistrů");
+    expect(out.europeanCup).toBe(true);
+    expect(out.competitionRound).toBe("3rd Qualifying Round");
+    expect([out.homeCompareLeagueId, out.awayCompareLeagueId]).toEqual([2, 2]);
+  });
+
+  it("settles a penalty match from its 90-minute score", () => {
+    const european = done(80, 3, "PEN", "2026-08-01T18:00:00+00:00", { home: 5, away: 4 }, { home: 1, away: 1 });
+    european.league.round = "3rd Qualifying Round";
+    const [out] = normalizeFinishedFixtures([european]);
+    expect(out.europeanCup).toBe(true);
+    expect(out.competitionRound).toBe("3rd Qualifying Round");
+    expect([out.homeGoals, out.awayGoals]).toEqual([1, 1]);
+    expect(out.afterExtraTime).toBe(true);
+  });
+});
