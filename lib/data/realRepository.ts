@@ -298,15 +298,16 @@ export async function refreshLeagueStyleSnapshot(leagueId: number): Promise<Leag
   const current = onlyFinished(currentRaw);
   const previous = onlyFinished(previousRaw);
   const profiles = [];
+  const baselineProfiles = [];
 
   for (const meta of teams) {
     const belongs = (fixture: ApiFixture) =>
       fixture.teams.home.id === meta.id || fixture.teams.away.id === meta.id;
     const recent = byDateDescFx(current.filter(belongs)).slice(0, FORM_FIXTURES);
     const baseline = spreadSample(previous.filter(belongs), BASELINE_SAMPLE);
-    const fixtures = dedupeFixtures([...recent, ...baseline]);
-    const matches = tagBaseline(
-      await assemble(meta.id, "league", fixtures, () => ({ competitive: true, isNeutral: false })),
+    const currentMatches = await assemble(meta.id, "league", recent, () => ({ competitive: true, isNeutral: false }));
+    const baselineMatches = tagBaseline(
+      await assemble(meta.id, "league", baseline, () => ({ competitive: true, isNeutral: false })),
       PREVIOUS_SEASON
     );
     profiles.push(buildTeamProfileCore({
@@ -316,11 +317,20 @@ export async function refreshLeagueStyleSnapshot(leagueId: number): Promise<Leag
       country: meta.country,
       entityType: "CLUB",
       leagueId,
-      leagueMatches: matches,
+      leagueMatches: currentMatches,
+    }));
+    baselineProfiles.push(buildTeamProfileCore({
+      id: meta.id,
+      name: meta.name,
+      logoUrl: meta.logoUrl,
+      country: meta.country,
+      entityType: "CLUB",
+      leagueId,
+      leagueMatches: baselineMatches,
     }));
   }
 
-  const snapshot = buildLeagueStyleSnapshot(leagueId, CURRENT_SEASON, profiles);
+  const snapshot = buildLeagueStyleSnapshot(leagueId, CURRENT_SEASON, profiles, undefined, baselineProfiles);
   await writeLeagueStyleSnapshot(snapshot);
   return snapshot;
 }

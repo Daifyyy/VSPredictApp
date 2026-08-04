@@ -540,6 +540,12 @@ export interface LeagueStyleRankingEntry {
   logoUrl: string;
   score: number;
   sampleSize: number;
+  /** Zápasy aktuální sezony, které přispěly do dané metriky. */
+  currentSeasonSample?: number;
+  /** Referenční vzorek z předchozí dokončené sezony. */
+  baselineSample?: number;
+  /** Podíl výsledného skóre tvořený aktuální sezonou (0–1). */
+  currentSeasonWeight?: number;
   lowConfidence: boolean;
 }
 
