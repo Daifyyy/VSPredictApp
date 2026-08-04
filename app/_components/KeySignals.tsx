@@ -18,14 +18,16 @@ export function KeySignals({
   signals,
   homeTeam,
   awayTeam,
+  embedded = false,
 }: {
   signals: ScoredInsight[];
   homeTeam: SignalTeam;
   awayTeam: SignalTeam;
+  embedded?: boolean;
 }) {
   if (signals.length === 0) return null;
   return (
-    <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6">
+    <section className={embedded ? "" : "rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6"}>
       <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
         Klíčové signály
       </p>

@@ -519,6 +519,22 @@ export function CompareApp({
             onLeagueChange={handleAwayLeague}
           />
         </div>
+        {mode === "CLUB" && (
+          <div className="mt-4 border-t border-border pt-4">
+            <p className="mb-2 text-center text-[11px] font-semibold uppercase tracking-wide text-muted">
+              Prostředí porovnání
+            </p>
+            <Segmented
+              options={(["HOME", "AWAY", "TOTAL"] as Venue[]).map((v) => ({
+                value: v,
+                label: VENUE_LABELS[v],
+              }))}
+              value={venue}
+              onChange={setVenue}
+              ariaLabel="Doma / Venku / Celkově"
+            />
+          </div>
+        )}
       </section>
 
       {(homeId != null || awayId != null) && (
@@ -531,21 +547,6 @@ export function CompareApp({
           >
             ✕ Nové porovnání
           </button>
-        </div>
-      )}
-
-      {/* Reprezentace jsou venue-neutrální → přepínač Doma/Venku jen pro kluby. */}
-      {mode === "CLUB" && (
-        <div className="sticky top-0 z-10 mt-4 bg-background/80 py-2 backdrop-blur">
-          <Segmented
-            options={(["HOME", "AWAY", "TOTAL"] as Venue[]).map((v) => ({
-              value: v,
-              label: VENUE_LABELS[v],
-            }))}
-            value={venue}
-            onChange={setVenue}
-            ariaLabel="Doma / Venku / Celkově"
-          />
         </div>
       )}
 
@@ -643,7 +644,7 @@ function ResultPanel({
   unlocking: boolean;
   onUnlockTrial: () => void;
 }) {
-  const [viewMode, setViewMode] = useState<ViewMode>("raw");
+  const [viewMode, setViewMode] = useState<ViewMode>("category");
   const entityMode: EntityType =
     result?.source === "NATIONAL" || result?.source === "NATIONAL_FB" ? "NATIONAL" : "CLUB";
   // Ligová tabulka jen pro klub vs. klub stejné ligy (FREE, i pro zamčený výsledek).
@@ -731,78 +732,63 @@ function ResultPanel({
           unlocking={unlocking}
         />
       ) : (
-        <>
+        <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6">
+          <div className="mb-4 flex items-center justify-between gap-3 border-b border-border pb-3">
+            <div>
+              <p className="page-kicker">Výsledek analýzy</p>
+              <h2 className="mt-1 text-lg font-bold text-foreground">
+                {result.home.team.name} vs. {result.away.team.name}
+              </h2>
+            </div>
+            <span className="rounded-full bg-accent/20 px-2.5 py-1 text-[11px] font-semibold text-accent-ink">
+              {VENUE_LABELS[venue]}
+            </span>
+          </div>
+          <div className="space-y-4">
           {result.insightReport && (
-            <MatchVerdict verdict={result.insightReport.verdict} />
+            <MatchVerdict verdict={result.insightReport.verdict} embedded />
           )}
           {result.prediction && (
-            <MatchPrediction
-              prediction={result.prediction}
-              homeName={result.home.team.name}
-              awayName={result.away.team.name}
-            />
+            <div className="border-t border-border pt-4">
+              <MatchPrediction
+                prediction={result.prediction}
+                homeName={result.home.team.name}
+                awayName={result.away.team.name}
+                embedded
+              />
+            </div>
           )}
           {result.insightReport && (
-            <KeySignals
-              signals={result.insightReport.keySignals}
-              homeTeam={{ name: result.home.team.name, logoUrl: result.home.team.logoUrl }}
-              awayTeam={{ name: result.away.team.name, logoUrl: result.away.team.logoUrl }}
-            />
+            <div className="border-t border-border pt-4">
+              <KeySignals
+                signals={result.insightReport.keySignals}
+                homeTeam={{ name: result.home.team.name, logoUrl: result.home.team.logoUrl }}
+                awayTeam={{ name: result.away.team.name, logoUrl: result.away.team.logoUrl }}
+                embedded
+              />
+            </div>
           )}
-        </>
+          </div>
+        </section>
       )}
 
-      <FormSummary
-        home={summaryFor("home")}
-        away={summaryFor("away")}
-        homeQuality={qualityFor("home")}
-        awayQuality={qualityFor("away")}
-        mode={entityMode}
-      />
-
-      <StandingContext home={homeStanding} away={awayStanding} venue={venue} />
-
-      {leagueTable && leagueTable.rows.some((r) => r.played > 0) && (
-        <LeagueTableSection
-          table={leagueTable}
-          leagueId={homeLeagueId!}
-          highlightTeamIds={
-            new Set([result.home.team.id, result.away.team.id])
-          }
-        />
-      )}
-
-      {(homeScorers.length > 0 || awayScorers.length > 0) && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {homeScorers.length > 0 && (
-            <ScorerList
-              title={result.home.team.name}
-              accent="home"
-              scorers={homeScorers}
-            />
-          )}
-          {awayScorers.length > 0 && (
-            <ScorerList
-              title={result.away.team.name}
-              accent="away"
-              scorers={awayScorers}
-            />
-          )}
+      <section aria-labelledby="comparison-analysis-heading" className="space-y-3">
+        <div>
+          <p className="page-kicker">Srovnání týmů</p>
+          <h2 id="comparison-analysis-heading" className="mt-1 text-lg font-bold text-foreground">
+            Jak si týmy vedou
+          </h2>
         </div>
-      )}
-
-      <div>
         <Segmented
           options={[
-            { value: "raw" as ViewMode, label: "Raw statistiky" },
             { value: "category" as ViewMode, label: "Kategorie" },
             { value: "style" as ViewMode, label: "Styl hry" },
+            { value: "raw" as ViewMode, label: "Detailní statistiky" },
           ]}
           value={viewMode}
           onChange={setViewMode}
           ariaLabel="Pohled na statistiky"
         />
-      </div>
 
       {viewMode === "raw" && (
         <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6">
@@ -857,52 +843,104 @@ function ResultPanel({
           awayLogo={result.away.team.logoUrl}
         />
       )}
+      </section>
 
-      {!result.locked && result.insightReport && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <InsightChips
-            title={result.home.team.name}
-            accent="home"
-            insights={result.insightReport.home}
-          />
-          <InsightChips
-            title={result.away.team.name}
-            accent="away"
-            insights={result.insightReport.away}
-          />
+      <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6">
+        <div className="mb-4">
+          <p className="page-kicker">Kontext zápasu</p>
+          <h2 className="mt-1 text-lg font-bold text-foreground">Forma a postavení</h2>
         </div>
-      )}
-
-      {injuriesFailed && (
-        <p className="rounded-xl border border-border bg-surface px-3 py-2 text-xs text-warning">
-          ⚠ Přehled zranění se nepodařilo načíst – neznamená to, že jsou oba kádry kompletní.
-        </p>
-      )}
-
-      {(homeInjuries.length > 0 || awayInjuries.length > 0) && (
-        <section className="space-y-3">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="text-sm font-bold text-foreground">Absence</h3>
-            <span className="text-xs text-muted">{result.home.team.name} {homeInjuries.length} · {result.away.team.name} {awayInjuries.length}</span>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-          {homeInjuries.length > 0 && (
-            <InjuryList
-              title={result.home.team.name}
-              accent="home"
-              injuries={homeInjuries}
-            />
+        <div className="space-y-4">
+          <FormSummary
+            home={summaryFor("home")}
+            away={summaryFor("away")}
+            homeQuality={qualityFor("home")}
+            awayQuality={qualityFor("away")}
+            mode={entityMode}
+            embedded
+          />
+          {(homeStanding || awayStanding) && (
+            <div className="border-t border-border pt-4">
+              <StandingContext home={homeStanding} away={awayStanding} venue={venue} embedded />
+            </div>
           )}
-          {awayInjuries.length > 0 && (
-            <InjuryList
-              title={result.away.team.name}
-              accent="away"
-              injuries={awayInjuries}
-            />
-          )}
-          </div>
-        </section>
-      )}
+        </div>
+      </section>
+
+      <section aria-labelledby="comparison-more-heading" className="space-y-2">
+        <div className="mb-3">
+          <p className="page-kicker">Podrobnosti</p>
+          <h2 id="comparison-more-heading" className="mt-1 text-lg font-bold text-foreground">
+            Další informace
+          </h2>
+        </div>
+
+        {leagueTable && leagueTable.rows.some((r) => r.played > 0) && (
+          <LeagueTableSection
+            table={leagueTable}
+            leagueId={homeLeagueId!}
+            highlightTeamIds={new Set([result.home.team.id, result.away.team.id])}
+          />
+        )}
+
+        {(homeScorers.length > 0 || awayScorers.length > 0) && (
+          <DetailAccordion
+            title="Nejlepší střelci"
+            summary={<>{homeScorers.length + awayScorers.length} hráčů</>}
+          >
+            <div className="grid gap-3 sm:grid-cols-2">
+              {homeScorers.length > 0 && (
+                <ScorerList title={result.home.team.name} accent="home" scorers={homeScorers} />
+              )}
+              {awayScorers.length > 0 && (
+                <ScorerList title={result.away.team.name} accent="away" scorers={awayScorers} />
+              )}
+            </div>
+          </DetailAccordion>
+        )}
+
+        {(injuriesFailed || homeInjuries.length > 0 || awayInjuries.length > 0) && (
+          <DetailAccordion
+            title="Absence"
+            summary={
+              <>
+                {result.home.team.name} {homeInjuries.length} · {result.away.team.name} {awayInjuries.length}
+              </>
+            }
+          >
+            {injuriesFailed && (
+              <p className="mb-3 rounded-xl bg-warning/10 px-3 py-2 text-xs text-warning">
+                Přehled zranění se nepodařilo načíst – neznamená to, že jsou oba kádry kompletní.
+              </p>
+            )}
+            <div className="grid gap-3 sm:grid-cols-2">
+              {homeInjuries.length > 0 && (
+                <InjuryList title={result.home.team.name} accent="home" injuries={homeInjuries} />
+              )}
+              {awayInjuries.length > 0 && (
+                <InjuryList title={result.away.team.name} accent="away" injuries={awayInjuries} />
+              )}
+            </div>
+          </DetailAccordion>
+        )}
+
+        {!result.locked && result.insightReport && (
+          <DetailAccordion title="Rozšířené týmové signály">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <InsightChips
+                title={result.home.team.name}
+                accent="home"
+                insights={result.insightReport.home}
+              />
+              <InsightChips
+                title={result.away.team.name}
+                accent="away"
+                insights={result.insightReport.away}
+              />
+            </div>
+          </DetailAccordion>
+        )}
+      </section>
     </div>
   );
 }
@@ -1027,6 +1065,38 @@ function Segmented<T extends string>({
   );
 }
 
+function DetailAccordion({
+  title,
+  summary,
+  children,
+}: {
+  title: string;
+  summary?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left transition hover:bg-accent/5"
+      >
+        <span className="text-sm font-semibold text-foreground">{title}</span>
+        <span className="ml-auto text-xs text-muted">{summary}</span>
+        <span
+          className={"text-muted transition-transform " + (open ? "rotate-180" : "")}
+          aria-hidden
+        >
+          ▾
+        </span>
+      </button>
+      {open && <div className="border-t border-border px-3 py-4 sm:px-4">{children}</div>}
+    </section>
+  );
+}
+
 /** Collapsible ligová tabulka v Porovnání (default sbalená; oba týmy zvýrazněné). */
 function LeagueTableSection({
   table,
@@ -1037,27 +1107,11 @@ function LeagueTableSection({
   highlightTeamIds: Set<number>;
   leagueId: number;
 }) {
-  const [open, setOpen] = useState(false);
   return (
-    <section className="rounded-2xl border border-border bg-surface shadow-sm">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        className="flex w-full items-center justify-between gap-2 px-4 py-3 text-left"
-      >
-        <span className="text-sm font-semibold text-foreground">Ligová tabulka</span>
-        <span className="text-muted" aria-hidden>
-          {open ? "▲" : "▼"}
-        </span>
-      </button>
-      {open && (
-        <div className="px-3 pb-4">
-          <StandingsTable rows={table.rows} highlightTeamIds={highlightTeamIds} leagueId={leagueId} />
-          <ZoneLegend rows={table.rows} />
-        </div>
-      )}
-    </section>
+    <DetailAccordion title="Ligová tabulka">
+      <StandingsTable rows={table.rows} highlightTeamIds={highlightTeamIds} leagueId={leagueId} />
+      <ZoneLegend rows={table.rows} />
+    </DetailAccordion>
   );
 }
 

@@ -10,6 +10,31 @@ test("domovská stránka nabízí zápasy a rychlé vstupy", async ({ page }) =>
   await expect(page.getByRole("link", { name: "Porovnat dva týmy" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Program/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Výsledky/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Dnes/ }).first()).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+});
+
+test("porovnání otevírá Kategorie a sekundární obsah drží sbalený", async ({ page }) => {
+  await page.goto(
+    "/porovnani?mode=CLUB&homeLeague=140&awayLeague=140&home=541&away=529",
+    { waitUntil: "networkidle" }
+  );
+
+  await expect(page.getByRole("radio", { name: "Kategorie" })).toHaveAttribute(
+    "aria-checked",
+    "true"
+  );
+  await expect(page.getByRole("radio", { name: "Detailní statistiky" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Další informace" })).toBeVisible();
+
+  const leagueTable = page.getByRole("button", { name: "Ligová tabulka" });
+  if (await leagueTable.count()) {
+    await expect(leagueTable).toHaveAttribute("aria-expanded", "false");
+    await leagueTable.click();
+    await expect(leagueTable).toHaveAttribute("aria-expanded", "true");
+  }
 });
 
 test("globální našeptávač otevře správný profil týmu", async ({ page }) => {

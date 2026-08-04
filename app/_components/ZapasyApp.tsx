@@ -815,10 +815,11 @@ function DayTabs({
           key={d.date}
           type="button"
           onClick={() => onSelect(i)}
+          aria-pressed={i === active}
           className={`ui-chip shrink-0 whitespace-nowrap px-3 text-sm font-medium transition ${
             i === active
-              ? "border-accent-strong/30 bg-accent/30 text-foreground"
-              : `border-border bg-surface hover:text-foreground ${
+              ? "border-accent-strong/40 bg-accent font-bold text-accent-ink shadow-sm"
+              : `border-border bg-surface hover:border-accent-strong/25 hover:bg-accent/10 hover:text-foreground ${
                   isWeekend(d.date) ? "text-foreground/80" : "text-muted"
                 }`
           }`}

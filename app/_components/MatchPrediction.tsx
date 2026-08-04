@@ -8,10 +8,12 @@ export function MatchPrediction({
   prediction,
   homeName,
   awayName,
+  embedded = false,
 }: {
   prediction: Prediction;
   homeName: string;
   awayName: string;
+  embedded?: boolean;
 }) {
   const { homeWin, draw, awayWin, lambdaHome, lambdaAway, bttsYes, over25, topScores } =
     prediction;
@@ -19,7 +21,7 @@ export function MatchPrediction({
 
   if (!prediction.available) {
     return (
-      <section className="ui-panel p-4 text-center sm:p-5">
+      <section className={embedded ? "text-center" : "ui-panel p-4 text-center sm:p-5"}>
         <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
           Predikce
         </p>
@@ -32,7 +34,7 @@ export function MatchPrediction({
   }
 
   return (
-    <section className="ui-panel border-l-4 border-l-accent-strong p-4 sm:p-5">
+    <section className={embedded ? "" : "ui-panel border-l-4 border-l-accent-strong p-4 sm:p-5"}>
       <div className="mb-3 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide">
         <span className="text-muted">
           Predikce

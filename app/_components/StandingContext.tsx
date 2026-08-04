@@ -9,15 +9,17 @@ export function StandingContext({
   home,
   away,
   venue,
+  embedded = false,
 }: {
   home: Standing | null;
   away: Standing | null;
   venue: Venue;
+  embedded?: boolean;
 }) {
   if (!home && !away) return null;
 
   return (
-    <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6">
+    <section className={embedded ? "" : "rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6"}>
       <div className="space-y-3">
         <Row label="V tabulce">
           <RankValue s={home} accent="home" />
