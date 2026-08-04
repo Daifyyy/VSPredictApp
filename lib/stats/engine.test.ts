@@ -221,6 +221,19 @@ describe("resolveSource", () => {
     expect(r.sourceNote).toBe("Data z domácí ligy");
   });
 
+  it("různé ligy používají společnou adaptivní evropskou váhu podle slabšího vzorku", () => {
+    const threeEuro = Array.from({ length: 3 }, (_, i) => clubMatch(100 + i, i + 1));
+    const tenEuro = Array.from({ length: 10 }, (_, i) => clubMatch(200 + i, i + 1));
+    const resolved = resolveSource(
+      { ...teamA, euroMatches: threeEuro },
+      { ...teamB, leagueId: 140, euroMatches: tenEuro }
+    );
+    expect(resolved.source).toBe("EURO_BLEND");
+    expect(resolved.blend?.euroWeight).toBeCloseTo(0.385);
+    expect(resolved.blend?.home.current).toBe(3);
+    expect(resolved.blend?.away.current).toBe(10);
+  });
+
   const natTeam = (id: number, competitiveCount: number): Team => ({
     id,
     name: `N${id}`,

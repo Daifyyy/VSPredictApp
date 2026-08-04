@@ -69,6 +69,13 @@ describe("toFreeResult", () => {
   const full: CompareResult = {
     source: "LEAGUE",
     sourceNote: "pozn",
+    sourceMix: {
+      euroWeight: 0.385,
+      domesticWeight: 0.615,
+      effectiveEuroSample: 3,
+      home: { current: 3, previous: 0 },
+      away: { current: 8, previous: 2 },
+    },
     metrics: ["GOALS_FOR"] as CompareResult["metrics"],
     home: { team: { id: 1, name: "A", logoUrl: "", country: "" }, values: [], summary: [], formQuality: [] },
     away: { team: { id: 2, name: "B", logoUrl: "", country: "" }, values: [], summary: [], formQuality: [] },
@@ -100,5 +107,6 @@ describe("toFreeResult", () => {
     expect(free.away).toBe(full.away);
     expect(free.source).toBe("LEAGUE");
     expect(free.sourceNote).toBe("pozn");
+    expect(free.sourceMix).toEqual(full.sourceMix);
   });
 });

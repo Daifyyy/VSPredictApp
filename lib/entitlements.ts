@@ -61,6 +61,7 @@ export function toFreeResult(full: CompareResult): CompareResult {
   return {
     source: full.source,
     sourceNote: full.sourceNote,
+    sourceMix: full.sourceMix,
     metrics: full.metrics,
     home: full.home,
     away: full.away,

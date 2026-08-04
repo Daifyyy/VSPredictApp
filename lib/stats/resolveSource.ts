@@ -1,8 +1,6 @@
 import type { DataSource, MatchStat, Team } from "@/lib/types";
+import { euroBlendWeight, euroSample } from "./euroBlend";
 
-/** Minimální počet evropských zápasů, aby se dal použít kontext pohárů. */
-const MIN_EURO_MATCHES = 3;
-/** Minimální počet soutěžních internacionálů, než se hlásí doplnění přáteláky. */
 const MIN_COMPETITIVE_NATIONAL = 4;
 
 export interface ResolvedSource {
@@ -10,13 +8,18 @@ export interface ResolvedSource {
   sourceNote?: string;
   homeMatches: MatchStat[];
   awayMatches: MatchStat[];
+  blend?: {
+    euroWeight: number;
+    domesticWeight: number;
+    effectiveEuroSample: number;
+    homeEuro: MatchStat[];
+    awayEuro: MatchStat[];
+    home: { current: number; previous: number };
+    away: { current: number; previous: number };
+  };
 }
 
-/**
- * Rozhodne, ze kterých zápasů se pro daný pár týmů počítají statistiky.
- * Kluby: stejná liga → EURO poháry → fallback domácí liga.
- * Reprezentace: soutěžní internacionály (+ přáteláky jako doplnění vzorku).
- */
+/** Vybere srovnatelné datové pooly pro dvojici týmů. */
 export function resolveSource(home: Team, away: Team): ResolvedSource {
   if (home.entityType === "NATIONAL" || away.entityType === "NATIONAL") {
     const competitiveCount = Math.min(
@@ -32,7 +35,6 @@ export function resolveSource(home: Team, away: Team): ResolvedSource {
     };
   }
 
-  // Oba kluby ve stejné domácí lize.
   if (home.leagueId === away.leagueId) {
     return {
       source: "LEAGUE",
@@ -41,21 +43,32 @@ export function resolveSource(home: Team, away: Team): ResolvedSource {
     };
   }
 
-  // Různé země → zkus společné evropské poháry (UCL/UEL/UECL).
   const homeEuro = home.euroMatches ?? [];
   const awayEuro = away.euroMatches ?? [];
-  if (
-    homeEuro.length >= MIN_EURO_MATCHES &&
-    awayEuro.length >= MIN_EURO_MATCHES
-  ) {
+  const homeSample = euroSample(homeEuro);
+  const awaySample = euroSample(awayEuro);
+  const sharedSample = Math.min(homeSample.effective, awaySample.effective);
+  const euroWeight = euroBlendWeight(sharedSample);
+
+  if (euroWeight > 0) {
     return {
-      source: "EURO_CUPS",
-      homeMatches: homeEuro,
-      awayMatches: awayEuro,
+      source: "EURO_BLEND",
+      sourceNote: sharedSample < 4 ? "Omezený pohárový vzorek" : undefined,
+      // Forma a série jsou skutečná chronologie všech soutěžních zápasů.
+      homeMatches: dedupeByFixture([...home.leagueMatches, ...homeEuro]),
+      awayMatches: dedupeByFixture([...away.leagueMatches, ...awayEuro]),
+      blend: {
+        euroWeight,
+        domesticWeight: 1 - euroWeight,
+        effectiveEuroSample: sharedSample,
+        homeEuro,
+        awayEuro,
+        home: { current: homeSample.current, previous: homeSample.previous },
+        away: { current: awaySample.current, previous: awaySample.previous },
+      },
     };
   }
 
-  // Fallback: data z domácí ligy s upozorněním.
   return {
     source: "FALLBACK",
     sourceNote: "Data z domácí ligy",
@@ -64,6 +77,10 @@ export function resolveSource(home: Team, away: Team): ResolvedSource {
   };
 }
 
+function dedupeByFixture(matches: MatchStat[]): MatchStat[] {
+  return [...new Map(matches.map((match) => [match.fixtureId, match])).values()];
+}
+
 function countCompetitive(matches: MatchStat[]): number {
-  return matches.filter((m) => m.competitive).length;
+  return matches.filter((match) => match.competitive).length;
 }

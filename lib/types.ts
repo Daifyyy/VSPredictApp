@@ -78,6 +78,7 @@ export type WindowKey =
 export type DataSource =
   | "LEAGUE"
   | "EURO_CUPS"
+  | "EURO_BLEND"
   | "FALLBACK"
   | "NATIONAL"
   | "NATIONAL_FB";
@@ -1004,6 +1005,14 @@ export interface CompareResult {
   source: DataSource;
   /** Lidsky čitelné upozornění k zdroji dat (badge), pokud je relevantní. */
   sourceNote?: string;
+  /** Transparentní skladba cross-league profilu; oba týmy používají stejnou váhu. */
+  sourceMix?: {
+    euroWeight: number;
+    domesticWeight: number;
+    effectiveEuroSample: number;
+    home: { current: number; previous: number };
+    away: { current: number; previous: number };
+  };
   metrics: Metric[];
   home: TeamComparison;
   away: TeamComparison;

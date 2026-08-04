@@ -1266,20 +1266,27 @@ async function buildClubTeam(
     baselineSeason
   );
 
-  // Evropské poháry (UCL/UEL/UECL) – jen pro cross-league porovnání, aktuální sezóna.
+  // Evropské poháry (UCL/UEL/UECL) pro cross-league porovnání, aktuální + minulá sezona.
   let euroMatches: MatchStat[] | undefined;
   if (includeEuro) {
-    const euroLists = await Promise.all(
-      EURO_LEAGUE_IDS.map((id) => listClubFixtures(teamId, id, CURRENT_SEASON))
+    const recentAcrossCompetitions = await cachedJson(
+      `eurofix:v2:${teamId}`,
+      LIST_TTL,
+      () => fetchLastFixtures(teamId, 50)
     );
-    const euroFixtures = onlyFinished(euroLists.flat());
+    const euroFixtures = onlyFinished(recentAcrossCompetitions).filter(
+      (fixture) =>
+        EURO_LEAGUE_IDS.includes(fixture.league.id) &&
+        (fixture.league.season === CURRENT_SEASON ||
+          fixture.league.season === PREVIOUS_SEASON)
+    );
     euroMatches = euroFixtures.length
       ? tagBaseline(
           await assemble(teamId, "euro", euroFixtures, () => ({
             competitive: true,
             isNeutral: false,
           })),
-          baselineSeason
+          PREVIOUS_SEASON
         )
       : undefined;
   }

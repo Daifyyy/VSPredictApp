@@ -739,6 +739,20 @@ function ResultPanel({
           ⚠ {result.sourceNote}
         </div>
       )}
+      {result.sourceMix && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-border bg-surface px-3 py-2 text-xs text-muted">
+          <span className="font-semibold text-foreground">Skladba analýzy</span>
+          <span>Evropský kontext {Math.round(result.sourceMix.euroWeight * 100)} %</span>
+          <span>Domácí soutěže {100 - Math.round(result.sourceMix.euroWeight * 100)} %</span>
+          <span title="Aktuální + poloviční váha předchozí evropské sezony">
+            Efektivní pohárový vzorek {result.sourceMix.effectiveEuroSample.toFixed(1)} zápasu
+          </span>
+          <span className="basis-full text-[11px]">
+            Pohárová data: {result.home.team.name} {result.sourceMix.home.current} letos + {result.sourceMix.home.previous} loni;
+            {" "}{result.away.team.name} {result.sourceMix.away.current} letos + {result.sourceMix.away.previous} loni.
+          </span>
+        </div>
+      )}
 
       {result.locked ? (
         <ProLock
