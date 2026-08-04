@@ -476,27 +476,27 @@ export function ZapasyApp({
     <main className="app-page">
       <AppHeader user={user} />
 
-      <section className="editorial-card stagger-in mt-6 overflow-hidden bg-foreground p-5 text-background sm:p-8 lg:grid lg:grid-cols-[1.45fr_.55fr] lg:gap-10">
+      <section className="editorial-card stagger-in mt-6 bg-surface p-5 text-foreground sm:p-7 lg:grid lg:grid-cols-[1.35fr_.65fr] lg:gap-8">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between lg:block">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-home">Fotbalový přehled</p>
-            <h1 className="editorial-title mt-3 max-w-3xl text-background">
+            <h1 className="editorial-title mt-3 max-w-3xl text-foreground">
               Zápasy bez zbytečného hledání
             </h1>
-            <p className="mt-4 max-w-xl text-sm leading-6 text-background/65 sm:text-base">
+            <p className="mt-3 max-w-xl text-sm leading-6 text-muted sm:text-base">
               Program, živé skóre a výsledky na jednom místě. Otevři zápas a uvidíš
               porovnání týmů i srozumitelnou předzápasovou analýzu.
             </p>
           </div>
           <Link
             href="/porovnani"
-            className="mt-6 inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-accent px-5 py-2.5 text-sm font-black text-accent-ink transition hover:-translate-y-0.5 hover:bg-white"
+            className="mt-5 inline-flex min-h-11 shrink-0 items-center justify-center rounded-lg bg-foreground px-5 py-2.5 text-sm font-bold text-white transition hover:bg-foreground/85"
           >
             Porovnat dva týmy
           </Link>
         </div>
-        <div className="mt-8 border-t border-background/20 pt-6 lg:mt-0 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
-          <p className="page-kicker text-background/50">Rychlý rozcestník</p>
+        <div className="mt-7 border-t border-border pt-5 lg:mt-0 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+          <p className="page-kicker text-muted">Rychlý rozcestník</p>
           <QuickActions />
         </div>
       </section>
@@ -607,12 +607,12 @@ function QuickActions() {
     { href: "/tipovacka", eyebrow: "Tvůj přehled", label: "Zapsat vlastní tip" },
   ];
   return (
-    <nav aria-label="Rychlé volby" className="mt-5 grid gap-2 border-t border-border pt-4 sm:grid-cols-3">
+    <nav aria-label="Rychlé volby" className="mt-3 grid gap-2 sm:grid-cols-1">
       {actions.map((action) => (
         <Link
           key={action.href}
           href={action.href}
-          className="group flex min-h-14 items-center justify-between rounded-xl border border-border bg-background/60 px-3 py-2.5 transition hover:border-foreground/30 hover:bg-background"
+          className="group flex min-h-14 items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2.5 transition hover:border-accent-strong/40 hover:bg-accent/10"
         >
           <span>
             <span className="block text-[11px] font-medium text-muted">{action.eyebrow}</span>
@@ -771,9 +771,9 @@ function DayTabs({
           key={d.date}
           type="button"
           onClick={() => onSelect(i)}
-          className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-medium transition ${
+          className={`ui-chip shrink-0 whitespace-nowrap px-3 text-sm font-medium transition ${
             i === active
-              ? "border-foreground bg-foreground text-background"
+              ? "border-accent-strong/30 bg-accent/30 text-foreground"
               : `border-border bg-surface hover:text-foreground ${
                   isWeekend(d.date) ? "text-foreground/80" : "text-muted"
                 }`
@@ -841,7 +841,7 @@ function LeagueGroups({
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
   return (
-    <div className="mt-4 space-y-3">
+    <div className="mt-4 space-y-3 stagger-in">
       {groups.map((g) => (
         <LeagueContainer
           key={g.leagueId}
@@ -893,13 +893,13 @@ function LeagueContainer({
     : null;
 
   return (
-    <section className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
-      <div className="flex items-center gap-2 px-3 py-2.5">
+    <section className={`ui-panel overflow-hidden ${hasLive ? "border-negative/25" : ""}`}>
+      <div className="flex min-h-14 items-center gap-2 px-3.5 py-2.5">
         <button
           type="button"
           onClick={onToggleOpen}
           aria-expanded={open}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          className="flex min-h-11 min-w-0 flex-1 items-center gap-2 text-left"
         >
           <TeamLogo src={group.logoUrl} alt={group.name} size={18} />
           <span className="min-w-0 truncate text-sm font-semibold text-foreground">
@@ -920,13 +920,13 @@ function LeagueContainer({
           type="button"
           onClick={onToggleOpen}
           aria-label={open ? "Sbalit" : "Rozbalit"}
-          className="shrink-0 text-muted transition hover:text-foreground"
+          className="grid min-h-11 min-w-11 shrink-0 place-items-center rounded-lg text-muted transition hover:bg-background hover:text-foreground"
         >
           {open ? "▲" : "▼"}
         </button>
       </div>
       {open && (
-        <ul className="space-y-2 px-3 pb-3">
+        <ul className="space-y-2 border-t border-border bg-background/45 p-3">
           {group.fixtures.map((f) => (
             <FixtureRow
               key={f.fixtureId}
@@ -992,10 +992,9 @@ function FixtureRow({
   // jen když se dohledala konfederace každého týmu). Jinak neklikací karta.
   const href = buildCompareHref(fixture);
   const clickable = href != null;
-  const cardClass =
-    "block rounded-xl border border-border bg-surface px-3 py-2.5 shadow-sm";
+  const cardClass = "ui-row block px-3 py-2.5";
   const inner = (
-    <div className="flex items-center gap-2">
+    <div className="grid min-h-12 grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-2">
       {fixture.live ? (
         <span className="flex w-10 shrink-0 flex-col items-start gap-0.5 leading-tight">
           <span className="flex items-center gap-1 text-[11px] font-bold text-negative">
@@ -1006,26 +1005,32 @@ function FixtureRow({
       ) : (
         <span className="w-10 shrink-0 text-[11px] leading-tight text-muted">{time}</span>
       )}
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 text-sm">
-        <TeamLogo src={fixture.home.logoUrl} alt={fixture.home.name} size={20} />
-        <span className="min-w-0 truncate font-medium text-home">{fixture.home.name}</span>
-        <RankBadge rank={fixture.homeRank} />
+      <div className="grid min-w-0 gap-1 text-sm">
+        <span className="flex min-w-0 items-center gap-2">
+          <TeamLogo src={fixture.home.logoUrl} alt={fixture.home.name} size={20} />
+          <span className="min-w-0 truncate font-semibold text-foreground">{fixture.home.name}</span>
+          <RankBadge rank={fixture.homeRank} />
+        </span>
+        <span className="flex min-w-0 items-center gap-2">
+          <TeamLogo src={fixture.away.logoUrl} alt={fixture.away.name} size={20} />
+          <span className="min-w-0 truncate font-semibold text-foreground">{fixture.away.name}</span>
+          <RankBadge rank={fixture.awayRank} />
+        </span>
+      </div>
+      <div className="flex items-center gap-2">
         {fixture.live ? (
-          <span className="shrink-0 font-bold tabular-nums text-negative">
-            {fixture.liveHome ?? 0}:{fixture.liveAway ?? 0}
+          <span className="grid gap-1 text-right text-sm font-bold tabular-nums text-negative">
+            <span>{fixture.liveHome ?? 0}</span><span>{fixture.liveAway ?? 0}</span>
           </span>
         ) : (
-          <span className="shrink-0 text-muted">–</span>
+          <span className="text-xs font-medium text-muted">Detail</span>
         )}
-        <TeamLogo src={fixture.away.logoUrl} alt={fixture.away.name} size={20} />
-        <span className="min-w-0 truncate font-medium text-away">{fixture.away.name}</span>
-        <RankBadge rank={fixture.awayRank} />
-      </div>
       {clickable && (
         <span className="shrink-0 text-muted" aria-hidden>
           ›
         </span>
       )}
+      </div>
     </div>
   );
   return (

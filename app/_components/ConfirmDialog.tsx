@@ -57,7 +57,7 @@ export function ConfirmDialog({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-sm rounded-2xl border border-border bg-surface p-5 shadow-xl"
+        className="ui-panel w-full max-w-sm p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <p className="text-sm text-foreground">{data.message}</p>
@@ -65,7 +65,7 @@ export function ConfirmDialog({
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 rounded-full border border-border px-4 py-2.5 text-sm font-semibold text-foreground transition hover:bg-border/40"
+            className="ui-control flex-1 px-4 py-2.5 text-sm font-semibold text-foreground transition hover:bg-background"
           >
             Zrušit
           </button>
@@ -76,7 +76,7 @@ export function ConfirmDialog({
               data.onConfirm();
               onClose();
             }}
-            className="flex-1 rounded-full bg-negative px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
+            className="min-h-11 flex-1 rounded-lg bg-negative px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-negative/90"
           >
             {data.confirmLabel}
           </button>

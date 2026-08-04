@@ -1,21 +1,21 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f3f0e7;
-  --surface: #fffdf7;
+  --background: #f5f7f4;
+  --surface: #ffffff;
   --surface-raised: #ffffff;
-  --foreground: #151713;
-  --muted: #686b62;
-  --border: #dcd8cc;
-  --accent: #c8ff36;
-  --accent-strong: #9fd900;
-  --accent-ink: #182000;
+  --foreground: #172019;
+  --muted: #667168;
+  --border: #dfe5df;
+  --accent: #b9f227;
+  --accent-strong: #78a900;
+  --accent-ink: #203000;
   --home: #1769e0;
   --away: #ee6b21;
   --warning: #d97706;
   --positive: #14854f;
   --negative: #d7393e;
-  --sidebar: #171a16;
+  --sidebar: #fbfcfa;
 }
 
 @theme inline {
@@ -34,7 +34,7 @@
   --color-positive: var(--positive);
   --color-negative: var(--negative);
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
-  --font-display: Georgia, "Times New Roman", serif;
+  --font-display: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
 }
 
 * {
@@ -47,9 +47,7 @@ html {
 }
 
 body {
-  background:
-    radial-gradient(circle at 88% -8%, rgb(200 255 54 / 18%), transparent 28rem),
-    var(--background);
+  background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
 }
@@ -69,7 +67,7 @@ body {
 .editorial-title {
   font-family: var(--font-display);
   font-weight: 700;
-  letter-spacing: -0.035em;
+  letter-spacing: -0.025em;
 }
 
 .app-page {
@@ -100,17 +98,17 @@ body {
 
 .page-title {
   margin-top: 0.35rem;
-  font-size: clamp(2.1rem, 5vw, 4.6rem);
-  line-height: 0.94;
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  line-height: 1.02;
 }
 
 .app-page > h1 {
   margin-top: 1.75rem;
   font-family: var(--font-display);
-  font-size: clamp(2.35rem, 5vw, 4.8rem);
+  font-size: clamp(2rem, 4vw, 3.5rem);
   font-weight: 700;
-  line-height: 0.94;
-  letter-spacing: -0.045em;
+  line-height: 1.02;
+  letter-spacing: -0.035em;
 }
 
 .app-page > h1 + p {
@@ -124,24 +122,35 @@ body {
   position: relative;
   overflow: hidden;
   border: 1px solid var(--border);
-  border-radius: 1.35rem;
-  background: color-mix(in srgb, var(--surface-raised) 94%, var(--accent) 6%);
-  box-shadow: 0 16px 45px rgb(30 32 26 / 8%);
+  border-radius: 1rem;
+  box-shadow: 0 8px 24px rgb(30 45 34 / 6%);
 }
 
 .data-card {
   border: 1px solid var(--border);
-  border-radius: 1.1rem;
+  border-radius: .9rem;
   background: var(--surface-raised);
-  box-shadow: 0 8px 24px rgb(30 32 26 / 6%);
+  box-shadow: 0 4px 14px rgb(30 45 34 / 5%);
   transition: transform 220ms cubic-bezier(.2,.8,.2,1), box-shadow 220ms ease, border-color 220ms ease;
 }
 
 .data-card:hover {
-  transform: translateY(-3px);
+  transform: translateY(-1px);
   border-color: color-mix(in srgb, var(--foreground) 24%, var(--border));
-  box-shadow: 0 18px 36px rgb(30 32 26 / 11%);
+  box-shadow: 0 8px 20px rgb(30 45 34 / 8%);
 }
+
+.ui-panel { border: 1px solid var(--border); border-radius: 1rem; background: var(--surface); box-shadow: 0 4px 16px rgb(30 45 34 / 5%); }
+.ui-row { border: 1px solid var(--border); border-radius: .75rem; background: var(--surface); transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease; }
+.ui-row:hover { border-color: #bcc8be; box-shadow: 0 3px 12px rgb(30 45 34 / 6%); }
+.ui-control { min-height: 2.75rem; border: 1px solid var(--border); border-radius: .7rem; background: var(--surface); }
+.ui-chip { min-height: 2.5rem; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); }
+
+.app-page table { width: 100%; border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; }
+.app-page thead { position: sticky; top: 0; z-index: 5; background: var(--surface); }
+.app-page th { color: var(--muted); font-size: .7rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.app-page tbody tr { transition: background-color 150ms ease; }
+.app-page tbody tr:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 
 .accent-rule {
   height: 0.4rem;
@@ -151,7 +160,7 @@ body {
 }
 
 .stagger-in > * {
-  animation: editorial-rise 520ms both cubic-bezier(.2,.8,.2,1);
+  animation: editorial-rise 260ms both ease-out;
 }
 
 .stagger-in > :nth-child(2) { animation-delay: 70ms; }
@@ -164,7 +173,7 @@ body {
 }
 
 @keyframes editorial-rise {
-  from { opacity: 0; transform: translateY(14px); }
+  from { opacity: 0; transform: translateY(5px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
@@ -174,7 +183,7 @@ body {
   100% { transform: scale(1); }
 }
 
-.fade-in { animation: editorial-rise 480ms cubic-bezier(.2,.8,.2,1) both; }
+.fade-in { animation: editorial-rise 240ms ease-out both; }
 .reveal-pop { animation: reveal-pop 420ms cubic-bezier(.2,.8,.2,1) both; }
 
 @media (min-width: 1024px) {

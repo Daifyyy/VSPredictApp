@@ -29,7 +29,7 @@ export function ViewTabs<T extends string>({
             aria-pressed={activeTab}
             className={`min-h-11 flex-1 rounded-lg px-4 py-2 text-sm font-bold transition ${
               activeTab
-                ? "bg-accent text-accent-ink shadow-sm"
+                ? "bg-accent/35 text-foreground ring-1 ring-accent-strong/20"
                 : "text-muted hover:text-foreground"
             }`}
           >

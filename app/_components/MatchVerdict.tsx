@@ -2,7 +2,7 @@
 export function MatchVerdict({ verdict }: { verdict: string }) {
   if (!verdict) return null;
   return (
-    <div className="rounded-2xl border border-border bg-surface p-4 text-center shadow-sm">
+    <div className="ui-panel border-l-4 border-l-accent-strong p-4 text-left">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
         Verdikt
       </p>

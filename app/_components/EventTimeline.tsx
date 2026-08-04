@@ -29,17 +29,17 @@ export function EventTimeline({
   const list = newestFirst ? [...events].reverse() : events;
 
   return (
-    <div className="border-t border-border pt-2">
-      <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
+    <section className="rounded-lg border border-border bg-background/55 p-3">
+      <p className="mb-3 text-[11px] font-bold uppercase tracking-[.1em] text-muted">
         Průběh zápasu
       </p>
-      <ul className="space-y-1">
+      <ul className="space-y-2">
         {list.map((e, i) => {
           const home = e.teamId === homeTeamId;
           return (
             <li
               key={`${e.minute}-${e.extra ?? 0}-${e.kind}-${e.player ?? i}`}
-              className="flex items-center gap-2 text-[11px]"
+              className="grid grid-cols-[1fr_3.5rem_1fr] items-center gap-2 text-xs"
             >
               <span className={`min-w-0 flex-1 ${home ? "text-left" : "text-right order-3"}`}>
                 <EventText event={e} />
@@ -48,7 +48,7 @@ export function EventTimeline({
                 <span aria-hidden>{EVENT_ICON[e.kind]}</span>
                 {/* Ikona sama význam nenese – pro odečítač je tu slovo. */}
                 <span className="sr-only">{EVENT_LABEL[e.kind]}</span>
-                <span className="w-9 text-center">{formatMinute(e)}</span>
+                <span className="w-9 text-center font-semibold">{formatMinute(e)}</span>
               </span>
               {/* Prázdná protistrana drží minutu ve středu i u jednostranných událostí. */}
               <span className={`min-w-0 flex-1 ${home ? "order-3" : "order-1"}`} />
@@ -56,7 +56,7 @@ export function EventTimeline({
           );
         })}
       </ul>
-    </div>
+    </section>
   );
 }
 

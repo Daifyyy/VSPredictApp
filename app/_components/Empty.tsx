@@ -15,7 +15,7 @@ export function Empty({
 }) {
   return (
     <div
-      className={`${className} editorial-card border-dashed bg-surface/60 p-10 text-center text-sm leading-6 text-muted`}
+      className={`${className} ui-panel border-dashed bg-surface/70 p-8 text-center text-sm leading-6 text-muted`}
     >
       {children}
     </div>

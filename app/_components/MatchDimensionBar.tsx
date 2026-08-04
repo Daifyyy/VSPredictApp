@@ -16,20 +16,20 @@ export function DimensionBar({ dim }: { dim: MatchDimension }) {
   // `100 - homeShare` vždy sedí na čísla nad pruhem. Nezávislé zaokrouhlení by dalo 10.1.
   const homeShare = dim.home * 10;
   return (
-    <div>
-      <div className="flex items-baseline justify-between gap-2 text-[11px]">
-        <span className="font-semibold tabular-nums text-home">{dim.home.toFixed(1)}</span>
-        <span className="min-w-0 flex-1 truncate text-center uppercase tracking-wide text-muted">
+    <div className="rounded-lg border border-border bg-background/55 p-3">
+      <div className="grid grid-cols-[3rem_1fr_3rem] items-baseline gap-2 text-xs">
+        <span className="font-bold tabular-nums text-home">{dim.home.toFixed(1)}</span>
+        <span className="min-w-0 truncate text-center font-semibold text-foreground">
           {dim.label}
         </span>
-        <span className="font-semibold tabular-nums text-away">{dim.away.toFixed(1)}</span>
+        <span className="text-right font-bold tabular-nums text-away">{dim.away.toFixed(1)}</span>
       </div>
-      <div className="relative mt-1 flex h-2 overflow-hidden rounded-full bg-border/60">
+      <div className="relative mt-2 flex h-2.5 overflow-hidden rounded-full bg-border/60">
         <div className="bar-fill bg-home/80" style={{ width: `${homeShare}%` }} />
         <div className="bar-fill bg-away/80" style={{ width: `${100 - homeShare}%` }} />
       </div>
       {dim.detail && (
-        <p className="mt-0.5 text-center text-[10px] text-muted">{dim.detail}</p>
+        <p className="mt-1.5 text-center text-[11px] text-muted">{dim.detail}</p>
       )}
     </div>
   );
@@ -37,7 +37,7 @@ export function DimensionBar({ dim }: { dim: MatchDimension }) {
 
 export function Chip({ children }: { children: React.ReactNode }) {
   return (
-    <span className="rounded-full border border-border bg-background px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted">
+    <span className="rounded-full border border-border bg-background px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
       {children}
     </span>
   );

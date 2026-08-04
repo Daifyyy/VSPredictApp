@@ -107,7 +107,7 @@ export function TeamCombobox({
         }}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`flex w-full items-center gap-2 rounded-lg border border-border bg-surface px-2 py-1.5 text-left text-base transition ${ringFocus}`}
+        className={`ui-control flex w-full items-center gap-2 px-3 text-left text-base transition ${ringFocus}`}
       >
         <TeamLogo src={selected?.logoUrl} alt={selected?.name ?? ""} size={24} />
         <span className={`flex-1 truncate ${selected ? "" : "text-muted"}`}>
@@ -119,7 +119,7 @@ export function TeamCombobox({
       </button>
 
       {open && (
-        <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-lg border border-border bg-surface shadow-lg">
+        <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-border bg-surface shadow-lg">
           <input
             autoFocus
             value={query}
@@ -134,7 +134,7 @@ export function TeamCombobox({
             aria-controls={listId}
             aria-autocomplete="list"
             aria-activedescendant={activeId}
-            className="w-full border-b border-border bg-background px-3 py-2 text-base outline-none"
+            className="min-h-11 w-full border-b border-border bg-background px-3 py-2 text-base outline-none"
           />
           <ul
             ref={listRef}
@@ -160,7 +160,7 @@ export function TeamCombobox({
                     tabIndex={-1}
                     onClick={() => select(t.id)}
                     onMouseEnter={() => setActiveIndex(idx)}
-                    className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm ${
+                    className={`flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm ${
                       active ? "bg-background" : "hover:bg-background"
                     } ${t.id === value ? "font-semibold" : ""}`}
                   >

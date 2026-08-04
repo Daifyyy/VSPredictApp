@@ -59,8 +59,8 @@ export function ProLock({
   }
 
   return (
-    <section className="relative overflow-hidden rounded-2xl border border-border bg-surface p-5 text-center shadow-sm">
-      <span className="inline-flex items-center gap-1 rounded-full bg-positive/15 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-positive">
+    <section className="ui-panel relative overflow-hidden border-l-4 border-l-positive p-5 text-center">
+      <span className="inline-flex items-center gap-1 rounded-full bg-positive/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-positive">
         🔒 PRO
       </span>
       <h3 className="mt-2 text-base font-semibold text-foreground">
@@ -85,7 +85,7 @@ export function ProLock({
                 track("signin_from_prolock");
                 void signIn("google");
               }}
-              className="rounded-full bg-positive px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+              className="min-h-11 rounded-lg bg-positive px-4 py-2 text-sm font-semibold text-white transition hover:bg-positive/90"
             >
               Přihlas se a vyzkoušej PRO zdarma (1×)
             </button>
@@ -102,7 +102,7 @@ export function ProLock({
                 onUnlockTrial();
               }}
               disabled={unlocking}
-              className="rounded-full bg-positive px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
+              className="min-h-11 rounded-lg bg-positive px-4 py-2 text-sm font-semibold text-white transition hover:bg-positive/90 disabled:opacity-60"
             >
               {unlocking ? "Odemykám…" : "Vyzkoušet PRO zdarma (1×)"}
             </button>
@@ -116,7 +116,7 @@ export function ProLock({
           <>
             <Link
               href="/porovnani"
-              className="inline-block rounded-full bg-positive px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90"
+              className="inline-flex min-h-11 items-center rounded-lg bg-positive px-4 py-2 text-sm font-semibold text-white transition hover:bg-positive/90"
             >
               Vyzkoušet PRO zdarma (1×)
             </Link>
@@ -138,7 +138,7 @@ export function ProLock({
               type="button"
               onClick={startCheckout}
               disabled={checkoutLoading}
-              className="rounded-full bg-positive px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
+              className="min-h-11 rounded-lg bg-positive px-4 py-2 text-sm font-semibold text-white transition hover:bg-positive/90 disabled:opacity-60"
             >
               {checkoutLoading ? "Přesměrovávám…" : "Upgradovat na PRO"}
             </button>

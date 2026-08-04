@@ -80,7 +80,7 @@ export function SectionNav() {
                   aria-current={active ? "page" : undefined}
                   className={`shrink-0 rounded-full border px-3 py-1.5 text-sm font-medium transition ${
                     active
-                      ? "border-accent bg-accent text-accent-ink"
+                      ? "border-accent-strong/30 bg-accent/25 text-foreground"
                       : "border-border bg-surface text-muted hover:text-foreground"
                   }`}
                 >
@@ -99,12 +99,12 @@ export function SectionNav() {
 export function DesktopSidebar() {
   const pathname = usePathname();
   return (
-    <aside className="fixed inset-y-0 left-0 z-50 hidden w-[17rem] flex-col bg-[#171a16] p-5 text-white lg:flex">
-      <Link href="/" className="flex items-center gap-3 border-b border-white/15 pb-5" aria-label="Predictapp – domů">
-        <span className="grid h-11 w-11 place-items-center rounded-xl bg-accent text-xl font-black text-accent-ink">P</span>
+    <aside className="fixed inset-y-0 left-0 z-50 hidden w-[17rem] flex-col border-r border-border bg-sidebar p-5 text-foreground lg:flex">
+      <Link href="/" className="flex items-center gap-3 border-b border-border pb-5" aria-label="Predictapp – domů">
+        <span className="grid h-10 w-10 place-items-center rounded-lg bg-accent text-lg font-black text-accent-ink">P</span>
         <span>
           <span className="block font-display text-xl font-bold tracking-tight">Predictapp</span>
-          <span className="block text-[10px] font-bold uppercase tracking-[.18em] text-white/55">Football intelligence</span>
+          <span className="block text-[10px] font-bold uppercase tracking-[.14em] text-muted">Football intelligence</span>
         </span>
       </Link>
 
@@ -113,9 +113,9 @@ export function DesktopSidebar() {
           const active = isActiveSection(pathname, item.href);
           const showDivider = index === 1 || index === 6 || index === 7;
           return (
-            <div key={item.href} className={showDivider ? "mt-3 border-t border-white/10 pt-4" : ""}>
+            <div key={item.href} className={showDivider ? "mt-3 border-t border-border pt-4" : ""}>
               {showDivider && (
-                <p className="mb-2 px-3 text-[10px] font-black uppercase tracking-[.18em] text-white/40">
+                <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[.14em] text-muted">
                   {item.section === "analysis" ? "Analýzy" : item.section === "tips" ? "Osobní" : "Hra"}
                 </p>
               )}
@@ -123,24 +123,24 @@ export function DesktopSidebar() {
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={`group flex min-h-12 items-center gap-3 rounded-xl px-3 py-2 transition ${
-                  active ? "bg-accent text-accent-ink" : "text-white/72 hover:bg-white/8 hover:text-white"
+                  active ? "bg-accent/25 text-foreground ring-1 ring-accent-strong/20" : "text-muted hover:bg-background hover:text-foreground"
                 }`}
               >
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-current/10">
+                <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${active ? "bg-accent/60" : "bg-background"}`}>
                   <NavIcon name={item.section === "matches" ? "matches" : item.section === "tips" ? "tips" : item.section === "game" ? "game" : "analysis"} />
                 </span>
                 <span className="min-w-0">
                   <span className="block text-sm font-extrabold leading-tight">{item.label}</span>
-                  <span className={`block truncate text-[10px] ${active ? "text-accent-ink/65" : "text-white/40"}`}>{item.description}</span>
+                  <span className="block truncate text-[10px] text-muted">{item.description}</span>
                 </span>
               </Link>
             </div>
           );
         })}
       </nav>
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-        <p className="text-[10px] font-black uppercase tracking-[.16em] text-accent">Datově poctivé</p>
-        <p className="mt-1 text-xs leading-5 text-white/55">Predikce oddělujeme od ověřené výhody nad trhem.</p>
+      <div className="rounded-xl border border-border bg-background p-4">
+        <p className="text-[10px] font-black uppercase tracking-[.14em] text-accent-strong">Datově poctivé</p>
+        <p className="mt-1 text-xs leading-5 text-muted">Predikce oddělujeme od ověřené výhody nad trhem.</p>
       </div>
     </aside>
   );
@@ -154,7 +154,7 @@ export function MobileBottomNav() {
   return (
     <nav
       aria-label="Hlavní mobilní navigace"
-      className="fixed inset-x-0 bottom-0 z-50 border-t border-foreground/10 bg-[#171a16]/96 pb-[env(safe-area-inset-bottom)] text-white shadow-[0_-12px_35px_rgb(0_0_0/.15)] backdrop-blur lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-surface/96 pb-[env(safe-area-inset-bottom)] text-foreground shadow-[0_-6px_20px_rgb(30_45_34/.08)] backdrop-blur lg:hidden"
     >
       <div className="mx-auto grid max-w-lg grid-cols-4 px-1">
         {PRIMARY_ITEMS.map((item) => {
@@ -165,12 +165,12 @@ export function MobileBottomNav() {
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] font-semibold transition ${
-                active ? "text-accent" : "text-white/55"
+                active ? "text-foreground" : "text-muted"
               }`}
             >
               <span
                 className={`grid h-7 w-12 place-items-center rounded-full transition ${
-                  active ? "bg-accent text-accent-ink" : ""
+                  active ? "bg-accent/55 text-accent-ink" : ""
                 }`}
               >
                 <NavIcon name={item.icon} />
