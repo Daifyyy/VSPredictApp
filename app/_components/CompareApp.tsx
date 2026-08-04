@@ -856,6 +856,13 @@ function ResultPanel({
             away={summaryFor("away")}
             homeQuality={qualityFor("home")}
             awayQuality={qualityFor("away")}
+            homeTeam={result.home.team}
+            awayTeam={result.away.team}
+            homeStanding={homeStanding}
+            awayStanding={awayStanding}
+            leagueTable={sameLeague ? leagueTable : null}
+            prediction={result.prediction ?? null}
+            venue={venue}
             mode={entityMode}
             embedded
           />

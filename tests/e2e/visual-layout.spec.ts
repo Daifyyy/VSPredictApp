@@ -32,4 +32,18 @@ for (const width of widths) {
       contentType: "image/png",
     });
   });
+
+  test(`kontext porovnání při šířce ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(
+      "/porovnani?mode=CLUB&homeLeague=140&awayLeague=140&home=541&away=529",
+      { waitUntil: "networkidle" }
+    );
+    await expect(page.getByText("Posledních 5", { exact: true })).toBeVisible();
+    await expect(page.getByText("xG trend", { exact: true })).toBeVisible();
+    await testInfo.attach(`compare-context-${width}.png`, {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: "image/png",
+    });
+  });
 }

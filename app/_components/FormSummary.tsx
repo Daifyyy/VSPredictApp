@@ -2,9 +2,18 @@ import type {
   EntityType,
   FormMatchQuality,
   FormQuality,
+  LeagueTable,
+  MatchPrediction,
   MatchResult,
+  Standing,
   TeamSummary,
+  Venue,
 } from "@/lib/types";
+import {
+  buildContextProfile,
+  type ContextBadge,
+  type ContextProfile,
+} from "@/lib/stats/contextProfile";
 import { TeamLogo } from "./TeamLogo";
 
 /**
@@ -24,6 +33,13 @@ export function FormSummary({
   away,
   homeQuality,
   awayQuality,
+  homeTeam,
+  awayTeam,
+  homeStanding,
+  awayStanding,
+  leagueTable,
+  prediction,
+  venue,
   mode = "CLUB",
   embedded = false,
 }: {
@@ -31,6 +47,13 @@ export function FormSummary({
   away: TeamSummary | null;
   homeQuality?: FormQuality | null;
   awayQuality?: FormQuality | null;
+  homeTeam: { id: number; name: string; logoUrl: string };
+  awayTeam: { id: number; name: string; logoUrl: string };
+  homeStanding: Standing | null;
+  awayStanding: Standing | null;
+  leagueTable: LeagueTable | null;
+  prediction: MatchPrediction | null;
+  venue: Venue;
   mode?: EntityType;
   embedded?: boolean;
 }) {
@@ -38,6 +61,26 @@ export function FormSummary({
 
   const showQuality =
     (homeQuality?.xgSampleSize ?? 0) > 0 || (awayQuality?.xgSampleSize ?? 0) > 0;
+  const homeProfile = buildContextProfile({
+    teamId: homeTeam.id,
+    side: "home",
+    venue,
+    summary: home,
+    quality: homeQuality ?? null,
+    standing: homeStanding,
+    leagueTable: mode === "CLUB" ? leagueTable : null,
+    prediction,
+  });
+  const awayProfile = buildContextProfile({
+    teamId: awayTeam.id,
+    side: "away",
+    venue,
+    summary: away,
+    quality: awayQuality ?? null,
+    standing: awayStanding,
+    leagueTable: mode === "CLUB" ? leagueTable : null,
+    prediction,
+  });
   // Reprezentace mají časová okna, ne sezónní baseline – u nich prázdná forma znamená
   // „žádné zápasy", ne „sezóna ještě nezačala", takže se hláška netýká jich.
   const seasonNotStarted =
@@ -54,6 +97,10 @@ export function FormSummary({
         </p>
       )}
       <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3 border-b border-border pb-4">
+          <ProfileHeader team={homeTeam} badges={homeProfile.badges} accent="home" />
+          <ProfileHeader team={awayTeam} badges={awayProfile.badges} accent="away" alignRight />
+        </div>
         <Row label="Forma">
           <FormBadges
             form={home?.form ?? []}
@@ -68,12 +115,23 @@ export function FormSummary({
             align="right"
           />
         </Row>
+        <Row label="Posledních 5">
+          <RecentValue profile={homeProfile} accent="home" />
+          <RecentValue profile={awayProfile} accent="away" alignRight />
+        </Row>
         {showQuality && (
-          <Row label="Body vs. xG">
-            <Quality q={homeQuality ?? null} />
-            <Quality q={awayQuality ?? null} alignRight />
+          <Row label="xG trend">
+            <XgTrend profile={homeProfile} q={homeQuality ?? null} accent="home" />
+            <XgTrend profile={awayProfile} q={awayQuality ?? null} accent="away" alignRight />
           </Row>
         )}
+        {mode === "CLUB" &&
+          (homeProfile.pointsPerGame != null || awayProfile.pointsPerGame != null) && (
+            <Row label="Body na zápas">
+              <NumberValue value={homeProfile.pointsPerGame} accent="home" suffix=" b." />
+              <NumberValue value={awayProfile.pointsPerGame} accent="away" suffix=" b." alignRight />
+            </Row>
+          )}
         <Pct
           label="Čisté konto"
           home={home?.cleanSheetPct ?? null}
@@ -110,6 +168,95 @@ function Row({
       </span>
       <div className="flex flex-1 justify-end">{children[1]}</div>
     </div>
+  );
+}
+
+const PROFILE_BADGE_TONE: Record<ContextBadge["tone"], string> = {
+  positive: "border-positive/20 bg-positive/10 text-positive",
+  warning: "border-warning/25 bg-warning/10 text-warning",
+  info: "border-home/20 bg-home/10 text-home",
+};
+
+function ProfileHeader({
+  team,
+  badges,
+  accent,
+  alignRight,
+}: {
+  team: { name: string; logoUrl: string };
+  badges: ContextBadge[];
+  accent: "home" | "away";
+  alignRight?: boolean;
+}) {
+  const color = accent === "home" ? "text-home" : "text-away";
+  return (
+    <div className={alignRight ? "min-w-0 text-right" : "min-w-0 text-left"}>
+      <div className={`flex items-center gap-2 ${alignRight ? "justify-end" : "justify-start"}`}>
+        {!alignRight && <TeamLogo src={team.logoUrl} alt={team.name} size={24} />}
+        <span className={`truncate text-sm font-bold ${color}`}>{team.name}</span>
+        {alignRight && <TeamLogo src={team.logoUrl} alt={team.name} size={24} />}
+      </div>
+      {badges.length > 0 ? (
+        <div className={`mt-2 flex flex-wrap gap-1.5 ${alignRight ? "justify-end" : "justify-start"}`}>
+          {badges.map((badge) => (
+            <span
+              key={badge.id}
+              title={badge.description}
+              className={`inline-flex min-h-6 items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold ${PROFILE_BADGE_TONE[badge.tone]}`}
+            >
+              {badge.label}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 text-[10px] text-muted">Bez výrazného signálu</p>
+      )}
+    </div>
+  );
+}
+
+function RecentValue({
+  profile,
+  accent,
+  alignRight,
+}: {
+  profile: ContextProfile;
+  accent: "home" | "away";
+  alignRight?: boolean;
+}) {
+  if (profile.recent.sampleSize === 0) return <span className="text-sm text-muted">—</span>;
+  const color = accent === "home" ? "text-home" : "text-away";
+  const hasScore = profile.recent.goalsFor != null && profile.recent.goalsAgainst != null;
+  return (
+    <div className={alignRight ? "text-right" : "text-left"}>
+      <span className={`text-sm font-bold tabular-nums ${color}`}>
+        {profile.recent.points}/{profile.recent.maximum} b.
+      </span>
+      {hasScore && (
+        <span className="ml-1.5 text-xs tabular-nums text-muted">
+          skóre {profile.recent.goalsFor}:{profile.recent.goalsAgainst}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function NumberValue({
+  value,
+  accent,
+  suffix,
+  alignRight,
+}: {
+  value: number | null;
+  accent: "home" | "away";
+  suffix?: string;
+  alignRight?: boolean;
+}) {
+  const color = accent === "home" ? "text-home" : "text-away";
+  return (
+    <span className={`text-sm font-bold tabular-nums ${alignRight ? "text-right" : "text-left"} ${value == null ? "text-muted" : color}`}>
+      {value == null ? "—" : `${value.toFixed(2)}${suffix ?? ""}`}
+    </span>
   );
 }
 
@@ -224,31 +371,36 @@ const LEVEL_COLOR: Record<NonNullable<FormQuality["level"]>, string> = {
   inline: "text-muted",
 };
 
-/**
- * Body vs. očekávané body ze stejných zápasů. Jmenovatel (kolik z nich má xG) je
- * schválně vidět – stejná zásada jako u `sampleSize` u čistých kont; verdikt se
- * pod prahem vzorku nezobrazí vůbec (`level === null`).
- */
-function Quality({ q, alignRight }: { q: FormQuality | null; alignRight?: boolean }) {
-  if (!q || q.points == null || q.expectedPoints == null) {
+/** xG rozdíl na zápas; skutečné a očekávané body zůstávají jako vysvětlující detail. */
+function XgTrend({
+  profile,
+  q,
+  accent,
+  alignRight,
+}: {
+  profile: ContextProfile;
+  q: FormQuality | null;
+  accent: "home" | "away";
+  alignRight?: boolean;
+}) {
+  if (profile.xgDiffPerMatch == null || !q || q.points == null || q.expectedPoints == null) {
     return <span className="text-sm text-muted">—</span>;
   }
+  const color = accent === "home" ? "text-home" : "text-away";
+  const signed = profile.xgDiffPerMatch > 0
+    ? `+${profile.xgDiffPerMatch.toFixed(2)}`
+    : profile.xgDiffPerMatch.toFixed(2);
   return (
     <div className={alignRight ? "text-right" : "text-left"} title={q.note || undefined}>
       <div>
-        <span className="text-sm font-bold tabular-nums text-foreground">
-          {q.points} b.
+        <span className={`text-sm font-bold tabular-nums ${color}`}>
+          {signed} xG/záp.
         </span>
-        <span className="ml-1 text-xs tabular-nums text-muted">
-          / xB {q.expectedPoints.toFixed(1)}
-        </span>
-        <span className="ml-1 text-[10px] text-muted">z {q.xgSampleSize} záp.</span>
       </div>
-      {q.level && (
-        <div className={`text-[10px] font-medium ${LEVEL_COLOR[q.level]}`}>
-          {LEVEL_LABEL[q.level]}
-        </div>
-      )}
+      <div className="text-[10px] tabular-nums text-muted">
+        {q.points} b. / xB {q.expectedPoints.toFixed(1)} · {q.xgSampleSize} záp.
+        {q.level && <span className={`ml-1 font-medium ${LEVEL_COLOR[q.level]}`}>· {LEVEL_LABEL[q.level]}</span>}
+      </div>
     </div>
   );
 }

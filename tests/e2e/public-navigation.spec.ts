@@ -17,6 +17,10 @@ test("domovská stránka nabízí zápasy a rychlé vstupy", async ({ page }) =>
 });
 
 test("porovnání otevírá Kategorie a sekundární obsah drží sbalený", async ({ page }) => {
+  let compareRequests = 0;
+  page.on("request", (request) => {
+    if (request.url().includes("/api/compare")) compareRequests++;
+  });
   await page.goto(
     "/porovnani?mode=CLUB&homeLeague=140&awayLeague=140&home=541&away=529",
     { waitUntil: "networkidle" }
@@ -27,7 +31,14 @@ test("porovnání otevírá Kategorie a sekundární obsah drží sbalený", asy
     "true"
   );
   await expect(page.getByRole("radio", { name: "Detailní statistiky" })).toBeVisible();
+  await expect(page.getByText("Posledních 5", { exact: true })).toBeVisible();
+  await expect(page.getByText("xG trend", { exact: true })).toBeVisible();
+  await expect(page.getByText("Body na zápas", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Další informace" })).toBeVisible();
+
+  const loadedCompareRequests = compareRequests;
+  await page.getByRole("radio", { name: "Doma", exact: true }).click();
+  expect(compareRequests).toBe(loadedCompareRequests);
 
   const leagueTable = page.getByRole("button", { name: "Ligová tabulka" });
   if (await leagueTable.count()) {
