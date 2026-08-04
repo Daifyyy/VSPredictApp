@@ -121,7 +121,7 @@ export function InstallPrompt() {
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-50 flex justify-center p-3 sm:p-4">
-      <div className="w-full max-w-md rounded-2xl border border-border bg-surface p-4 shadow-2xl">
+      <div className="ui-panel w-full max-w-md p-4 shadow-xl">
         <div className="flex items-start justify-between gap-3">
           <h3 className="text-sm font-semibold text-foreground">
             📲 Nainstaluj Predictapp jako appku
@@ -130,7 +130,7 @@ export function InstallPrompt() {
             type="button"
             onClick={dismiss}
             aria-label="Zavřít"
-            className="-mr-1 -mt-1 rounded-full px-2 py-0.5 text-muted transition hover:text-foreground"
+            className="-mr-1 -mt-1 grid min-h-11 min-w-11 place-items-center rounded-lg text-muted transition hover:bg-background hover:text-foreground"
           >
             ✕
           </button>
@@ -171,7 +171,7 @@ export function InstallPrompt() {
           <button
             type="button"
             onClick={dismiss}
-            className="rounded-full px-3 py-1.5 text-sm font-medium text-muted transition hover:text-foreground"
+            className="min-h-11 rounded-lg px-3 py-1.5 text-sm font-medium text-muted transition hover:bg-background hover:text-foreground"
           >
             Teď ne
           </button>
@@ -179,7 +179,7 @@ export function InstallPrompt() {
             <button
               type="button"
               onClick={androidInstall}
-              className="rounded-full bg-positive px-4 py-1.5 text-sm font-semibold text-white transition hover:opacity-90"
+              className="min-h-11 rounded-lg bg-positive px-4 py-1.5 text-sm font-semibold text-white transition hover:bg-positive/90"
             >
               Nainstalovat
             </button>

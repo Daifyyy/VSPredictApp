@@ -146,9 +146,9 @@ function MoneyView({ user, leagues }: { user: SessionUser | null; leagues: Leagu
   }, [balances, paidOnly]);
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-5 sm:py-8">
+    <main className="app-page">
       <AppHeader user={user} />
-      <h1 className="mt-4 text-lg font-semibold text-foreground">Přestupy</h1>
+      <h1>Přestupy</h1>
       <p className="mt-1 text-sm text-muted">
         Bilance nákupů a prodejů klubů top-5 lig za aktuální přestupové období (ceny z Transfermarktu).
       </p>
@@ -324,9 +324,9 @@ function CategoryView({ user, leagues }: { user: SessionUser | null; leagues: Le
   }, [balances, showAll]);
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-5 sm:py-8">
+    <main className="app-page">
       <AppHeader user={user} />
-      <h1 className="mt-4 text-lg font-semibold text-foreground">Přestupy</h1>
+      <h1>Přestupy</h1>
       <p className="mt-1 text-sm text-muted">
         Příchody a odchody klubů top-5 lig za aktuální přestupové období podle typu přestupu
         (trvalý / hostování / volný hráč).

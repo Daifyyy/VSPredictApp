@@ -19,7 +19,7 @@ export function MatchPrediction({
 
   if (!prediction.available) {
     return (
-      <section className="rounded-2xl border border-border bg-surface p-4 text-center shadow-sm sm:p-6">
+      <section className="ui-panel p-4 text-center sm:p-5">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
           Predikce
         </p>
@@ -32,7 +32,7 @@ export function MatchPrediction({
   }
 
   return (
-    <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6">
+    <section className="ui-panel border-l-4 border-l-accent-strong p-4 sm:p-5">
       <div className="mb-3 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide">
         <span className="text-muted">
           Predikce

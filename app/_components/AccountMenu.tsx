@@ -24,7 +24,7 @@ export function AccountMenu({ user }: { user: SessionUser | null }) {
       <button
         type="button"
         onClick={() => void signIn("google")}
-        className="rounded-full border border-border bg-surface px-3 py-1.5 text-sm font-medium text-muted transition hover:text-foreground"
+        className="ui-control px-3 text-sm font-semibold text-muted transition hover:border-accent-strong/40 hover:text-foreground"
       >
         Přihlásit
       </button>
@@ -41,7 +41,7 @@ export function AccountMenu({ user }: { user: SessionUser | null }) {
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex items-center gap-2 rounded-full border border-border bg-surface px-2 py-1 text-sm font-medium text-foreground transition hover:border-foreground/30"
+        className="ui-control flex items-center gap-2 px-2 text-sm font-medium text-foreground transition hover:border-accent-strong/40"
       >
         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-background text-xs font-semibold">
           {initial}
@@ -58,7 +58,7 @@ export function AccountMenu({ user }: { user: SessionUser | null }) {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-20 mt-2 w-52 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg"
+          className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-lg"
         >
           <div className="truncate px-3 py-2 text-xs text-muted">
             {user.name ?? "Účet"}
@@ -142,7 +142,7 @@ function MenuItem({
       type="button"
       role="menuitem"
       onClick={onClick}
-      className="block w-full px-3 py-2 text-left text-sm text-foreground transition hover:bg-background"
+      className="block min-h-11 w-full px-3 py-2 text-left text-sm text-foreground transition hover:bg-background"
     >
       {children}
     </button>

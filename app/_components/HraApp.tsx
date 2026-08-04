@@ -908,9 +908,9 @@ export function HraApp({ user }: { user: SessionUser | null }) {
   const sharedReputation = save?.manager.reputation ?? STARTING_REPUTATION;
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-5 sm:py-8">
+    <main className="app-page">
       <AppHeader user={user} />
-      <h1 className="mt-4 text-lg font-semibold text-foreground">🎮 Manažer</h1>
+      <h1>Manažer</h1>
       <p className="mt-1 text-sm text-muted">
         Veď reálný klub sezónou i kariérou. Před každým zápasem uvidíš predikci a analýzu
         stejného modelu, který jinak tipuje reálné zápasy.

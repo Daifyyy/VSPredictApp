@@ -3,9 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
-import { ThemeToggle } from "./ThemeToggle";
 import { AccountMenu } from "./AccountMenu";
-import { MobileBottomNav, SectionNav } from "./nav";
+import { DesktopSidebar, MobileBottomNav, SectionNav } from "./nav";
 import type { SessionUser } from "./sessionUser";
 import { shareOrCopy } from "./share";
 
@@ -24,9 +23,12 @@ export function AppHeader({
   share?: boolean;
 }) {
   return (
-    <header className="border-b border-border pb-3 md:pb-0">
-      <div className="flex items-center justify-between gap-3">
-        <Link href="/" aria-label="Predictapp – domů" className="flex items-center gap-2.5">
+    <>
+      <DesktopSidebar />
+      <header className="relative z-30">
+        <div className="app-topbar">
+        <div className="flex min-w-0 items-center gap-3">
+        <Link href="/" aria-label="Predictapp – domů" className="flex items-center gap-2.5 lg:hidden">
           <Image
             src="/logoapp.png"
             alt="Predictapp"
@@ -35,20 +37,25 @@ export function AppHeader({
             priority
             className="rounded-xl shadow-sm"
           />
-          <span className="leading-tight">
+          <span className="leading-tight sm:block">
             <span className="block text-sm font-bold tracking-tight text-foreground">Predictapp</span>
             <span className="hidden text-[11px] text-muted sm:block">Fotbal v souvislostech</span>
           </span>
         </Link>
+        <div className="hidden lg:block">
+          <p className="text-[10px] font-black uppercase tracking-[.18em] text-muted">Predictapp / datový magazín</p>
+          <p className="text-sm font-semibold text-foreground">Fotbal v souvislostech</p>
+        </div>
+        </div>
         <div className="flex items-center gap-1.5 sm:gap-2">
           {share && <ShareButton />}
-          <ThemeToggle />
           <AccountMenu user={user} />
         </div>
-      </div>
-      <SectionNav />
+        </div>
+        <SectionNav />
+      </header>
       <MobileBottomNav />
-    </header>
+    </>
   );
 }
 
@@ -78,7 +85,7 @@ function ShareButton() {
       onClick={share}
       title="Sdílet odkaz na toto porovnání"
       aria-label="Sdílet"
-      className="rounded-full border border-border bg-surface px-3 py-1.5 text-sm font-medium text-muted transition hover:text-foreground"
+      className="min-h-11 rounded-full border border-border bg-surface px-3 py-1.5 text-sm font-bold text-muted transition hover:-translate-y-0.5 hover:border-foreground/30 hover:text-foreground"
     >
       <span aria-hidden>{emoji}</span>
       <span className="hidden sm:inline"> {label}</span>

@@ -466,7 +466,7 @@ export function CompareApp({
       : null;
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-5 sm:py-8">
+    <main className="app-page">
       <AppHeader user={user} share />
 
       <div className="mt-4">
@@ -481,8 +481,8 @@ export function CompareApp({
         />
       </div>
 
-      <section className="mt-4 rounded-2xl border border-border bg-surface p-4 shadow-sm">
-        <div className="grid grid-cols-2 gap-3">
+      <section className="ui-panel mt-4 p-4 sm:p-5">
+        <div className="grid gap-3 md:grid-cols-[1fr_auto_1fr] md:items-center">
           <TeamSelect
             accent="home"
             heading="Domácí"
@@ -496,6 +496,15 @@ export function CompareApp({
             leagueId={homeLeagueId}
             onLeagueChange={handleHomeLeague}
           />
+          <button
+            type="button"
+            onClick={handleSwap}
+            title="Prohodit domácí a hostující tým"
+            aria-label="Prohodit domácí a hostující tým"
+            className="ui-control order-3 grid min-w-11 place-items-center px-3 text-muted transition hover:border-accent-strong/40 hover:text-foreground md:order-none"
+          >
+            ⇄
+          </button>
           <TeamSelect
             accent="away"
             heading="Host"
@@ -514,14 +523,6 @@ export function CompareApp({
 
       {(homeId != null || awayId != null) && (
         <div className="mt-2 flex items-center justify-center gap-2">
-          <button
-            type="button"
-            onClick={handleSwap}
-            title="Prohodit domácí a hostující tým"
-            className="rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-muted transition hover:text-foreground"
-          >
-            ⇄ Prohodit
-          </button>
           <button
             type="button"
             onClick={handleReset}
@@ -934,7 +935,7 @@ function TeamSelect({
 }) {
   const ring = accent === "home" ? "text-home" : "text-away";
   return (
-    <div className="min-w-0 rounded-xl border border-border bg-background p-3">
+    <div className={`min-w-0 rounded-xl border bg-background/60 p-4 ${accent === "home" ? "border-home/25" : "border-away/25"}`}>
       <p className={`text-[11px] font-semibold uppercase tracking-wide ${ring}`}>
         {heading}
       </p>
@@ -942,7 +943,7 @@ function TeamSelect({
         {leagueLabel}
       </label>
       <select
-        className="mt-1 w-full rounded-lg border border-border bg-surface px-2 py-1.5 text-base"
+        className="ui-control mt-1 w-full px-3 text-base outline-none transition focus:border-accent-strong"
         value={leagueId ?? ""}
         onChange={(e) => onLeagueChange(Number(e.target.value))}
       >
@@ -999,7 +1000,7 @@ function Segmented<T extends string>({
       role="radiogroup"
       aria-label={ariaLabel}
       onKeyDown={onKeyDown}
-      className={`inline-flex w-full rounded-full border border-border bg-surface p-0.5 ${
+      className={`inline-flex w-full rounded-xl border border-border bg-surface p-1 shadow-sm ${
         compact ? "w-auto" : ""
       }`}
     >
@@ -1013,9 +1014,9 @@ function Segmented<T extends string>({
             aria-checked={active}
             tabIndex={active ? 0 : -1}
             onClick={() => onChange(o.value)}
-            className={`flex-1 rounded-full px-3 py-1.5 text-sm font-medium transition ${
+            className={`min-h-10 flex-1 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${
               active
-                ? "bg-foreground text-background"
+                ? "bg-accent/35 text-foreground ring-1 ring-accent-strong/20"
                 : "text-muted hover:text-foreground"
             }`}
           >

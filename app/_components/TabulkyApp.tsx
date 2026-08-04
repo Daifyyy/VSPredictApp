@@ -146,10 +146,10 @@ export function TabulkyApp() {
   const hasPlayed = rows.some((r) => r.played > 0);
 
   return (
-    <main className="mx-auto w-full max-w-3xl px-4 py-5 sm:py-8">
+    <main className="app-page">
       <AppHeader user={user} />
 
-      <h1 className="mt-4 text-lg font-semibold text-foreground">Ligové tabulky</h1>
+      <h1>Ligové tabulky</h1>
       <p className="mt-1 text-sm text-muted">
         Aktuální pořadí vybrané ligy – pozice, body, skóre a forma.
       </p>

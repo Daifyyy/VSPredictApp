@@ -14,16 +14,29 @@ test("domovská stránka nabízí zápasy a rychlé vstupy", async ({ page }) =>
 
 test("hlavní analytické sekce jsou dosažitelné z navigace", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await page.getByRole("link", { name: "Analýzy", exact: true }).first().click();
+  const mobile = test.info().project.name.startsWith("mobile");
+  const navigation = page.getByRole("navigation", {
+    name: mobile ? "Hlavní mobilní navigace" : "Hlavní navigace",
+  });
+  await navigation
+    .getByRole("link", { name: mobile ? "Analýzy" : /Porovnání/ })
+    .click();
 
   // CompareApp doplní výchozí režim a ligy do query stringu; důležitá je routa.
   await expect(page).toHaveURL(/\/porovnani(?:\?|$)/);
   const analysisNav = page.getByRole("navigation", { name: "Sekce analýz" });
-  await expect(analysisNav.getByRole("link", { name: "Porovnání" })).toBeVisible();
-  await expect(analysisNav.getByRole("link", { name: "Tabulky" })).toBeVisible();
-  await expect(analysisNav.getByRole("link", { name: "Predikce" })).toBeVisible();
-  await expect(analysisNav.getByRole("link", { name: "Model vs. trh" })).toBeVisible();
-  await expect(analysisNav.getByRole("link", { name: "Přestupy" })).toBeVisible();
+  if (mobile) {
+    await expect(analysisNav.getByRole("link", { name: "Porovnání" })).toBeVisible();
+    await expect(analysisNav.getByRole("link", { name: "Tabulky" })).toBeVisible();
+    await expect(analysisNav.getByRole("link", { name: "Predikce" })).toBeVisible();
+    await expect(analysisNav.getByRole("link", { name: "Model vs. trh" })).toBeVisible();
+    await expect(analysisNav.getByRole("link", { name: "Přestupy" })).toBeVisible();
+  } else {
+    await expect(navigation.getByRole("link", { name: /Tabulky/ })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: /Predikce/ })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: /Model vs\. trh/ })).toBeVisible();
+    await expect(navigation.getByRole("link", { name: /Přestupy/ })).toBeVisible();
+  }
 });
 
 test("starý sdílený odkaz zachová parametry a přesměruje na porovnání", async ({ page }) => {

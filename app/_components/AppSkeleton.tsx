@@ -5,7 +5,7 @@
 export function AppSkeleton() {
   return (
     <div className="flex-1">
-      <main className="mx-auto w-full max-w-4xl px-4 py-4 sm:py-7">
+      <main className="app-page">
         {/* hlavička (logo + akce) */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2.5">

@@ -171,9 +171,11 @@ export function MatchReportPanel({ match }: { match: ReportedMatch }) {
     : [];
 
   return (
-    <div className="space-y-3 rounded-xl border border-border bg-surface/50 px-3 py-3">
+    <div className="ui-panel space-y-4 p-4 sm:p-5">
       {report?.verdict && (
-        <p className="text-sm font-medium leading-snug text-foreground">{report.verdict}</p>
+        <div className="rounded-lg border-l-4 border-accent-strong bg-accent/10 px-4 py-3">
+          <p className="text-sm font-semibold leading-6 text-foreground">{report.verdict}</p>
+        </div>
       )}
 
       {chips.length > 0 && (
@@ -246,22 +248,22 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-1 border-t border-border pt-2">
+    <section className="rounded-lg border border-border bg-background/55 p-3">
       <div className="flex items-center justify-between gap-2">
-        <h4 className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+        <h4 className="text-[11px] font-bold uppercase tracking-[.1em] text-muted">
           {title}
         </h4>
         {badge}
       </div>
       {children}
-    </div>
+    </section>
   );
 }
 
 /** Řádek „popisek → hodnota" (mobile-first: dva sloupce, čísla tabulární). */
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 text-[11px] leading-snug">
+    <div className="flex items-baseline justify-between gap-3 border-b border-border/70 py-1.5 text-xs leading-snug last:border-b-0">
       <span className="min-w-0 text-muted">{label}</span>
       <span className="shrink-0 tabular-nums text-foreground">{value}</span>
     </div>
