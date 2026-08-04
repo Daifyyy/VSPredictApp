@@ -3,7 +3,6 @@ import { ZapasyApp } from "./_components/ZapasyApp";
 import { getFixturesByDates, getRecentResults } from "@/lib/data/repository";
 import { pragueDay } from "@/lib/data/fixtures";
 import { mergeTips } from "@/lib/picks/results";
-import { InstallLink } from "./_components/InstallLink";
 
 export const metadata: Metadata = {
   title: "Fotbalové zápasy dnes a tento týden",
@@ -53,15 +52,7 @@ export default async function Home() {
   return (
     <div className="flex-1">
       <ZapasyApp days={days} resultDays={RESULT_DAYS} />
-      <footer className="mx-auto max-w-4xl px-4 py-8 text-center text-xs text-muted">
-        <p>
-          Klikni na zápas a otevře se statistické porovnání obou týmů s predikcí —
-          bez ručního vybírání týmů. Data: API-Football.
-        </p>
-        <p className="mt-2">
-          <InstallLink />
-        </p>
-      </footer>
+      <footer className="mx-auto max-w-4xl px-4 py-6 text-center text-xs text-muted">Data: API-Football.</footer>
     </div>
   );
 }

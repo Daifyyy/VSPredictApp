@@ -118,6 +118,17 @@ const teamItemSchema = z.object({
     logo: z.string(),
     national: z.boolean().optional(),
   }),
+  venue: z
+    .object({
+      id: z.number().nullable().optional(),
+      name: z.string().nullable().optional(),
+      address: z.string().nullable().optional(),
+      city: z.string().nullable().optional(),
+      capacity: z.number().nullable().optional(),
+      surface: z.string().nullable().optional(),
+      image: z.string().nullable().optional(),
+    })
+    .optional(),
 });
 
 const fixtureItemSchema = z.object({

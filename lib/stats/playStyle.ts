@@ -45,6 +45,14 @@ const efficiencyScore: ScoreFn = (values, venue) => {
   return clamp(sot / s, 0, 1) * 10;
 };
 
+// Obranná odolnost = kolik kvalitních šancí tým dovolí. xGA má přednost; u starší cache
+// bez soupeřova xG použijeme skutečně inkasované góly a UI dál ukáže dostupný vzorek.
+const defenseScore: ScoreFn = (values, venue) => {
+  const xga = valueOrTotal(values, "XG_AGAINST", venue);
+  const conceded = xga ?? valueOrTotal(values, "GOALS_AGAINST", venue);
+  return conceded !== null ? clamp((2.5 - conceded) / 2, 0, 1) * 10 : null;
+};
+
 interface DimDef {
   key: PlayStyleDimension["key"];
   label: string;
@@ -70,9 +78,9 @@ const DIMS: DimDef[] = [
   },
   {
     key: "pressing",
-    label: "Pressing",
-    leftLabel: "Pasivní",
-    rightLabel: "Vysoký pressing",
+    label: "Aktivita bez míče (odhad)",
+    leftLabel: "Nižší aktivita",
+    rightLabel: "Aktivní napadání",
     score: pressingScore,
   },
   {
@@ -82,7 +90,40 @@ const DIMS: DimDef[] = [
     rightLabel: "Klinická",
     score: efficiencyScore,
   },
+  {
+    key: "defense",
+    label: "Obranná odolnost",
+    leftLabel: "Propustná",
+    rightLabel: "Pevná",
+    score: defenseScore,
+  },
 ];
+
+export interface SingleTeamPlayStyleDimension {
+  key: PlayStyleDimension["key"];
+  label: string;
+  leftLabel: string;
+  rightLabel: string;
+  score: number;
+  available: boolean;
+}
+
+export function computeSingleTeamPlayStyle(
+  values: MetricValue[],
+  venue: Venue
+): SingleTeamPlayStyleDimension[] {
+  return DIMS.map((dim) => {
+    const score = dim.score(values, venue);
+    return {
+      key: dim.key,
+      label: dim.label,
+      leftLabel: dim.leftLabel,
+      rightLabel: dim.rightLabel,
+      score: round1(score ?? 5),
+      available: score !== null,
+    };
+  });
+}
 
 /**
  * Spočítá 4 stylové dimenze (0–10) pro oba týmy najednou.
@@ -99,19 +140,19 @@ export function computePlayStyle(
   awayValues: MetricValue[],
   venue: Venue
 ): PlayStyleDimension[] {
-  return DIMS.map((dim) => {
-    const hs = dim.score(homeValues, venue);
-    const as_ = dim.score(awayValues, venue);
-    const available = hs !== null && as_ !== null;
+  const home = computeSingleTeamPlayStyle(homeValues, venue);
+  const away = computeSingleTeamPlayStyle(awayValues, venue);
+  return home.map((dim, index) => {
+    const opponent = away[index];
 
     return {
       key: dim.key,
       label: dim.label,
       leftLabel: dim.leftLabel,
       rightLabel: dim.rightLabel,
-      homeScore: round1(hs ?? 5),
-      awayScore: round1(as_ ?? 5),
-      available,
+      homeScore: dim.score,
+      awayScore: opponent.score,
+      available: dim.available && opponent.available,
     };
   });
 }

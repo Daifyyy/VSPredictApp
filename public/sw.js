@@ -2,7 +2,7 @@
 // Záměrně konzervativní – necachuje API ani HTML porovnání (vždy z čerstva přes síť);
 // jen statické assety a kořenovou stránku jako offline shell.
 
-const CACHE = "predictapp-shell-v1";
+const CACHE = "football-insight-shell-v2";
 const SHELL = ["/", "/manifest.webmanifest", "/icon-192.png", "/logoapp.png"];
 
 self.addEventListener("install", (event) => {

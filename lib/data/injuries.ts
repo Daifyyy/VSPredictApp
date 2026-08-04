@@ -14,6 +14,15 @@ export const INJURY_MAX_AGE_DAYS = 21;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+export function normalizePlayerName(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("cs")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
 /**
  * Vybere aktuálně relevantní zranění z hrubé odpovědi API.
  * - Zahodí záznamy bez `fixture.date` (nelze ověřit aktuálnost → raději neukázat).
@@ -36,11 +45,14 @@ export function selectCurrentInjuries(
     // Nejnovější první → první výskyt hráče je ten aktuální.
     .sort((a, b) => b.ts - a.ts);
 
-  const seen = new Set<number>();
+  const seenIds = new Set<number>();
+  const seenNames = new Set<string>();
   const out: Injury[] = [];
   for (const { it } of fresh) {
-    if (seen.has(it.player.id)) continue;
-    seen.add(it.player.id);
+    const nameKey = normalizePlayerName(it.player.name);
+    if (seenIds.has(it.player.id) || (nameKey && seenNames.has(nameKey))) continue;
+    seenIds.add(it.player.id);
+    if (nameKey) seenNames.add(nameKey);
     out.push({
       playerId: it.player.id,
       name: it.player.name,

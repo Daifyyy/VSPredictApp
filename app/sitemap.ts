@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 
 // Hlavní záložky pro indexaci. Porovnání s konkrétními týmy se neindexují plošně
 // (kombinatorika + kanonická URL řeší dedup), sitemap drží jen stabilní vstupy.
-const BASE = process.env.AUTH_URL ?? "https://statapp-uvol.vercel.app";
+const BASE = process.env.AUTH_URL ?? "https://vs-predict-app.vercel.app";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();

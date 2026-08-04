@@ -1,4 +1,4 @@
-# Predictapp — statistické porovnání fotbalových týmů
+# Football Insight — statistické porovnání fotbalových týmů
 
 Webová aplikace pro porovnání klubů a reprezentací. Pro každý tým počítá
 **vážený průměr** metrik (vstřelené/obdržené góly, rohy, fauly, xG, střely)

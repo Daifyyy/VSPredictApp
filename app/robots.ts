@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 
-const BASE = process.env.AUTH_URL ?? "https://statapp-uvol.vercel.app";
+const BASE = process.env.AUTH_URL ?? "https://vs-predict-app.vercel.app";
 
 export default function robots(): MetadataRoute.Robots {
   return {

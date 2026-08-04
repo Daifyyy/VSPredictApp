@@ -7,6 +7,7 @@ import { AccountMenu } from "./AccountMenu";
 import { DesktopSidebar, MobileBottomNav, SectionNav } from "./nav";
 import type { SessionUser } from "./sessionUser";
 import { shareOrCopy } from "./share";
+import { TeamSearch } from "./TeamSearch";
 
 /**
  * Sdílená hlavička všech stránek: řádek s logem a účtem, pod ním pásek sekcí.
@@ -28,25 +29,26 @@ export function AppHeader({
       <header className="relative z-30">
         <div className="app-topbar">
         <div className="flex min-w-0 items-center gap-3">
-        <Link href="/" aria-label="Predictapp – domů" className="flex items-center gap-2.5 lg:hidden">
+        <Link href="/" aria-label="Football Insight – domů" className="flex items-center gap-2.5 lg:hidden">
           <Image
-            src="/logoapp.png"
-            alt="Predictapp"
+            src="/brand-mark.svg"
+            alt="Football Insight"
             width={40}
             height={40}
             priority
             className="rounded-xl shadow-sm"
           />
           <span className="leading-tight sm:block">
-            <span className="block text-sm font-bold tracking-tight text-foreground">Predictapp</span>
+            <span className="block text-sm font-bold tracking-tight text-foreground">Football Insight</span>
             <span className="hidden text-[11px] text-muted sm:block">Fotbal v souvislostech</span>
           </span>
         </Link>
         <div className="hidden lg:block">
-          <p className="text-[10px] font-black uppercase tracking-[.18em] text-muted">Predictapp / datový magazín</p>
+          <p className="text-[10px] font-black uppercase tracking-[.18em] text-muted">Football Insight</p>
           <p className="text-sm font-semibold text-foreground">Fotbal v souvislostech</p>
         </div>
         </div>
+        <TeamSearch />
         <div className="flex items-center gap-1.5 sm:gap-2">
           {share && <ShareButton />}
           <AccountMenu user={user} />
@@ -62,7 +64,7 @@ export function AppHeader({
 function ShareButton() {
   const [state, setState] = useState<"idle" | "copied" | "error">("idle");
   async function share() {
-    const outcome = await shareOrCopy(window.location.href, "Predictapp — porovnání týmů");
+    const outcome = await shareOrCopy(window.location.href, "Football Insight — porovnání týmů");
     if (outcome === "copied") {
       setState("copied");
       setTimeout(() => setState("idle"), 1500);

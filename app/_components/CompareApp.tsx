@@ -749,14 +749,6 @@ function ResultPanel({
               awayTeam={{ name: result.away.team.name, logoUrl: result.away.team.logoUrl }}
             />
           )}
-          {(homeInjuries.length > 0 || awayInjuries.length > 0) && (
-            <InjurySummary
-              homeName={result.home.team.name}
-              awayName={result.away.team.name}
-              homeCount={homeInjuries.length}
-              awayCount={awayInjuries.length}
-            />
-          )}
         </>
       )}
 
@@ -773,6 +765,7 @@ function ResultPanel({
       {leagueTable && leagueTable.rows.some((r) => r.played > 0) && (
         <LeagueTableSection
           table={leagueTable}
+          leagueId={homeLeagueId!}
           highlightTeamIds={
             new Set([result.home.team.id, result.away.team.id])
           }
@@ -887,7 +880,12 @@ function ResultPanel({
       )}
 
       {(homeInjuries.length > 0 || awayInjuries.length > 0) && (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-sm font-bold text-foreground">Absence</h3>
+            <span className="text-xs text-muted">{result.home.team.name} {homeInjuries.length} · {result.away.team.name} {awayInjuries.length}</span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
           {homeInjuries.length > 0 && (
             <InjuryList
               title={result.home.team.name}
@@ -902,7 +900,8 @@ function ResultPanel({
               injuries={awayInjuries}
             />
           )}
-        </div>
+          </div>
+        </section>
       )}
     </div>
   );
@@ -1028,48 +1027,15 @@ function Segmented<T extends string>({
   );
 }
 
-/** Stručné shrnutí počtu hráčů mimo hru (odvozené z už načtených zranění). */
-function InjurySummary({
-  homeName,
-  awayName,
-  homeCount,
-  awayCount,
-}: {
-  homeName: string;
-  awayName: string;
-  homeCount: number;
-  awayCount: number;
-}) {
-  return (
-    <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 rounded-xl border border-border bg-surface px-3 py-2 text-xs text-muted">
-      <span className="font-semibold uppercase tracking-wide">🏥 Mimo hru</span>
-      <span>
-        <span className="font-semibold text-home">{homeName}</span>{" "}
-        {homeCount} {plural(homeCount)}
-      </span>
-      <span aria-hidden>·</span>
-      <span>
-        <span className="font-semibold text-away">{awayName}</span>{" "}
-        {awayCount} {plural(awayCount)}
-      </span>
-    </div>
-  );
-}
-
-/** Česká pluralizace „hráč / hráči / hráčů". */
-function plural(n: number): string {
-  if (n === 1) return "hráč";
-  if (n >= 2 && n <= 4) return "hráči";
-  return "hráčů";
-}
-
 /** Collapsible ligová tabulka v Porovnání (default sbalená; oba týmy zvýrazněné). */
 function LeagueTableSection({
   table,
   highlightTeamIds,
+  leagueId,
 }: {
   table: LeagueTable;
   highlightTeamIds: Set<number>;
+  leagueId: number;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -1087,7 +1053,7 @@ function LeagueTableSection({
       </button>
       {open && (
         <div className="px-3 pb-4">
-          <StandingsTable rows={table.rows} highlightTeamIds={highlightTeamIds} />
+          <StandingsTable rows={table.rows} highlightTeamIds={highlightTeamIds} leagueId={leagueId} />
           <ZoneLegend rows={table.rows} />
         </div>
       )}

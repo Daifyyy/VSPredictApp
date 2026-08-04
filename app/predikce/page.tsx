@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/lib/authUser";
 import type { SessionUser } from "../_components/sessionUser";
 
 export const metadata = {
-  title: "Predikce — Predictapp",
+  title: "Predikce — Football Insight",
   description:
     "Které zápasy má statistický model za nejjistější a jak si zatím vede. Není to sázkové doporučení.",
 };

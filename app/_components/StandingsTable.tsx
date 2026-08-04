@@ -1,4 +1,5 @@
 import { TeamLogo } from "./TeamLogo";
+import Link from "next/link";
 import { Hint } from "./Hint";
 import type { LeagueTableRow, LeagueTableZone } from "@/lib/types";
 
@@ -11,9 +12,11 @@ import type { LeagueTableRow, LeagueTableZone } from "@/lib/types";
 export function StandingsTable({
   rows,
   highlightTeamIds,
+  leagueId,
 }: {
   rows: LeagueTableRow[];
   highlightTeamIds?: Set<number>;
+  leagueId: number;
 }) {
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
@@ -62,7 +65,7 @@ export function StandingsTable({
                   </span>
                 </td>
                 <td className="py-2">
-                  <span className="flex items-center gap-2">
+                  <Link href={`/tym/${r.teamId}?league=${leagueId}`} className="flex items-center gap-2 rounded transition hover:text-positive">
                     <TeamLogo src={r.logoUrl} alt={r.name} size={22} />
                     <span
                       className={`truncate text-foreground ${
@@ -71,7 +74,7 @@ export function StandingsTable({
                     >
                       {r.name}
                     </span>
-                  </span>
+                  </Link>
                 </td>
                 <Td>{r.played}</Td>
                 <Td className="hidden sm:table-cell">{r.win}</Td>

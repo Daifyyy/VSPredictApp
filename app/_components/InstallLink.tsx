@@ -10,7 +10,7 @@ export function InstallLink() {
       onClick={requestInstall}
       className="underline underline-offset-2 transition hover:text-foreground"
     >
-      📲 Nainstalovat jako appku
+      Nainstalovat aplikaci
     </button>
   );
 }

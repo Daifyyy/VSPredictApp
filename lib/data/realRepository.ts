@@ -96,8 +96,11 @@ import {
   getConfederation,
   isNationalLeague,
   isNeutralNationalLeague,
+  leagueDisplayName,
   teamLogoUrl,
 } from "./catalog";
+import { localizeStadiumSurface } from "@/lib/stadium";
+import type { SearchableTeam } from "@/lib/teamSearch";
 
 const LIST_TTL = 60 * 60 * 24; // 24 h pro seznamy (dokončené sezóny jsou stabilní)
 const INJ_TTL = 60 * 60 * 6; // 6 h pro zranění (soupiska se mění průběžně)
@@ -119,7 +122,7 @@ const CLUB_FALLBACK_LAST = 20;
 type TeamLite = Pick<Team, "id" | "name" | "logoUrl" | "country" | "entityType">;
 
 /** Název/logo klubu, když ho nelze dohledat v seznamu týmů ligy (nováček, nová sezóna). */
-export type ClubMeta = Pick<Team, "name" | "logoUrl" | "country">;
+export type ClubMeta = Pick<Team, "name" | "logoUrl" | "country" | "stadium">;
 
 // ---- Veřejné API repository ----
 
@@ -230,7 +233,7 @@ export async function getTeamsByLeague(leagueId: number): Promise<TeamLite[]> {
   }
 
   const current = await cachedJson(
-    `teams:${leagueId}:${CURRENT_SEASON}`,
+    `teams:v2:${leagueId}:${CURRENT_SEASON}`,
     LIST_TTL,
     () => fetchLeagueTeams(leagueId, CURRENT_SEASON)
   );
@@ -242,7 +245,7 @@ export async function getTeamsByLeague(leagueId: number): Promise<TeamLite[]> {
   const teams = current.length
     ? current
     : await cachedJson(
-        `teams:${leagueId}:${PREVIOUS_SEASON}`,
+        `teams:v2:${leagueId}:${PREVIOUS_SEASON}`,
         LIST_TTL,
         () => fetchLeagueTeams(leagueId, PREVIOUS_SEASON)
       );
@@ -253,8 +256,40 @@ export async function getTeamsByLeague(leagueId: number): Promise<TeamLite[]> {
       logoUrl: t.team.logo,
       country: "",
       entityType: "CLUB" as const,
+      stadium: t.venue
+        ? {
+            id: t.venue.id ?? null,
+            name: t.venue.name ?? null,
+            address: t.venue.address ?? null,
+            city: t.venue.city ?? null,
+            capacity: t.venue.capacity ?? null,
+            surface: localizeStadiumSurface(t.venue.surface),
+            imageUrl: t.venue.image ?? null,
+          }
+        : undefined,
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "cs"));
+}
+
+/** Jeden denní katalog pro globální hledání; jednotlivé ligové seznamy mají vlastní cache. */
+export function getSearchableTeams(): Promise<SearchableTeam[]> {
+  return cachedJson(`team-search:v1:${CURRENT_SEASON}`, LIST_TTL, async () => {
+    const leagues = getLeagues();
+    const groups = await Promise.all(
+      leagues.map(async (league) => {
+        const teams = await getTeamsByLeague(league.id);
+        return teams.map((team) => ({
+          id: team.id,
+          name: team.name,
+          logoUrl: team.logoUrl,
+          leagueId: league.id,
+          leagueName: leagueDisplayName(league),
+          country: league.country || team.country,
+        }));
+      })
+    );
+    return groups.flat();
+  });
 }
 
 /**
@@ -1137,6 +1172,7 @@ async function buildClubTeam(
     logoUrl: meta.logoUrl,
     country: meta.country,
     entityType: "CLUB",
+    stadium: meta.stadium,
     leagueId,
     leagueMatches,
     euroMatches,

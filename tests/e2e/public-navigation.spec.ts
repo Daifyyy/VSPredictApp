@@ -5,11 +5,28 @@ test("domovská stránka nabízí zápasy a rychlé vstupy", async ({ page }) =>
 
   await expect(page).toHaveTitle("Fotbalové zápasy dnes a tento týden");
   await expect(
-    page.getByRole("heading", { level: 1, name: "Zápasy bez zbytečného hledání" })
+    page.getByRole("heading", { level: 1, name: /Dnešní fotbal|Nejbližší fotbalový program/ })
   ).toBeVisible();
   await expect(page.getByRole("link", { name: "Porovnat dva týmy" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Program/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Výsledky/ })).toBeVisible();
+});
+
+test("globální našeptávač otevře správný profil týmu", async ({ page }) => {
+  await page.goto("/", { waitUntil: "networkidle" });
+  const mobile = test.info().project.name.startsWith("mobile");
+  if (mobile) {
+    await page.getByRole("button", { name: "Vyhledat tým" }).click();
+    await expect(page.getByRole("dialog", { name: "Vyhledávání týmů" })).toBeVisible();
+  }
+  const search = page.getByRole("combobox", { name: "Vyhledat tým" });
+  const response = page.waitForResponse((candidate) => candidate.url().includes("/api/search/teams?q=") && candidate.ok());
+  await search.fill("Manchester City");
+  await response;
+  const option = page.getByRole("option", { name: /Manchester City/ }).first();
+  await expect(option).toBeVisible({ timeout: 15_000 });
+  await option.click();
+  await expect(page).toHaveURL(/\/tym\/50\?league=39/);
 });
 
 test("hlavní analytické sekce jsou dosažitelné z navigace", async ({ page }) => {
@@ -65,4 +82,20 @@ test("mobilní navigace je viditelná a nepřekrývá konec stránky", async ({ 
   expect(Math.round((navBox?.y ?? 0) + (navBox?.height ?? 0))).toBeLessThanOrEqual(
     viewport?.height ?? 0
   );
+});
+
+test("detail týmu přepíná výkon celkem, doma a venku", async ({ page }) => {
+  await page.goto("/tym/50?league=39", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { level: 1, name: "Manchester City" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Herní profil" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Statistická výkonnost" })).toBeVisible();
+  await page.getByRole("link", { name: "Doma", exact: true }).click();
+  await expect(page).toHaveURL(/venue=HOME/);
+  await expect(page.getByRole("link", { name: "Doma", exact: true })).toHaveAttribute("aria-current", "page");
+});
+
+test("chyba přihlášení má srozumitelný návratový stav", async ({ page }) => {
+  await page.goto("/auth/chyba?error=Configuration", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Přihlášení není správně nastavené" })).toBeVisible();
+  await expect(page.getByText("Kód chyby: Configuration")).toBeVisible();
 });

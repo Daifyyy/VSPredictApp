@@ -124,7 +124,7 @@ export function InstallPrompt() {
       <div className="ui-panel w-full max-w-md p-4 shadow-xl">
         <div className="flex items-start justify-between gap-3">
           <h3 className="text-sm font-semibold text-foreground">
-            📲 Nainstaluj Predictapp jako appku
+            Nainstaluj Football Insight jako aplikaci
           </h3>
           <button
             type="button"
@@ -138,7 +138,7 @@ export function InstallPrompt() {
 
         <div className="mt-2 text-sm text-muted">
           {kind === "android" && (
-            <p>Přidej si Predictapp na plochu pro rychlý přístup a režim na celou obrazovku.</p>
+            <p>Přidej si Football Insight na plochu pro rychlý přístup a režim na celou obrazovku.</p>
           )}
           {kind === "ios" && (
             <ol className="space-y-2">

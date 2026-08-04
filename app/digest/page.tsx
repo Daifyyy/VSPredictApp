@@ -9,7 +9,7 @@ import type { SessionUser } from "../_components/sessionUser";
 // že model trh neporáží a že větší neshoda vycházela HŮŘ. Stránka to říká v podtitulku,
 // takže by si s ní metadata protiřečila.
 export const metadata = {
-  title: "Vs. trh — kde se lišíme od kurzů | Predictapp",
+  title: "Vs. trh — kde se lišíme od kurzů | Football Insight",
   description:
     "Zápasy nejbližších 7 dní, kde se náš odhad nejvíc rozchází s odmaržovanými kurzy. Pozvánka podívat se proč – ne sázkový tip (PRO).",
 };

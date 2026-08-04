@@ -3,7 +3,7 @@ import { getCurrentUser } from "@/lib/authUser";
 import type { SessionUser } from "../_components/sessionUser";
 
 export const metadata = {
-  title: "Hra: Manažer — Predictapp",
+  title: "Hra: Manažer — Football Insight",
   description:
     "Klubový manažer se simulací ligy. Vyber tým, zvol taktiku a odehraj sezónu — na stejném predikčním modelu jako reálné tipy.",
 };

@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/authUser";
 import type { SessionUser } from "../_components/sessionUser";
 
 export const metadata = {
-  title: "Přestupy — Predictapp",
+  title: "Přestupy — Football Insight",
   description: "Aktuální přestupy top-5 evropských lig a bilance klubů (PRO).",
 };
 
