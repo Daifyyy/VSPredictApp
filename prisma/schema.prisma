@@ -219,6 +219,11 @@ model FixturePrediction {
   /// „neutrální faktor" od „změřeného faktoru, který vyšel 1".
   refereeFactor     Float?
   refereeSample     Int?
+  /// Oficiálně delegovaný rozhodčí a audit týmové λ před jeho započtením.
+  refereeName                String?
+  refereeKey                 String?
+  lambdaCardsHomeBeforeRef   Float?
+  lambdaCardsAwayBeforeRef   Float?
   predictedAt   DateTime  @default(now())
   // Výsledek (doplní settle cron po odehrání)
   status        String    @default("NS")
@@ -288,6 +293,28 @@ model FixturePrediction {
   /// nad touhle tabulkou – a bez indexu se skenovala celá.
   @@index([modelVersion])
   @@index([modelContext, contextVersion, modelVersion])
+}
+
+/// Jeden uzavřený zápas v point-in-time historii rozhodčího. Vzniká pouze z již
+/// uložené predikce a MatchStatCache; veřejný request tuto tabulku nikdy neplní.
+model RefereeMatch {
+  fixtureId       Int      @id
+  refereeName     String
+  refereeKey      String
+  leagueId        Int
+  modelContext    String
+  contextVersion  Int
+  kickoff         DateTime
+  fouls           Float?
+  yellowCards     Float
+  redCards        Float
+  actualCards     Float
+  expectedCards   Float
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([refereeKey, modelContext, kickoff])
+  @@index([leagueId, kickoff])
 }
 
 /// Přestup hráče (záložka Přestupy, top-5 lig). Plní cron na pozadí (refresh-transfers);

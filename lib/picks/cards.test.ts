@@ -189,6 +189,13 @@ describe("dampenCardTotal", () => {
 });
 
 describe("predictCards", () => {
+  it("audituje týmovou lambdu před započtením rozhodčího", () => {
+    const avg = values({ CARDS: 2.2, CARDS_AGAINST: 2.2, FOULS: 11, FOULS_AGAINST: 11 });
+    const prediction = predictCards(avg, avg, { factor: 1.2, sample: 14 }, BASE);
+    expect(prediction.lambdaHome).toBeCloseTo(prediction.lambdaHomeBeforeRef * 1.2);
+    expect(prediction.lambdaAway).toBeCloseTo(prediction.lambdaAwayBeforeRef * 1.2);
+    expect(prediction.refereeSample).toBe(14);
+  });
   const avg = values({ CARDS: 2.2, CARDS_AGAINST: 2.2 });
 
   it("faktor rozhodčího λ násobí a nese se na výstupu", () => {

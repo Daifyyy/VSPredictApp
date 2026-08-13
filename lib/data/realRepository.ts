@@ -336,6 +336,8 @@ export async function refreshLeagueStyleSnapshot(leagueId: number): Promise<Leag
 
   const snapshot = buildLeagueStyleSnapshot(leagueId, CURRENT_SEASON, profiles, undefined, baselineProfiles);
   await writeLeagueStyleSnapshot(snapshot);
+  const { ingestRefereeHistory } = await import("./refereeStore");
+  await ingestRefereeHistory([...previous, ...current]);
   return snapshot;
 }
 

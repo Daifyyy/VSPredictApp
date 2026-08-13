@@ -7,7 +7,7 @@ import { publishedOutcomeTip } from "@/lib/picks/publication";
 import { DEFAULT_CORNER_TUNING } from "@/lib/picks/corners";
 import { DEFAULT_CARD_TUNING } from "@/lib/picks/cards";
 
-export const COUNT_MODEL_VERSION = 1;
+export const COUNT_MODEL_VERSION = 2;
 
 /**
  * Úložiště predikcí nad tabulkou `FixturePrediction` (real DB). Plní ho cron na
@@ -94,6 +94,10 @@ function toRow(p: PredictionRowSource): PredictionRow {
     cardVarianceRatio: p.cardVarianceRatio,
     refereeFactor: p.refereeFactor,
     refereeSample: p.refereeSample,
+    refereeName: p.refereeName,
+    refereeKey: p.refereeKey,
+    lambdaCardsHomeBeforeRef: p.lambdaCardsHomeBeforeRef,
+    lambdaCardsAwayBeforeRef: p.lambdaCardsAwayBeforeRef,
     status: p.status,
     homeGoals: p.homeGoals,
     awayGoals: p.awayGoals,
@@ -163,6 +167,10 @@ export async function upsertPrediction(row: PredictionUpsert): Promise<void> {
       row.lambdaCardsHome != null ? DEFAULT_CARD_TUNING.varianceRatio : null,
     refereeFactor: row.refereeFactor ?? null,
     refereeSample: row.refereeSample ?? null,
+    refereeName: row.refereeName ?? null,
+    refereeKey: row.refereeKey ?? null,
+    lambdaCardsHomeBeforeRef: row.lambdaCardsHomeBeforeRef ?? null,
+    lambdaCardsAwayBeforeRef: row.lambdaCardsAwayBeforeRef ?? null,
     // Čím byly pravděpodobnosti odvozeny z λ – `reprice` podle toho pozná zastaralý řádek.
     rho: PREDICT_PARAMS.rho,
     sharpen: PREDICT_PARAMS.sharpen,

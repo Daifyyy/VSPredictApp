@@ -79,12 +79,64 @@ export function FixtureModelCard({
         <CountMetric market="corners" value={f.corners} />
         <CountMetric market="cards" value={f.cards} />
       </div>
+      <RefereeProfile profile={f.refereeProfile} expanded={countsOnly} />
       {(f.corners || f.cards) && (
         <p className="text-[10px] leading-relaxed text-muted">
           Jde o experimentální porovnání, nikoli publikovaný tip ani potvrzenou výhodu proti trhu.
         </p>
       )}
     </div>
+  );
+}
+
+function RefereeProfile({
+  profile,
+  expanded,
+}: {
+  profile: FixtureModelForecast["refereeProfile"];
+  expanded: boolean;
+}) {
+  if (!profile) {
+    return (
+      <div className="rounded-lg bg-surface px-3 py-3 text-muted">
+        <strong className="text-foreground">Rozhodčí</strong>
+        <p className="mt-1">Rozhodčí zatím neurčen.</p>
+      </div>
+    );
+  }
+  const number = (value: number | null, digits = 1) => value == null ? "—" : value.toFixed(digits);
+  return (
+    <section className="rounded-lg bg-surface px-3 py-3 text-muted" aria-label="Profil rozhodčího">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <small className="block uppercase tracking-wide">Rozhodčí</small>
+          <strong className="text-foreground">{profile.name}</strong>
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {profile.smallSample && <Badge>Málo dat · {profile.sample} zápasů</Badge>}
+          {profile.labels.map((label) => <Badge key={label}>{label}</Badge>)}
+        </div>
+      </div>
+      <dl className={`mt-2 grid gap-2 ${expanded ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+        <Metric label="Karty / zápas" value={number(profile.cardsPerMatch)} />
+        <Metric label="Fauly / zápas" value={number(profile.foulsPerMatch)} />
+        <Metric label="Červené / zápas" value={number(profile.redCardsPerMatch, 2)} />
+        <Metric label="Upravený faktor" value={`${profile.factor.toFixed(2)}×`} />
+        <Metric
+          label="Vliv na očekávání"
+          value={profile.lambdaBefore != null && profile.lambdaAfter != null
+            ? `${profile.lambdaBefore.toFixed(1)} → ${profile.lambdaAfter.toFixed(1)}`
+            : "—"}
+        />
+        {expanded && <Metric label="Karty na faul" value={number(profile.cardsPerFoul, 2)} />}
+        {expanded && <Metric label="Percentil karet" value={profile.cardPercentile == null ? "—" : `${profile.cardPercentile}.`} />}
+        {expanded && <Metric label="Percentil faulů" value={profile.foulPercentile == null ? "—" : `${profile.foulPercentile}.`} />}
+      </dl>
+      <p className="mt-2 text-[10px] leading-relaxed">
+        Faktor porovnává skutečné karty s tím, co čekal týmový model, a je smrštěný k průměru.
+        Jde o jeden vstup prognózy, nikoli sázkový tip; průměr může ovlivnit i typ přidělovaných zápasů.
+      </p>
+    </section>
   );
 }
 

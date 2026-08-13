@@ -69,6 +69,8 @@ import {
   type MarketCoverage,
 } from "./oddsCoverage";
 import { MODEL_CONTEXT_VERSION, modelContextForLeague } from "./modelContext";
+import { getRefereeProfile, ingestRefereeHistory } from "./refereeStore";
+import { normalizeRefereeName, type RefereeEstimate } from "@/lib/picks/cards";
 
 /**
  * Orchestrace predikční pipeline (běží jen na pozadí / cron, real data).
@@ -229,7 +231,8 @@ function countPredictionsFor(
   home: Team,
   away: Team,
   now: Date,
-  counts: CountBaselines | null
+  counts: CountBaselines | null,
+  referee: RefereeEstimate
 ): {
   corners: { lambdaHome: number; lambdaAway: number } | null;
   cards: {
@@ -237,6 +240,8 @@ function countPredictionsFor(
     lambdaAway: number;
     refereeFactor: number;
     refereeSample: number;
+    lambdaHomeBeforeRef: number;
+    lambdaAwayBeforeRef: number;
   } | null;
 } {
   const homeCorners = cornerValues(home.leagueMatches, now);
@@ -249,7 +254,7 @@ function countPredictionsFor(
 
   const homeCards = cardValues(home.leagueMatches, now);
   const awayCards = cardValues(away.leagueMatches, now);
-  const card = predictCards(homeCards, awayCards, undefined, {
+  const card = predictCards(homeCards, awayCards, referee, {
     cards: counts?.cards ?? DEFAULT_CARD_BASELINES.cards,
     fouls: counts?.fouls ?? DEFAULT_FOUL_BASELINE,
   });
@@ -264,6 +269,8 @@ function countPredictionsFor(
           lambdaAway: card.lambdaAway,
           refereeFactor: card.refereeFactor,
           refereeSample: card.refereeSample,
+          lambdaHomeBeforeRef: card.lambdaHomeBeforeRef,
+          lambdaAwayBeforeRef: card.lambdaAwayBeforeRef,
         }
       : null,
   };
@@ -362,9 +369,16 @@ export async function runPredictUpcoming(
         // a neměli je proti čemu měřit – a CLV byl jediný způsob, jak o nich rozhodnout.
         // Reprezentace vynechané: `CORNERS_AGAINST`/`CARDS_AGAINST` okna by u nich
         // stála hlavně na přátelácích.
+        const refereeName = f.fixture.referee?.trim() || null;
+        const refereeProfile = refereeName && !national && !europeanCup
+          ? await getRefereeProfile(refereeName, leagueId, new Date(f.fixture.date), modelContext)
+          : null;
         const countLambdas = national || europeanCup
           ? null
-          : countPredictionsFor(home, away, new Date(), counts);
+          : countPredictionsFor(home, away, new Date(), counts, {
+              factor: refereeProfile?.factor ?? 1,
+              sample: refereeProfile?.sample ?? 0,
+            });
         await upsertPrediction({
           fixtureId: f.fixture.id,
           leagueId,
@@ -399,6 +413,10 @@ export async function runPredictUpcoming(
           lambdaCardsAway: countLambdas?.cards?.lambdaAway ?? null,
           refereeFactor: countLambdas?.cards?.refereeFactor ?? null,
           refereeSample: countLambdas?.cards?.refereeSample ?? null,
+          refereeName,
+          refereeKey: refereeName ? normalizeRefereeName(refereeName) : null,
+          lambdaCardsHomeBeforeRef: countLambdas?.cards?.lambdaHomeBeforeRef ?? null,
+          lambdaCardsAwayBeforeRef: countLambdas?.cards?.lambdaAwayBeforeRef ?? null,
         });
         predicted++;
 
@@ -614,6 +632,7 @@ export async function runSettleResults(): Promise<{
       );
       settled++;
     }
+    await ingestRefereeHistory(fixtures);
   }
   return { pending: pending.length, settled, errors };
 }

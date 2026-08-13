@@ -12,6 +12,7 @@ import { getSettledPredictionRows } from "@/lib/data/repository";
 import { getCachedCountTotals } from "@/lib/data/cache";
 import { unstable_cache } from "next/cache";
 import { isRealDataConfigured } from "@/lib/db";
+import { getRefereeProfile } from "@/lib/data/refereeStore";
 
 const countSamples = unstable_cache(async () => {
   if (!isRealDataConfigured()) return {};
@@ -57,6 +58,21 @@ export async function GET(req: Request) {
       books,
       evaluatedSample: 0,
     };
+    const refereeProfile = row.refereeName
+      ? await getRefereeProfile(row.refereeName, row.leagueId, new Date(row.kickoff), context)
+      : null;
+    if (refereeProfile) {
+      refereeProfile.factor = row.refereeFactor ?? refereeProfile.factor;
+      refereeProfile.sample = row.refereeSample ?? refereeProfile.sample;
+      refereeProfile.lambdaBefore =
+        row.lambdaCardsHomeBeforeRef != null && row.lambdaCardsAwayBeforeRef != null
+          ? row.lambdaCardsHomeBeforeRef + row.lambdaCardsAwayBeforeRef
+          : null;
+      refereeProfile.lambdaAfter =
+        row.lambdaCardsHome != null && row.lambdaCardsAway != null
+          ? row.lambdaCardsHome + row.lambdaCardsAway
+          : null;
+    }
     const forecast: FixtureModelForecast = {
       fixtureId,
       experimental: isEuroCupLeague(row.leagueId),
@@ -83,6 +99,7 @@ export async function GET(req: Request) {
         version,
         evaluatedSample: samples[`${context}:cards:${version}:${row.cardVarianceRatio ?? 1.2}`] ?? 0,
       }),
+      refereeProfile,
     };
     return NextResponse.json({ forecast });
   } catch (error) {

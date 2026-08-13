@@ -397,6 +397,24 @@ export interface FixtureModelForecast {
   goals: { home: number; away: number; over25: number; btts: number };
   corners: CountModelForecast | null;
   cards: CountModelForecast | null;
+  refereeProfile: RefereeProfileForecast | null;
+}
+
+export interface RefereeProfileForecast {
+  name: string;
+  sample: number;
+  cardsPerMatch: number | null;
+  foulsPerMatch: number | null;
+  redCardsPerMatch: number | null;
+  cardsPerFoul: number | null;
+  cardPercentile: number | null;
+  foulPercentile: number | null;
+  factor: number;
+  lambdaBefore: number | null;
+  lambdaAfter: number | null;
+  smallSample: boolean;
+  labels: string[];
+  updatedAt: string | null;
 }
 
 export interface CountModelForecast {
@@ -861,6 +879,10 @@ export interface PredictionRow {
   /** Faktor rozhodčího u karet; `1`/`0` = neutrální (index se zatím nestaví). */
   refereeFactor?: number | null;
   refereeSample?: number | null;
+  refereeName?: string | null;
+  refereeKey?: string | null;
+  lambdaCardsHomeBeforeRef?: number | null;
+  lambdaCardsAwayBeforeRef?: number | null;
   status: string; // "NS" | "FT" | "AET" | "PEN" | …
   homeGoals: number | null;
   awayGoals: number | null;

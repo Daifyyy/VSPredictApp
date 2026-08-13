@@ -115,6 +115,9 @@ export interface CardPrediction {
   refereeFactor: number;
   /** Kolik zápasů toho rozhodčího stálo za faktorem (0 = neznámý). */
   refereeSample: number;
+  /** Týmová část λ po útlumu, ale ještě před násobením faktorem rozhodčího. */
+  lambdaHomeBeforeRef: number;
+  lambdaAwayBeforeRef: number;
 }
 
 /**
@@ -371,6 +374,8 @@ export function predictCards(
       lambdaTotal: 0,
       refereeFactor: 1,
       refereeSample: 0,
+      lambdaHomeBeforeRef: 0,
+      lambdaAwayBeforeRef: 0,
     };
   }
 
@@ -394,6 +399,8 @@ export function predictCards(
     lambdaTotal: lambdaHome + lambdaAway,
     refereeFactor: referee.factor,
     refereeSample: referee.sample,
+    lambdaHomeBeforeRef: dampedHome,
+    lambdaAwayBeforeRef: dampedAway,
   };
 }
 
