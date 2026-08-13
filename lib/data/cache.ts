@@ -76,6 +76,7 @@ export async function cachedJson<T>(
  * na uživateli nezávislé odpovědi (jinak roste paměť a hrozí stale mezi instancemi).
  */
 const memoryHits = new Map<string, { value: unknown; expires: number }>();
+const memoryPending = new Map<string, Promise<unknown>>();
 
 export async function cachedJsonMemo<T>(
   key: string,
@@ -86,9 +87,18 @@ export async function cachedJsonMemo<T>(
   const now = Date.now();
   const hit = memoryHits.get(key);
   if (hit && hit.expires > now) return hit.value as T;
-  const value = await cachedJson<T>(key, dbTtlSeconds, fetcher);
-  memoryHits.set(key, { value, expires: now + memTtlSeconds * 1000 });
-  return value;
+  const pending = memoryPending.get(key);
+  if (pending) return pending as Promise<T>;
+  const request = cachedJson<T>(key, dbTtlSeconds, fetcher)
+    .then((value) => {
+      memoryHits.set(key, { value, expires: Date.now() + memTtlSeconds * 1000 });
+      return value;
+    })
+    .finally(() => {
+      memoryPending.delete(key);
+    });
+  memoryPending.set(key, request);
+  return request;
 }
 
 // ---- Trvalá cache per-zápas statistik (MatchStatCache) ----
@@ -255,8 +265,11 @@ export async function saveMatchStats(
   list: MatchStat[]
 ): Promise<void> {
   if (list.length === 0) return;
-  await Promise.all(
-    list.map((ms) => {
+  // Studený profil může dodat desítky řádků najednou. Omezené dávky chrání serverless
+  // connection pool; plný Promise.all by otevřel jeden souběžný upsert na každý zápas.
+  const batchSize = 8;
+  for (let offset = 0; offset < list.length; offset += batchSize) {
+    await Promise.all(list.slice(offset, offset + batchSize).map((ms) => {
       const row = toRow(teamId, context, ms);
       return prisma.matchStatCache.upsert({
         where: {
@@ -269,6 +282,6 @@ export async function saveMatchStats(
         create: row,
         update: row,
       });
-    })
-  );
+    }));
+  }
 }

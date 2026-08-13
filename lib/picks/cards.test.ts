@@ -331,6 +331,16 @@ describe("buildRefereeIndex", () => {
     expect(idx.get("m metoglu")).toHaveLength(2); // diakritika taky
   });
 
+  it("sjednotí celé křestní jméno a odstraní zemi za čárkou", () => {
+    const h = [
+      hm({ fixtureId: 1, referee: "O. Berka", homeMetrics: { CARDS: 2 }, awayMetrics: { CARDS: 2 } }),
+      hm({ fixtureId: 2, referee: "Ondřej Berka, Czechia", homeMetrics: { CARDS: 3 }, awayMetrics: { CARDS: 3 } }),
+    ];
+    const idx = buildRefereeIndex(h, () => 4);
+    expect(idx.size).toBe(1);
+    expect(idx.get("o berka")).toHaveLength(2);
+  });
+
   it("jmenovatel je λ TÝMOVÉHO modelu, ne ligový průměr", () => {
     // Sudí, kterému los nadělil karetně bohaté zápasy, nesmí vyjít jako přísný:
     // ukázal 6 karet tam, kde se od těch týmů 6 karet čekalo → faktor přesně 1.

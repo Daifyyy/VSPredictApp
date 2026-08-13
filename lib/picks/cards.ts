@@ -194,13 +194,16 @@ function blendCardRatio(
  * k jedné a signál by tiše zmizel. Přesně ten typ chyby, který nikde nespadne.
  */
 export function normalizeRefereeName(name: string): string {
-  return name
+  const normalized = name
+    .split(",", 1)[0]
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
     .replace(/[^a-z ]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+  const parts = normalized.split(" ").filter(Boolean);
+  return parts.length > 1 ? `${parts[0][0]} ${parts.slice(1).join(" ")}` : normalized;
 }
 
 /** Jeden odřízený zápas rozhodčího: kolik karet ukázal a kolik se od NĚJ čekalo. */

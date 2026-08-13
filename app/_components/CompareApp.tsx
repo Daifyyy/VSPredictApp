@@ -59,6 +59,8 @@ export interface InitialSelection {
   home?: number;
   away?: number;
   context?: "EURO_CUP";
+  venue?: Venue;
+  analysis?: ViewMode;
 }
 
 const VENUE_LABELS: Record<Venue, string> = {
@@ -281,7 +283,7 @@ export function CompareApp({
     initial?.fixture != null && initial.home === homeId && initial.away === awayId
       ? initial.fixture
       : null;
-  const [venue, setVenue] = useState<Venue>("TOTAL");
+  const [venue, setVenue] = useState<Venue>(initial?.venue ?? "TOTAL");
   const [result, setResult] = useState<CompareResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -456,7 +458,10 @@ export function CompareApp({
   // Stav výběru drž v URL (sdílení/záložky). history.replaceState nezpůsobí
   // server re-render → žádný remount/ztráta stavu; žádný setState → lint OK.
   useEffect(() => {
+    const current = new URLSearchParams(window.location.search);
     const params = new URLSearchParams();
+    const analysis = current.get("analysis");
+    if (analysis) params.set("analysis", analysis);
     params.set("mode", mode);
     if (homeLeagueId != null) params.set("homeLeague", String(homeLeagueId));
     if (awayLeagueId != null) params.set("awayLeague", String(awayLeagueId));
@@ -464,8 +469,9 @@ export function CompareApp({
     if (awayId != null) params.set("away", String(awayId));
     if (europeanCup) params.set("context", "EURO_CUP");
     if (fixtureId != null) params.set("fixture", String(fixtureId));
+    params.set("venue", venue);
     window.history.replaceState(null, "", `?${params.toString()}`);
-  }, [mode, homeLeagueId, awayLeagueId, homeId, awayId, europeanCup, fixtureId]);
+  }, [mode, homeLeagueId, awayLeagueId, homeId, awayId, europeanCup, fixtureId, venue]);
 
   // Klubový režim = výběr ligy, reprezentační = výběr konfederace (obojí per tým).
   const leagueLabel = mode === "CLUB" ? "Liga" : "Konfederace";
@@ -580,6 +586,7 @@ export function CompareApp({
         result={result}
         venue={venue}
         onVenueChange={setVenue}
+        initialViewMode={initial?.analysis}
         loading={loading}
         error={error}
         ready={canCompare}
@@ -612,6 +619,7 @@ function ResultPanel({
   result,
   venue,
   onVenueChange,
+  initialViewMode,
   loading,
   error,
   ready,
@@ -636,6 +644,7 @@ function ResultPanel({
   result: CompareResult | null;
   venue: Venue;
   onVenueChange: (venue: Venue) => void;
+  initialViewMode?: ViewMode;
   loading: boolean;
   error: string | null;
   ready: boolean;
@@ -657,7 +666,12 @@ function ResultPanel({
   unlocking: boolean;
   onUnlockTrial: () => void;
 }) {
-  const [viewMode, setViewMode] = useState<ViewMode>("category");
+  const [viewMode, setViewMode] = useState<ViewMode>(initialViewMode ?? "category");
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("analysis", viewMode);
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, [viewMode]);
   const entityMode: EntityType =
     result?.source === "NATIONAL" || result?.source === "NATIONAL_FB" ? "NATIONAL" : "CLUB";
   // Ligová tabulka jen pro klub vs. klub stejné ligy (FREE, i pro zamčený výsledek).

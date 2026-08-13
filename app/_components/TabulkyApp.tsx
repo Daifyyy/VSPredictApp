@@ -128,6 +128,7 @@ function restoreLeague(apply: (id: number) => void): void {
  */
 export function TabulkyApp() {
   const user = useCurrentUser();
+  const [restored, setRestored] = useState(false);
   const [leagueId, setLeagueId] = useState(DEFAULT_LEAGUE);
   const [venue, setVenue] = useState<Venue>("TOTAL");
   const [styleKey, setStyleKey] = useState<LeagueStyleKey>("possession");
@@ -145,10 +146,21 @@ export function TabulkyApp() {
 
   // Po mountu obnov poslední zvolenou ligu (bez SSR hydration mismatchu).
   useEffect(() => {
-    restoreLeague(setLeagueId);
+    const params = new URLSearchParams(window.location.search);
+    const requestedLeague = Number(params.get("league"));
+    const requestedVenue = params.get("venue");
+    const requestedMetric = params.get("metric") as LeagueStyleKey | null;
+    queueMicrotask(() => {
+      if (CLUB_LEAGUES.some((league) => league.id === requestedLeague)) setLeagueId(requestedLeague);
+      else restoreLeague(setLeagueId);
+      if (requestedVenue === "TOTAL" || requestedVenue === "HOME" || requestedVenue === "AWAY") setVenue(requestedVenue);
+      if (["possession", "buildup", "pressing", "efficiency", "defense"].includes(requestedMetric ?? "")) setStyleKey(requestedMetric!);
+      setRestored(true);
+    });
   }, []);
 
   useEffect(() => {
+    if (!restored) return;
     let active = true;
     void loadTable(leagueId, () => active, setTable, setStatus);
     void loadRound(leagueId, () => active, setRound, setRoundStatus);
@@ -156,13 +168,23 @@ export function TabulkyApp() {
     return () => {
       active = false;
     };
-  }, [leagueId]);
+  }, [leagueId, restored]);
 
   useEffect(() => {
+    if (!restored) return;
     let active = true;
     void loadStyle(leagueId, user?.tier === "PRO", () => active, setStyleSnapshot, setStyleStatus);
     return () => { active = false; };
-  }, [leagueId, user?.tier]);
+  }, [leagueId, user?.tier, restored]);
+
+  useEffect(() => {
+    if (!restored) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("league", String(leagueId));
+    url.searchParams.set("venue", venue);
+    url.searchParams.set("metric", styleKey);
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, [leagueId, venue, styleKey, restored]);
 
   function select(id: number) {
     setLeagueId(id);

@@ -99,6 +99,7 @@ export function TipovackaApp({
   initialFixtureId?: number;
 }) {
   const [view, setView] = useState<View>("tipovat");
+  const [restored, setRestored] = useState(false);
   const [tips, setTips] = useState<TipRow[]>([]);
   const [stats, setStats] = useState<TipStats | null>(null);
   const [loading, setLoading] = useState(Boolean(user));
@@ -108,6 +109,21 @@ export function TipovackaApp({
     () => loadTips(Boolean(user), { setTips, setStats, setLoading, setLoadError }),
     [user]
   );
+
+  useEffect(() => {
+    const value = new URLSearchParams(window.location.search).get("view");
+    queueMicrotask(() => {
+      if (value === "tipovat" || value === "tipy" || value === "bilance") setView(value);
+      setRestored(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!restored) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", view);
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, [view, restored]);
 
   useEffect(() => {
     void refresh();
@@ -238,11 +254,25 @@ function TipovatView({
     );
     return i >= 0 ? i : 0;
   });
+  useEffect(() => {
+    if (initialFixtureId != null) return;
+    const date = new URLSearchParams(window.location.search).get("date");
+    const index = tippableDays.findIndex((day) => day.date === date);
+    if (index >= 0) queueMicrotask(() => setDayIdx(index));
+  }, [initialFixtureId, tippableDays]);
   const active = tippableDays[dayIdx] ?? tippableDays[0];
+
+  function selectDay(index: number) {
+    setDayIdx(index);
+    const url = new URL(window.location.href);
+    const date = tippableDays[index]?.date;
+    if (date) url.searchParams.set("date", date);
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }
 
   return (
     <>
-      <DayTabs days={tippableDays} active={dayIdx} onSelect={setDayIdx} />
+      <DayTabs days={tippableDays} active={dayIdx} onSelect={selectDay} />
       {active && active.fixtures.length > 0 ? (
         <LeagueGroups
           fixtures={active.fixtures}

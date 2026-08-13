@@ -102,6 +102,14 @@ export default async function PorovnaniPage({
     home: num(sp.home),
     away: num(sp.away),
     context: (Array.isArray(sp.context) ? sp.context[0] : sp.context) === "EURO_CUP" ? "EURO_CUP" : undefined,
+    venue: (() => {
+      const value = Array.isArray(sp.venue) ? sp.venue[0] : sp.venue;
+      return value === "HOME" || value === "AWAY" || value === "TOTAL" ? value : undefined;
+    })(),
+    analysis: (() => {
+      const value = Array.isArray(sp.analysis) ? sp.analysis[0] : sp.analysis;
+      return value === "category" || value === "style" || value === "raw" ? value : undefined;
+    })(),
   };
 
   return (

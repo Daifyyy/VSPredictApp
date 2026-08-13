@@ -117,6 +117,7 @@ const FIX_TTL = 60 * 60; // 1 h pro denní rozpis (časy/zápasy se mohou měnit
 /** Minulý den se už nezmění → rozpis se drží dlouho (Výsledky pak nestojí nic). */
 const FIX_PAST_TTL = 60 * 60 * 24;
 const LIVE_TTL = 90; // 90 s pro živé skóre (sdílené mezi všemi klienty → strop nákladů)
+const TODAY_TTL = 15 * 60; // obsahuje i stav/výsledek; rozpis samotný by mohl být výrazně delší
 const FORM_FIXTURES = 12; // posl. zápasy pro LAST10/LAST5
 const BASELINE_SAMPLE = 10; // reprezentativní vzorek baseline sezóny (okno SEASON)
 const SEASON_COMPLETE_MIN = 25; // od kolika odehraných je sezóna „v podstatě dohraná"
@@ -1092,7 +1093,7 @@ export async function getFixturesByDates(dates: string[]): Promise<FixtureDay[]>
  */
 export async function getTodayFixtureSnapshot(): Promise<FixtureDay> {
   const date = pragueDay(new Date());
-  const raw = await cachedJsonMemo(`fixdate-now:${date}`, 30, LIVE_TTL, () =>
+  const raw = await cachedJsonMemo(`fixdate-now:${date}`, 60, TODAY_TTL, () =>
     fetchFixturesByDate(date)
   );
   return {

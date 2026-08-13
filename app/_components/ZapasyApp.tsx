@@ -69,8 +69,10 @@ function useTodaySnapshot(today: string | null): FixtureDay | null {
   useEffect(() => {
     if (!today) return;
     let active = true;
+    let lastSync = 0;
     const sync = () => {
       if (document.hidden) return;
+      lastSync = Date.now();
       fetch("/api/fixtures/today")
         .then((response) => {
           if (!response.ok) throw new Error(String(response.status));
@@ -82,9 +84,9 @@ function useTodaySnapshot(today: string | null): FixtureDay | null {
         .catch(() => {});
     };
     sync();
-    const timer = setInterval(sync, 90_000);
+    const timer = setInterval(sync, 15 * 60_000);
     const onVisible = () => {
-      if (!document.hidden) sync();
+      if (!document.hidden && Date.now() - lastSync >= 5 * 60_000) sync();
     };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
@@ -444,6 +446,7 @@ export function ZapasyApp({
   const [resultIdx, setResultIdx] = useState(0);
   const [onlyFav, setOnlyFav] = useState(false);
   const [proCta, setProCta] = useState(false);
+  const restoredHistory = useRef(false);
 
   // Skutečný „dnes" podle klienta (SSR snapshot může být o den starý). Přepočítá se i při
   // návratu na záložku/do popředí (PWA reopen přes noc → JS stav přežije, mount effect neběží).
@@ -519,6 +522,43 @@ export function ZapasyApp({
     });
   }, [syncedDays, clientToday, resultDays, justFinished]);
 
+  // Datum a pohled jsou součástí historie URL. Po návratu z Porovnání tak nový mount
+  // nevybere znovu dnešek/nejbližší den, ale obnoví přesně stránku, ze které uživatel odešel.
+  useEffect(() => {
+    if (!clientToday || restoredHistory.current) return;
+    restoredHistory.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const restoredView = params.get("view");
+    const restoredDate = params.get("date");
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      if (restoredView === "results") {
+        setView("results");
+        const index = pastDays.findIndex((day) => day.date === restoredDate);
+        if (index >= 0) setResultIdx(index);
+        return;
+      }
+      if (restoredView === "program" || restoredDate) {
+        setView("program");
+        const index = visibleDays.findIndex((day) => day.date === restoredDate);
+        if (index >= 0) {
+          setDayChosen(true);
+          setDayIdx(index);
+        }
+      }
+    });
+    return () => { active = false; };
+  }, [clientToday, pastDays, visibleDays]);
+
+  const rememberPage = useCallback((nextView: View, date?: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", nextView);
+    if (date) url.searchParams.set("date", date);
+    else url.searchParams.delete("date");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
+
   const activePast = pastDays[resultIdx] ?? pastDays[0];
   const playedCount = useMemo(
     () => pastDays.reduce((n, d) => n + d.played.length, 0),
@@ -576,7 +616,10 @@ export function ZapasyApp({
           },
         ]}
         active={view}
-        onSelect={setView}
+        onSelect={(nextView) => {
+          setView(nextView);
+          rememberPage(nextView, nextView === "program" ? active?.date : activePast?.date);
+        }}
       />
 
       {view === "program" ? (
@@ -587,7 +630,11 @@ export function ZapasyApp({
             today={clientToday}
             direction="future"
             count={(d) => d.fixtures.length}
-            onSelect={(index) => { setDayChosen(true); setDayIdx(index); }}
+            onSelect={(index) => {
+              setDayChosen(true);
+              setDayIdx(index);
+              rememberPage("program", visibleDays[index]?.date);
+            }}
           />
 
           {proCta && (
@@ -639,7 +686,11 @@ export function ZapasyApp({
             <SmartEmptyProgram
               days={visibleDays}
               activeIndex={effectiveDayIdx}
-              onSelect={(index) => { setDayChosen(true); setDayIdx(index); }}
+              onSelect={(index) => {
+                setDayChosen(true);
+                setDayIdx(index);
+                rememberPage("program", visibleDays[index]?.date);
+              }}
             />
           )}
         </>
@@ -651,7 +702,10 @@ export function ZapasyApp({
             today={clientToday}
             direction="past"
             count={(d) => d.played.length}
-            onSelect={setResultIdx}
+            onSelect={(index) => {
+              setResultIdx(index);
+              rememberPage("results", pastDays[index]?.date);
+            }}
           />
           {activePast && activePast.played.length > 0 ? (
             <ResultsList played={activePast.played} />

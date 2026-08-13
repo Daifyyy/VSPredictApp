@@ -169,6 +169,7 @@ async function loadStats(
 }
 
 export function PicksApp({ user }: { user: SessionUser | null }) {
+  const [restored, setRestored] = useState(false);
   const [view, setView] = useState<View>("picks");
   const [competition, setCompetition] = useState<"all" | "league" | "europe">("all");
   const [market, setMarket] = useState<PickMarket>("win");
@@ -199,6 +200,40 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
   const [publishedTips, setPublishedTips] = useState<PublishedTipRecord | null>(null);
   const [countAccuracy, setCountAccuracy] = useState<CountModelAccuracy | null>(null);
   const [statsState, setStatsState] = useState<"loading" | "ok" | "error">("loading");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    queueMicrotask(() => {
+      const nextView = params.get("view");
+      const nextCompetition = params.get("competition");
+      const nextMarket = params.get("market") as PickMarket | null;
+      const nextVenue = params.get("venue") as Venue | null;
+      const nextProbability = Number(params.get("minProb"));
+      if (nextView === "picks" || nextView === "model") setView(nextView);
+      if (nextCompetition === "all" || nextCompetition === "league" || nextCompetition === "europe") setCompetition(nextCompetition);
+      if (nextMarket === "win" || nextMarket === "over25" || nextMarket === "btts") setMarket(nextMarket);
+      if (nextVenue === "home" || nextVenue === "away" || nextVenue === "any") setVenue(nextVenue);
+      if (Number.isFinite(nextProbability) && nextProbability >= 0.5 && nextProbability <= 0.95) setMinProb(nextProbability);
+      if (params.get("value") === "1") setValueOnly(true);
+      if (params.get("unready") === "1") setHideUnready(false);
+      setRestored(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!restored) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", view);
+    url.searchParams.set("competition", competition);
+    url.searchParams.set("market", market);
+    url.searchParams.set("venue", venue);
+    url.searchParams.set("minProb", minProbInput.toFixed(2));
+    if (valueOnly) url.searchParams.set("value", "1");
+    else url.searchParams.delete("value");
+    if (hideUnready) url.searchParams.delete("unready");
+    else url.searchParams.set("unready", "1");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, [restored, view, competition, market, venue, minProbInput, valueOnly, hideUnready]);
   const visiblePicks = picks?.filter((pick) =>
     competition === "all"
       ? true
@@ -217,6 +252,7 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
   }, [market, venue, minProb, minEdge, minReadiness]);
 
   useEffect(() => {
+    if (!restored) return;
     let active = true;
     void loadPicks(market, venue, minProb, minEdge, minReadiness, () => active, {
       setLoading,
@@ -227,7 +263,7 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
     return () => {
       active = false;
     };
-  }, [market, venue, minProb, minEdge, minReadiness]);
+  }, [restored, market, venue, minProb, minEdge, minReadiness]);
 
   // Track-record (globální) + backtest strategie dle navolených parametrů.
   //
@@ -254,12 +290,13 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
   }, [market, venue, minProb, minEdge]);
 
   useEffect(() => {
+    if (!restored || view !== "model") return;
     let active = true;
     void loadStats(market, venue, minProb, minEdge, () => active, statsSetters());
     return () => {
       active = false;
     };
-  }, [market, venue, minProb, minEdge]);
+  }, [restored, view, market, venue, minProb, minEdge]);
 
   function applyPreset(rule: { market: PickMarket; venue: Venue; minProb: number }) {
     setMarket(rule.market);

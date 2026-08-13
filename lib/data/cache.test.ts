@@ -218,6 +218,21 @@ describe("cachedJsonMemo – in-process vrstva", () => {
     await cachedJsonMemo("memo-b", 0, HOUR, fetcher);
     expect(db._calls().findUnique).toBeGreaterThan(dbReads);
   });
+
+  it("sloučí souběžný miss stejného klíče do jediného fetchu", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const fetcher = vi.fn(async () => {
+      await gate;
+      return { live: 3 };
+    });
+    const first = cachedJsonMemo("memo-concurrent", 60, HOUR, fetcher);
+    const second = cachedJsonMemo("memo-concurrent", 60, HOUR, fetcher);
+    release();
+    await expect(Promise.all([first, second])).resolves.toEqual([{ live: 3 }, { live: 3 }]);
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(db._calls().findUnique).toBeGreaterThan(0);
+  });
 });
 
 describe("verzování cache", () => {
