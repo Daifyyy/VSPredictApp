@@ -22,6 +22,7 @@ import { useCurrentUser } from "./useCurrentUser";
 import { InstallLink } from "./InstallLink";
 import { preferredProgramDayIndex } from "@/lib/homeDashboard";
 import { FixtureModelCard } from "./FixtureModelCard";
+import { chooseFeaturedFixture } from "@/lib/homeFeaturedFixture";
 
 type View = "program" | "results";
 
@@ -538,6 +539,7 @@ export function ZapasyApp({
     () => dayFixtures.filter(isFavorite).sort(sortFavorites),
     [dayFixtures, isFavorite]
   );
+  const featured = useMemo(() => chooseFeaturedFixture(dayFixtures), [dayFixtures]);
 
   // Klik na hvězdu: PRO toggluje, ostatní dostanou PRO CTA (žádná perzistence).
   const onFavClick = useCallback(
@@ -558,10 +560,12 @@ export function ZapasyApp({
         selectedDate={active?.date ?? null}
         selectedCount={dayFixtures.length}
         liveCount={dayFixtures.filter((fixture) => fixture.live).length}
+        nextKickoff={dayFixtures.find((fixture) => !fixture.live)?.kickoff ?? null}
+        analysisCount={dayFixtures.filter((fixture) => buildCompareHref(fixture) != null).length}
         showingNearest={Boolean(clientToday && active?.date !== clientToday && (visibleDays.find((day) => day.date === clientToday)?.fixtures.length ?? 0) === 0)}
       />
 
-      {dayFixtures.length > 0 ? <FeaturedFixture fixture={dayFixtures.find((fixture) => fixture.live) ?? dayFixtures[0]} /> : null}
+      {featured ? <FeaturedFixture fixture={featured.fixture} editorialTitle={featured.title} /> : null}
 
       <ViewTabs
         tabs={[
@@ -632,10 +636,11 @@ export function ZapasyApp({
               )}
             </>
           ) : (
-            <Empty>
-              Na tento den nemáme naplánované zápasy ve sledovaných ligách. Mimo sezónu
-              (léto) top ligy nehrají – zkus jiný den nebo se vrať během sezóny.
-            </Empty>
+            <SmartEmptyProgram
+              days={visibleDays}
+              activeIndex={effectiveDayIdx}
+              onSelect={(index) => { setDayChosen(true); setDayIdx(index); }}
+            />
           )}
         </>
       ) : (
@@ -663,12 +668,21 @@ export function ZapasyApp({
   );
 }
 
-function DashboardHeader({ today, todayCount, selectedDate, selectedCount, liveCount, showingNearest }: { today: string | null; todayCount: number; selectedDate: string | null; selectedCount: number; liveCount: number; showingNearest: boolean }) {
+function DashboardHeader({ today, todayCount, selectedDate, selectedCount, liveCount, nextKickoff, analysisCount, showingNearest }: { today: string | null; todayCount: number; selectedDate: string | null; selectedCount: number; liveCount: number; nextKickoff: string | null; analysisCount: number; showingNearest: boolean }) {
   const selectedLabel = selectedDate
     ? new Date(`${selectedDate}T12:00:00`).toLocaleDateString("cs-CZ", { weekday: "long", day: "numeric", month: "long" })
     : "Program";
   return (
-    <section className="mt-5 rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-5">
+    <section className="dashboard-card mt-5 overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
+      <div className="grid border-b border-border bg-background/55 sm:grid-cols-3">
+        <PulseItem label="Program" value={`${selectedCount} ${matchWord(selectedCount)}`} />
+        <PulseItem
+          label="Nejbližší výkop"
+          value={nextKickoff ? new Date(nextKickoff).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" }) : "—"}
+        />
+        <PulseItem label="Dostupné analýzy" value={`${analysisCount}`} />
+      </div>
+      <div className="p-4 sm:p-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="page-kicker">Přehled zápasů</p>
@@ -684,24 +698,66 @@ function DashboardHeader({ today, todayCount, selectedDate, selectedCount, liveC
           <span className="inline-flex min-h-10 items-center rounded-xl border border-border bg-background px-3 text-sm font-semibold text-foreground">{selectedCount} {matchWord(selectedCount)}</span>
         </div>
       </div>
+      </div>
     </section>
   );
 }
 
-function FeaturedFixture({ fixture }: { fixture: UpcomingFixture }) {
+function PulseItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-border px-4 py-2.5 sm:border-r sm:last:border-r-0">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">{label}</span>
+      <strong className="text-sm tabular-nums text-foreground">{value}</strong>
+    </div>
+  );
+}
+
+function FeaturedFixture({ fixture, editorialTitle }: { fixture: UpcomingFixture; editorialTitle: string }) {
   const href = buildCompareHref(fixture);
   const time = new Date(fixture.kickoff).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" });
   const content = (
-    <div className="grid items-center gap-4 sm:grid-cols-[1fr_auto_1fr]">
-      <div className="flex items-center gap-3 sm:justify-end sm:text-right"><TeamLogo src={fixture.home.logoUrl} alt={fixture.home.name} size={44} /><span className="font-bold text-foreground">{fixture.home.name}</span></div>
-      <div className="text-center"><p className={`text-xs font-bold ${fixture.live ? "text-negative" : "text-muted"}`}>{fixture.live ? `${fixture.elapsed ?? ""}' · ŽIVĚ` : time}</p><p className="mt-1 text-xl font-black tabular-nums text-foreground">{fixture.live ? `${fixture.liveHome ?? 0} : ${fixture.liveAway ?? 0}` : "vs."}</p></div>
-      <div className="flex items-center gap-3"><TeamLogo src={fixture.away.logoUrl} alt={fixture.away.name} size={44} /><span className="font-bold text-foreground">{fixture.away.name}</span></div>
+    <div>
+      <div className="grid items-center gap-4 sm:grid-cols-[1fr_auto_1fr]">
+        <div className="flex items-center gap-3 sm:justify-end sm:text-right"><TeamLogo src={fixture.home.logoUrl} alt={fixture.home.name} size={44} /><span><span className="block font-bold text-foreground">{fixture.home.name}</span>{fixture.homeRank ? <small className="text-muted">{fixture.homeRank}. místo</small> : null}</span></div>
+        <div className="text-center"><p className={`text-xs font-bold ${fixture.live ? "text-negative" : "text-muted"}`}>{fixture.live ? `${fixture.elapsed ?? ""}' · ŽIVĚ` : time}</p><p key={`${fixture.liveHome}:${fixture.liveAway}`} className={`mt-1 text-xl font-black tabular-nums text-foreground ${fixture.live ? "reveal-pop" : ""}`}>{fixture.live ? `${fixture.liveHome ?? 0} : ${fixture.liveAway ?? 0}` : "vs."}</p></div>
+        <div className="flex items-center gap-3"><TeamLogo src={fixture.away.logoUrl} alt={fixture.away.name} size={44} /><span><span className="block font-bold text-foreground">{fixture.away.name}</span>{fixture.awayRank ? <small className="text-muted">{fixture.awayRank}. místo</small> : null}</span></div>
+      </div>
+      <div className="mt-4 flex flex-wrap justify-center gap-1.5 border-t border-border pt-3">
+        {fixture.competitionRound ? <ContentTag>{fixture.competitionRound}</ContentTag> : null}
+        {href ? <><ContentTag>Porovnání týmů</ContentTag><ContentTag>Model 1X2</ContentTag><ContentTag>⛳ Rohy</ContentTag><ContentTag>🟨 Karty</ContentTag></> : null}
+        {fixture.live ? <ContentTag>Živý průběh</ContentTag> : null}
+      </div>
     </div>
   );
   return (
     <section className="mt-3 overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
-      <div className="flex items-center justify-between border-b border-border bg-background/70 px-4 py-2 text-xs"><span className="font-semibold text-muted">{fixture.live ? "Právě se hraje" : "Nejbližší zápas"}</span><span className="text-muted">{fixture.leagueName}</span></div>
-      {href ? <Link href={href} className="block p-4 transition hover:bg-accent/5 sm:p-5">{content}</Link> : <div className="p-4 sm:p-5">{content}</div>}
+      <div className="flex items-center justify-between gap-3 border-b border-border bg-background/70 px-4 py-2 text-xs"><span className="truncate font-semibold text-foreground">{editorialTitle}</span><span className="shrink-0 text-muted">{fixture.leagueName}</span></div>
+      {href ? <Link href={href} className="featured-fixture block p-4 transition sm:p-5">{content}</Link> : <div className="p-4 sm:p-5">{content}</div>}
+    </section>
+  );
+}
+
+function ContentTag({ children }: { children: React.ReactNode }) {
+  return <span className="rounded-full border border-border bg-background/75 px-2.5 py-1 text-[11px] font-medium text-muted">{children}</span>;
+}
+
+function SmartEmptyProgram({ days, activeIndex, onSelect }: { days: FixtureDay[]; activeIndex: number; onSelect: (index: number) => void }) {
+  const nextIndex = days.findIndex((day, index) => index > activeIndex && day.fixtures.length > 0);
+  const next = nextIndex >= 0 ? days[nextIndex] : null;
+  const label = next
+    ? new Date(`${next.date}T12:00:00`).toLocaleDateString("cs-CZ", { weekday: "long", day: "numeric", month: "long" })
+    : null;
+  return (
+    <section className="mt-4 rounded-2xl border border-border bg-surface p-5 text-center shadow-sm">
+      <span aria-hidden className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-accent/15 text-lg">⚽</span>
+      <h2 className="mt-3 text-base font-bold text-foreground">V tento den se ve sledovaných soutěžích nehraje</h2>
+      <p className="mx-auto mt-1 max-w-xl text-sm text-muted">
+        {next ? `Nejbližší program je ${label} a obsahuje ${next.fixtures.length} ${matchWord(next.fixtures.length)}.` : "Prohlédni si týmy a jejich herní profily nebo vytvoř vlastní porovnání."}
+      </p>
+      <div className="mt-4 flex flex-wrap justify-center gap-2">
+        {next ? <button type="button" onClick={() => onSelect(nextIndex)} className="min-h-11 rounded-xl bg-accent px-4 text-sm font-bold text-foreground transition hover:brightness-95">Zobrazit nejbližší program</button> : null}
+        <Link href="/porovnani" className="inline-flex min-h-11 items-center rounded-xl border border-border bg-background px-4 text-sm font-semibold text-foreground transition hover:border-accent-strong/40 hover:bg-accent/10">Porovnat týmy</Link>
+      </div>
     </section>
   );
 }
@@ -1173,7 +1229,7 @@ function FixtureRow({
               onClick={() => setModelOpen((open) => !open)}
               className="min-h-11 rounded-lg px-3 text-xs font-semibold text-muted transition hover:bg-background hover:text-foreground"
             >
-              {modelOpen ? "Skrýt model" : "Model před zápasem"}
+              {modelOpen ? "Skrýt model" : "Model před zápasem · ⛳ · 🟨"}
             </button>
             {modelOpen && <FixtureModelCard fixtureId={fixture.fixtureId} />}
           </div>
