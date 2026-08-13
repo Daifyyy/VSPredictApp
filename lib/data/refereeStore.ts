@@ -98,7 +98,7 @@ export async function refreshUpcomingReferees(now = new Date()) {
     where: {
       status: "NS",
       kickoff: { gt: now, lt: new Date(now.getTime() + 7 * 86_400_000) },
-      refereeName: null,
+      OR: [{ refereeName: null }, { refereeSource: "MANUAL" }],
       lambdaCardsHomeBeforeRef: { not: null },
       lambdaCardsAwayBeforeRef: { not: null },
     },
@@ -123,6 +123,9 @@ export async function refreshUpcomingReferees(now = new Date()) {
         data: {
           refereeName,
           refereeKey: normalizeRefereeName(refereeName),
+          refereeSource: "API",
+          refereeAssignedAt: now,
+          refereeAssignedBy: null,
           refereeFactor: profile.factor,
           refereeSample: profile.sample,
           lambdaCardsHome: Math.min(8, Math.max(0.3, row.lambdaCardsHomeBeforeRef! * profile.factor)),
@@ -130,6 +133,13 @@ export async function refreshUpcomingReferees(now = new Date()) {
           predictedAt: now,
         },
       });
+      await prisma.refereeAssignmentAudit.create({ data: {
+        fixtureId: row.fixtureId,
+        previousName: row.refereeName,
+        newName: refereeName,
+        previousSource: row.refereeSource,
+        newSource: "API",
+      } });
       updated++;
     }
   }

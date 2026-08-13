@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/authUser";
-import { getEntitlement } from "@/lib/entitlements";
+import { getEntitlement, isAdminEmail } from "@/lib/entitlements";
 import { getFixturePredictionRow } from "@/lib/data/repository";
 import { isEuroCupLeague } from "@/lib/data/catalog";
 import type { FixtureModelForecast } from "@/lib/types";
@@ -46,7 +46,7 @@ export async function GET(req: Request) {
   const entitlement = getEntitlement(
     user ? { tier: user.tier, proTrialUsed: user.proTrialUsed } : null
   );
-  if (!entitlement.pro) return NextResponse.json({ locked: true });
+  if (!entitlement.pro && !isAdminEmail(user?.email)) return NextResponse.json({ locked: true });
   try {
     const row = await getFixturePredictionRow(fixtureId);
     if (!row || !row.available) return NextResponse.json({ forecast: null });

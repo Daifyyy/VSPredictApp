@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect } from "vitest";
-import { getEntitlement, isProEmail, toFreeResult } from "./entitlements";
+import { getEntitlement, isAdminEmail, isProEmail, toFreeResult } from "./entitlements";
 import type { CompareResult } from "./types";
 
 describe("isProEmail", () => {
@@ -24,6 +24,18 @@ describe("isProEmail", () => {
     expect(isProEmail("someone@else.com")).toBe(false);
     expect(isProEmail(null)).toBe(false);
     expect(isProEmail(undefined)).toBe(false);
+  });
+});
+
+describe("isAdminEmail", () => {
+  afterEach(() => delete process.env.ADMIN_EMAILS);
+
+  it("odděluje administrátorský allowlist od PRO a ignoruje velikost písmen", () => {
+    process.env.PRO_EMAILS = "pro@example.com";
+    process.env.ADMIN_EMAILS = " Owner@Example.com ";
+    expect(isAdminEmail("owner@example.com")).toBe(true);
+    expect(isAdminEmail("pro@example.com")).toBe(false);
+    delete process.env.PRO_EMAILS;
   });
 });
 

@@ -126,6 +126,9 @@ function toRow(p: PredictionRowSource): PredictionRow {
 /** Upsert predikce (přepíše predikční pole, výsledek nechá být). */
 export async function upsertPrediction(row: PredictionUpsert): Promise<void> {
   const now = new Date();
+  const existing = await prisma.fixturePrediction.findUnique({ where: { fixtureId: row.fixtureId } });
+  // Prázdný fixture payload nesmí smazat ruční delegaci. Neprázdný údaj API je autoritativní.
+  const preserveManual = existing?.refereeSource === "MANUAL" && !row.refereeName;
   // Obrana do hloubky: i kdyby volající omylem poslal již rozehraný zápas,
   // publikační snapshot se po výkopu nesmí vytvořit.
   const published = new Date(row.kickoff).getTime() > now.getTime()
@@ -157,20 +160,23 @@ export async function upsertPrediction(row: PredictionUpsert): Promise<void> {
     contextVersion: row.contextVersion ?? 1,
     lambdaCornersHome: row.lambdaCornersHome ?? null,
     lambdaCornersAway: row.lambdaCornersAway ?? null,
-    lambdaCardsHome: row.lambdaCardsHome ?? null,
-    lambdaCardsAway: row.lambdaCardsAway ?? null,
+    lambdaCardsHome: preserveManual ? existing.lambdaCardsHome : row.lambdaCardsHome ?? null,
+    lambdaCardsAway: preserveManual ? existing.lambdaCardsAway : row.lambdaCardsAway ?? null,
     countModelVersion:
       row.lambdaCornersHome != null || row.lambdaCardsHome != null ? COUNT_MODEL_VERSION : null,
     cornerVarianceRatio:
       row.lambdaCornersHome != null ? DEFAULT_CORNER_TUNING.varianceRatio : null,
     cardVarianceRatio:
       row.lambdaCardsHome != null ? DEFAULT_CARD_TUNING.varianceRatio : null,
-    refereeFactor: row.refereeFactor ?? null,
-    refereeSample: row.refereeSample ?? null,
-    refereeName: row.refereeName ?? null,
-    refereeKey: row.refereeKey ?? null,
-    lambdaCardsHomeBeforeRef: row.lambdaCardsHomeBeforeRef ?? null,
-    lambdaCardsAwayBeforeRef: row.lambdaCardsAwayBeforeRef ?? null,
+    refereeFactor: preserveManual ? existing.refereeFactor : row.refereeFactor ?? null,
+    refereeSample: preserveManual ? existing.refereeSample : row.refereeSample ?? null,
+    refereeName: preserveManual ? existing.refereeName : row.refereeName ?? null,
+    refereeKey: preserveManual ? existing.refereeKey : row.refereeKey ?? null,
+    refereeSource: preserveManual ? existing.refereeSource : row.refereeName ? "API" : null,
+    refereeAssignedAt: preserveManual ? existing.refereeAssignedAt : row.refereeName ? now : null,
+    refereeAssignedBy: preserveManual ? existing.refereeAssignedBy : null,
+    lambdaCardsHomeBeforeRef: preserveManual ? existing.lambdaCardsHomeBeforeRef : row.lambdaCardsHomeBeforeRef ?? null,
+    lambdaCardsAwayBeforeRef: preserveManual ? existing.lambdaCardsAwayBeforeRef : row.lambdaCardsAwayBeforeRef ?? null,
     // Čím byly pravděpodobnosti odvozeny z λ – `reprice` podle toho pozná zastaralý řádek.
     rho: PREDICT_PARAMS.rho,
     sharpen: PREDICT_PARAMS.sharpen,
@@ -202,6 +208,15 @@ export async function upsertPrediction(row: PredictionUpsert): Promise<void> {
         publishedAt,
       },
     });
+  }
+  if (existing?.refereeSource === "MANUAL" && row.refereeName) {
+    await prisma.refereeAssignmentAudit.create({ data: {
+      fixtureId: row.fixtureId,
+      previousName: existing.refereeName,
+      newName: row.refereeName,
+      previousSource: "MANUAL",
+      newSource: "API",
+    } });
   }
 }
 

@@ -34,6 +34,16 @@ export function isProEmail(email: string | null | undefined): boolean {
   return list.includes(email.toLowerCase());
 }
 
+/** Vlastnický allowlist pro mutace produkčních dat. Je záměrně oddělený od PRO. */
+export function isAdminEmail(email: string | null | undefined): boolean {
+  if (!email) return false;
+  return (process.env.ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(email.toLowerCase());
+}
+
 /**
  * Rozhodne o přístupu k PRO obsahu.
  * - PRO tier → vždy plný přístup.

@@ -222,6 +222,10 @@ model FixturePrediction {
   /// Oficiálně delegovaný rozhodčí a audit týmové λ před jeho započtením.
   refereeName                String?
   refereeKey                 String?
+  /// Původ aktuální delegace (`API` nebo `MANUAL`) a audit ručního zásahu.
+  refereeSource              String?
+  refereeAssignedAt          DateTime?
+  refereeAssignedBy          String?
   lambdaCardsHomeBeforeRef   Float?
   lambdaCardsAwayBeforeRef   Float?
   predictedAt   DateTime  @default(now())
@@ -293,6 +297,20 @@ model FixturePrediction {
   /// nad touhle tabulkou – a bez indexu se skenovala celá.
   @@index([modelVersion])
   @@index([modelContext, contextVersion, modelVersion])
+}
+
+/// Audit změn delegace. Uchovává i automatické nahrazení ruční volby údajem z API.
+model RefereeAssignmentAudit {
+  id             String   @id @default(cuid())
+  fixtureId      Int
+  previousName   String?
+  newName        String?
+  previousSource String?
+  newSource      String
+  changedBy      String?
+  createdAt      DateTime @default(now())
+
+  @@index([fixtureId, createdAt])
 }
 
 /// Jeden uzavřený zápas v point-in-time historii rozhodčího. Vzniká pouze z již

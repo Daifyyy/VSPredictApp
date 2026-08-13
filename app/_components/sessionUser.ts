@@ -7,4 +7,5 @@ export interface SessionUser {
   image?: string | null;
   tier: Tier;
   proTrialUsed: boolean;
+  isAdmin?: boolean;
 }
