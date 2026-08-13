@@ -347,18 +347,23 @@ function CountsSection({
   return (
     <Section title="Rohy a karty">
       {corners && (
-        <Row
-          label="Rohy (čekali jsme × bylo)"
-          value={`${corners.expectedTotal} × ${corners.actualTotal}`}
-        />
+        <CountResult label="⛳ Rohy" value={corners} />
       )}
       {cards && (
-        <Row
-          label="Karty (čekali jsme × bylo)"
-          value={`${cards.expectedTotal} × ${cards.actualTotal}`}
-        />
+        <CountResult label="🟨 Karty" value={cards} />
       )}
     </Section>
+  );
+}
+
+function CountResult({ label, value }: { label: string; value: NonNullable<MatchReview["corners"]> }) {
+  return (
+    <div className="border-b border-border/70 py-2 last:border-b-0">
+      <Row label={`${label} (očekávání × skutečnost)`} value={`${value.expectedTotal} × ${value.actualTotal}`} />
+      <p className="text-[10px] text-muted">
+        Tehdejší 70% interval {value.interval.low}–{value.interval.high} · skutečnost byla {value.actualWithinInterval ? "uvnitř" : "mimo"} interval.
+      </p>
+    </div>
   );
 }
 

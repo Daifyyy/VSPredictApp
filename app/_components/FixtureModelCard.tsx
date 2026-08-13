@@ -75,10 +75,15 @@ export function FixtureModelCard({
           </div>
         </>
       )}
-      <div className="grid grid-cols-2 gap-2 text-center tabular-nums">
+      <div className="grid gap-2 tabular-nums lg:grid-cols-2">
         <CountMetric market="corners" value={f.corners} />
         <CountMetric market="cards" value={f.cards} />
       </div>
+      {(f.corners || f.cards) && (
+        <p className="text-[10px] leading-relaxed text-muted">
+          Statistický směr není publikovaný tip ani potvrzená výhoda proti trhu.
+        </p>
+      )}
     </div>
   );
 }
@@ -103,10 +108,45 @@ function CountMetric({
   value: FixtureModelForecast["corners"];
 }) {
   const presentation = COUNT_MARKET_PRESENTATION[market];
+  if (!value) {
+    return (
+      <div className="rounded-lg bg-surface px-3 py-3 text-muted">
+        <strong className="text-foreground">{presentation.icon} {presentation.label}</strong>
+        <p className="mt-2">Model není dostupný.</p>
+      </div>
+    );
+  }
+  const pct = (probability: number) => `${Math.round(probability * 100)} %`;
+  const unit = market === "corners" ? "rohu" : "karty";
+  const exact = value.topCounts
+    .map(({ count, probability }) => `${count} · ${pct(probability)}`)
+    .join(" · ");
+  const direction = value.direction
+    ? `${value.direction.side === "over" ? "Přes" : "Méně než"} ${value.direction.line.toLocaleString("cs-CZ")} ${unit} · ${pct(value.direction.probability)}`
+    : value.line == null
+      ? "Tržní půlková linie není uložená"
+      : "Bez jasného statistického směru";
   return (
-    <span className="rounded-lg bg-surface px-2 py-2 text-muted">
-      <small className="block">{presentation.icon} {presentation.label}</small>
-      <strong className="text-foreground">{value ? `${value.home.toFixed(1)} : ${value.away.toFixed(1)} · ${value.total.toFixed(1)} celkem` : "Model není dostupný"}</strong>
-    </span>
+    <div className="rounded-lg bg-surface px-3 py-3 text-left text-muted">
+      <strong className="text-foreground">{presentation.icon} {presentation.label}</strong>
+      <dl className="mt-2 space-y-1.5">
+        <CountRow label="Očekávání" value={`${value.home.toFixed(1)} : ${value.away.toFixed(1)} · ${value.total.toFixed(1)} celkem`} />
+        <CountRow label="70% interval" value={`${value.interval.low}–${value.interval.high}`} />
+        <CountRow label="Nejčastější počty" value={exact} />
+        <CountRow label="Statistický směr" value={direction} strong={Boolean(value.direction)} />
+      </dl>
+      <p className="mt-2 text-[10px] leading-relaxed">
+        Očekávání je modelový průměr, interval pokrývá nejméně 70 % možností a směr se ukáže jen proti uložené tržní linii.
+      </p>
+    </div>
+  );
+}
+
+function CountRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+  return (
+    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-b border-border/60 pb-1 last:border-0">
+      <dt>{label}</dt>
+      <dd className={strong ? "font-semibold text-positive" : "font-semibold text-foreground"}>{value}</dd>
+    </div>
   );
 }

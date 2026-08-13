@@ -2,6 +2,7 @@ import type { PredictionRow, ScoreProbability } from "@/lib/types";
 import { PREDICT_PARAMS, gridProbs } from "@/lib/stats/predict";
 import { rowClv } from "./clv";
 import { actualOutcome, argmaxOutcome, probOfSide } from "./trackRecord";
+import { countProbabilities, shortestProbabilityInterval } from "./countDistribution";
 
 /**
  * **Model vs. skutečnost** k odehranému zápasu: co jsme před výkopem řekli, co říkal trh
@@ -67,6 +68,8 @@ export interface CountReview {
   actualHome: number;
   actualAway: number;
   actualTotal: number;
+  interval: { low: number; high: number; probability: number };
+  actualWithinInterval: boolean;
 }
 
 export interface MatchReview {
@@ -182,13 +185,19 @@ function buildCount(
   actual: { home: number; away: number } | null
 ): CountReview | null {
   if (lambdaHome == null || lambdaAway == null || !actual) return null;
+  const expectedTotal = lambdaHome + lambdaAway;
+  const interval = shortestProbabilityInterval(countProbabilities(expectedTotal));
+  if (!interval) return null;
+  const actualTotal = actual.home + actual.away;
   return {
     expectedHome: round1(lambdaHome),
     expectedAway: round1(lambdaAway),
-    expectedTotal: round1(lambdaHome + lambdaAway),
+    expectedTotal: round1(expectedTotal),
     actualHome: actual.home,
     actualAway: actual.away,
-    actualTotal: actual.home + actual.away,
+    actualTotal,
+    interval,
+    actualWithinInterval: actualTotal >= interval.low && actualTotal <= interval.high,
   };
 }
 

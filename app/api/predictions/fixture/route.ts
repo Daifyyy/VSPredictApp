@@ -6,11 +6,8 @@ import { isEuroCupLeague } from "@/lib/data/catalog";
 import type { FixtureModelForecast } from "@/lib/types";
 import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
 import { logError } from "@/lib/logError";
-
-const pair = (home: number | null | undefined, away: number | null | undefined) =>
-  home != null && away != null
-    ? { home, away, total: home + away }
-    : null;
+import { parseBooks } from "@/lib/picks/books";
+import { buildCountForecast } from "@/lib/picks/countDistribution";
 
 export async function GET(req: Request) {
   if (!allowRequest(`fixture-model:${clientKey(req)}`, 60, 60_000)) return tooMany();
@@ -26,6 +23,12 @@ export async function GET(req: Request) {
   try {
     const row = await getFixturePredictionRow(fixtureId);
     if (!row || !row.available) return NextResponse.json({ forecast: null });
+    const books = parseBooks(row.oddsBooks);
+    const countOptions = {
+      books,
+      lowConfidence: row.lowConfidence,
+      readinessSample: row.readinessSample,
+    };
     const forecast: FixtureModelForecast = {
       fixtureId,
       experimental: isEuroCupLeague(row.leagueId),
@@ -38,8 +41,14 @@ export async function GET(req: Request) {
         over25: row.over25,
         btts: row.bttsYes,
       },
-      corners: pair(row.lambdaCornersHome, row.lambdaCornersAway),
-      cards: pair(row.lambdaCardsHome, row.lambdaCardsAway),
+      corners: buildCountForecast(row.lambdaCornersHome, row.lambdaCornersAway, {
+        ...countOptions,
+        market: "corners",
+      }),
+      cards: buildCountForecast(row.lambdaCardsHome, row.lambdaCardsAway, {
+        ...countOptions,
+        market: "cards",
+      }),
     };
     return NextResponse.json({ forecast });
   } catch (error) {

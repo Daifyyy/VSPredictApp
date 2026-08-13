@@ -395,8 +395,21 @@ export interface FixtureModelForecast {
   readinessSample: number;
   outcome: { home: number; draw: number; away: number };
   goals: { home: number; away: number; over25: number; btts: number };
-  corners: { home: number; away: number; total: number } | null;
-  cards: { home: number; away: number; total: number } | null;
+  corners: CountModelForecast | null;
+  cards: CountModelForecast | null;
+}
+
+export interface CountModelForecast {
+  home: number;
+  away: number;
+  total: number;
+  interval: { low: number; high: number; probability: number };
+  topCounts: { count: number; probability: number }[];
+  line: number | null;
+  overProbability: number | null;
+  underProbability: number | null;
+  reliable: boolean;
+  direction: { side: "over" | "under"; line: number; probability: number } | null;
 }
 
 export interface TeamStadium {

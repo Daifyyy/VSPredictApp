@@ -203,14 +203,16 @@ describe("buildMatchReview – rohy a karty", () => {
       GOALS,
       counts
     );
-    expect(review.corners).toEqual({
+    expect(review.corners).toMatchObject({
       expectedHome: 4.4,
       expectedAway: 5.2,
       expectedTotal: 9.6,
       actualHome: 3,
       actualAway: 8,
       actualTotal: 11,
+      actualWithinInterval: true,
     });
+    expect(review.corners?.interval.probability).toBeGreaterThanOrEqual(0.7);
     expect(review.cards?.expectedTotal).toBe(4.2);
     expect(review.cards?.actualTotal).toBe(6);
   });
