@@ -33,6 +33,7 @@ import { mockFixturesByDates, MOCK_LIVE } from "./mock/fixtures";
 import { mockLeagueTransfers, mockClubBalances } from "./mock/transfers";
 import {
   getUpcomingPredictionRows,
+  getPublishedPredictions,
   getSettledPredictions,
   getRecentSettledPredictions,
   getPredictionByFixture,
@@ -347,6 +348,17 @@ export async function getSettledPredictionRows(
     return rows.filter(isCurrentContextVersion);
   }
   return mockSettledPredictions();
+}
+
+/** Publikované snapshoty pro auditní bilanci; staré argmax prognózy sem nepatří. */
+export async function getPublishedPredictionRows(
+  modelVersion: number = MODEL_VERSION
+): Promise<PredictionRow[]> {
+  if (useReal) {
+    const rows = await getPublishedPredictions(modelVersion);
+    return rows.filter(isCurrentContextVersion);
+  }
+  return mockSettledPredictions().filter((row) => row.publishedAt != null);
 }
 
 /**

@@ -16,6 +16,10 @@ import type {
 } from "@/lib/picks/reliability";
 import type { MarketBenchmark } from "@/lib/picks/market";
 import type { ClvSummary } from "@/lib/picks/clv";
+import type {
+  CountModelAccuracy,
+  PublishedTipRecord,
+} from "@/lib/picks/performance";
 import {
   evaluateEdgeGate,
   type EdgeGate,
@@ -108,6 +112,8 @@ interface StatsSetters {
   setReliability: (v: ReliabilityReport | null) => void;
   setClv: (v: ClvSummary | null) => void;
   setEuropean: (v: EuropeanStats | null) => void;
+  setPublishedTips: (v: PublishedTipRecord | null) => void;
+  setCountAccuracy: (v: CountModelAccuracy | null) => void;
   setStatsState: (v: "loading" | "ok" | "error") => void;
 }
 
@@ -118,6 +124,8 @@ interface EuropeanStats {
   benchmark: BenchmarkTrackRecord | null;
   market: MarketBenchmark | null;
   clv: ClvSummary | null;
+  publishedTips: PublishedTipRecord;
+  countAccuracy: CountModelAccuracy;
 }
 
 /**
@@ -152,6 +160,8 @@ async function loadStats(
     s.setReliability(d.reliability ?? null);
     s.setClv(d.clv ?? null);
     s.setEuropean(d.european ?? null);
+    s.setPublishedTips(d.publishedTips ?? null);
+    s.setCountAccuracy(d.countAccuracy ?? null);
     s.setStatsState("ok");
   } catch {
     if (isActive()) s.setStatsState("error");
@@ -186,6 +196,8 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
   const [reliability, setReliability] = useState<ReliabilityReport | null>(null);
   const [clv, setClv] = useState<ClvSummary | null>(null);
   const [european, setEuropean] = useState<EuropeanStats | null>(null);
+  const [publishedTips, setPublishedTips] = useState<PublishedTipRecord | null>(null);
+  const [countAccuracy, setCountAccuracy] = useState<CountModelAccuracy | null>(null);
   const [statsState, setStatsState] = useState<"loading" | "ok" | "error">("loading");
   const visiblePicks = picks?.filter((pick) =>
     competition === "all"
@@ -232,6 +244,8 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
     setReliability,
     setClv,
     setEuropean,
+    setPublishedTips,
+    setCountAccuracy,
     setStatsState,
   });
 
@@ -268,8 +282,8 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
 
       <ViewTabs
         tabs={[
-          { value: "picks", label: "Tipy" },
-          { value: "model", label: "Jak si model vede" },
+          { value: "picks", label: "Výběr zápasů" },
+          { value: "model", label: "Výkonnost modelů" },
         ]}
         active={view}
         onSelect={setView}
@@ -365,6 +379,8 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
           benchmark={benchmark}
           state={statsState}
           european={european}
+          publishedTips={publishedTips}
+          countAccuracy={countAccuracy}
           onRetry={retryStats}
         />
       )}
@@ -386,6 +402,8 @@ function ModelView({
   benchmark,
   state,
   european,
+  publishedTips,
+  countAccuracy,
   onRetry,
 }: {
   reliability: ReliabilityReport | null;
@@ -395,6 +413,8 @@ function ModelView({
   benchmark: BenchmarkTrackRecord | null;
   state: "loading" | "ok" | "error";
   european: EuropeanStats | null;
+  publishedTips: PublishedTipRecord | null;
+  countAccuracy: CountModelAccuracy | null;
   onRetry: () => void;
 }) {
   // Verdikt se smí vykreslit až nad načtenými daty. Brána sama o sobě `null` vstupy snese
@@ -421,7 +441,6 @@ function ModelView({
     vsMarket: (
       <>
         {marketBench && marketBench.n > 0 && <MarketPanel market={marketBench} />}
-        {track && <TrackRecordPanel track={track} />}
       </>
     ),
     clv: clv && clv.n > 0 ? <ClvPanel clv={clv} /> : null,
@@ -429,6 +448,8 @@ function ModelView({
 
   return (
     <div className="mt-4 space-y-3">
+      <PublishedTipsPanel league={publishedTips} european={european?.publishedTips ?? null} />
+      <ForecastOverview track={track} counts={countAccuracy} />
       <GateHeadline gate={gate} />
       {gate.criteria.map((c, i) => (
         <CriterionCard key={c.key} index={i + 1} criterion={c} evidence={evidence[c.key]} />
@@ -448,12 +469,108 @@ function ModelView({
           </div>
           <div className="mt-3 space-y-3">
             <TrackRecordPanel track={european.trackRecord} />
+            <CountAccuracyPanel accuracy={european.countAccuracy} compact />
             {european.market && european.market.n > 0 && <MarketPanel market={european.market} />}
             {european.clv && european.clv.n > 0 && <ClvPanel clv={european.clv} />}
             {european.benchmark && european.benchmark.n > 0 && <BenchmarkPanel benchmark={european.benchmark} />}
           </div>
         </section>
       )}
+    </div>
+  );
+}
+
+function formatRecordDate(value: string | null): string {
+  return value
+    ? new Date(value).toLocaleDateString("cs-CZ", { day: "numeric", month: "numeric", year: "numeric" })
+    : "—";
+}
+
+function PublishedTipsPanel({
+  league,
+  european,
+}: {
+  league: PublishedTipRecord | null;
+  european: PublishedTipRecord | null;
+}) {
+  return (
+    <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
+      <p className="page-kicker">Skutečně publikované výběry</p>
+      <h2 className="mt-1 text-lg font-bold text-foreground">Publikované tipy 1X2</h2>
+      <p className="mt-1 text-xs leading-5 text-muted">
+        Jen tipy uložené před výkopem: alespoň 55 %, náskok 10 p. b., vzorek 6 a bez
+        příznaku nízké spolehlivosti. Starší prognózy se zpětně nezapočítávají.
+      </p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <PublishedRecordCard title="Ligové soutěže" record={league} />
+        <PublishedRecordCard title="Experimentální · Evropa" record={european} experimental />
+      </div>
+    </section>
+  );
+}
+
+function PublishedRecordCard({ title, record, experimental = false }: { title: string; record: PublishedTipRecord | null; experimental?: boolean }) {
+  const hasResult = Boolean(record && record.n > 0);
+  return (
+    <div className={`rounded-xl border p-3 ${experimental ? "border-warning/30 bg-warning/5" : "border-border bg-background"}`}>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+        {record?.policyVersions.length ? <span className="text-[10px] text-muted">politika v{record.policyVersions.join(", v")}</span> : null}
+      </div>
+      {hasResult ? (
+        <div className="mt-2 flex items-baseline gap-2">
+          <strong className="text-3xl tabular-nums text-foreground">{Math.round(record!.hitRate! * 100)} %</strong>
+          <span className="text-sm text-muted">{record!.hits}/{record!.n} tipů</span>
+        </div>
+      ) : <p className="mt-3 text-sm text-muted">Zatím nemáme vyhodnocený publikovaný tip.</p>}
+      <dl className="mt-3 grid grid-cols-3 gap-2 border-t border-border pt-2 text-[11px]">
+        <div><dt className="text-muted">Čeká</dt><dd className="font-semibold tabular-nums text-foreground">{record?.pending ?? 0}</dd></div>
+        <div><dt className="text-muted">Od</dt><dd className="font-semibold text-foreground">{formatRecordDate(record?.firstPublishedAt ?? null)}</dd></div>
+        <div><dt className="text-muted">Naposledy</dt><dd className="font-semibold text-foreground">{formatRecordDate(record?.lastPublishedAt ?? null)}</dd></div>
+      </dl>
+    </div>
+  );
+}
+
+function ForecastOverview({ track, counts }: { track: TrackRecord | null; counts: CountModelAccuracy | null }) {
+  return (
+    <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
+      <p className="page-kicker text-muted">Diagnostika pravděpodobností</p>
+      <h2 className="mt-1 text-lg font-bold text-foreground">Všechny prognózy</h2>
+      <p className="mt-1 text-xs leading-5 text-muted">
+        Měří každý odehraný výstup modelu, i když nesplnil podmínky publikovaného tipu.
+        Tato čísla proto nejsou sázkovou bilancí.
+      </p>
+      {track && <TrackRecordPanel track={track} embedded />}
+      {counts && <CountAccuracyPanel accuracy={counts} />}
+    </section>
+  );
+}
+
+function CountAccuracyPanel({ accuracy, compact = false }: { accuracy: CountModelAccuracy; compact?: boolean }) {
+  return (
+    <div className={`${compact ? "mt-3" : "mt-4 border-t border-border pt-4"}`}>
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-foreground">Očekávané počty</h3>
+        <span className="text-[10px] text-muted">tolerance ±1</span>
+      </div>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <CountAccuracyCard icon="⛳" label="Rohy" value={accuracy.corners} />
+        <CountAccuracyCard icon="🟨" label="Karty" value={accuracy.cards} />
+      </div>
+      <p className="mt-2 text-[11px] leading-snug text-muted">
+        Jde o přesnost očekávaného celkového počtu, nikoliv o Over/Under tip. Chybějící
+        skutečné statistiky se do přesnosti nepočítají a projeví se v pokrytí.
+      </p>
+    </div>
+  );
+}
+
+function CountAccuracyCard({ icon, label, value }: { icon: string; label: string; value: CountModelAccuracy["corners"] }) {
+  return (
+    <div className="rounded-xl bg-background p-3">
+      <div className="flex items-center justify-between"><span className="text-sm font-semibold text-foreground">{icon} {label}</span><span className="text-[10px] text-muted">pokrytí {value.coverage == null ? "—" : `${Math.round(value.coverage * 100)} %`}</span></div>
+      {value.n > 0 ? <><div className="mt-2 flex items-baseline gap-2"><strong className="text-2xl tabular-nums text-foreground">{Math.round(value.toleranceRate! * 100)} %</strong><span className="text-xs text-muted">v toleranci ({value.withinTolerance}/{value.n})</span></div><p className="mt-1 text-[11px] text-muted">Průměrná absolutní chyba {value.mae!.toFixed(1)}</p></> : <p className="mt-2 text-sm text-muted">Zatím chybí společný vzorek predikce a skutečnosti.</p>}
     </div>
   );
 }
@@ -584,11 +701,15 @@ function StrategyPanel({
     <section className="mt-4 rounded-2xl border border-border bg-surface p-4 shadow-sm">
       <div className="flex items-center justify-between">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-          Jak tohle pravidlo vycházelo
+          Historický simulátor pravidla
         </p>
         <span className="text-[11px] text-muted">{backtest.n} vsazených tipů</span>
       </div>
       <p className="mt-1 text-[11px] text-muted">{strategyLabel(market, venue, minProb)}</p>
+      <p className="mt-1 text-[11px] leading-snug text-muted">
+        Hypoteticky aplikuje aktuální filtr na historii. Nejde o bilanci skutečně
+        publikovaných tipů podle pevné politiky 55 % + náskok 10 p. b.
+      </p>
       {backtest.n < STRATEGY_MIN_SAMPLE ? (
         // Rada „zkus nižší práh" je po filtru verze modelu ZAVÁDĚJÍCÍ, když ještě nemáme
         // skoro žádné odehrané predikce – chyba není v prahu, ale v tom, že není co měřit.
@@ -679,14 +800,14 @@ function SampleRow({ sample }: { sample: BacktestSample }) {
   );
 }
 
-function TrackRecordPanel({ track }: { track: TrackRecord }) {
+function TrackRecordPanel({ track, embedded = false }: { track: TrackRecord; embedded?: boolean }) {
   const pct = (x: number | null) => (x == null ? "—" : `${Math.round(x * 100)} %`);
   const small = track.n > 0 && track.n < 30;
   return (
-    <section className="mt-4 rounded-2xl border border-border bg-surface p-4 shadow-sm">
+    <section className={embedded ? "mt-4" : "mt-4 rounded-2xl border border-border bg-surface p-4 shadow-sm"}>
       <div className="flex items-center justify-between">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-          Úspěšnost modelu
+          Přesnost všech prognóz
         </p>
         <span className="text-[11px] text-muted">{track.n} odehraných predikcí</span>
       </div>

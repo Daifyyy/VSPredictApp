@@ -405,6 +405,23 @@ export async function getSettledPredictions(
   return rows.map(toRow);
 }
 
+/** Všechny skutečně publikované tipy aktuální verze, včetně čekajících na výsledek. */
+export async function getPublishedPredictions(
+  modelVersion: number
+): Promise<PredictionRow[]> {
+  const rows = await prisma.fixturePrediction.findMany({
+    where: {
+      modelVersion,
+      published1x2Side: { not: null },
+      publishedAt: { not: null },
+      publicationPolicyVersion: { not: null },
+    },
+    orderBy: { publishedAt: "desc" },
+    omit: OMIT_SERIES,
+  });
+  return rows.map(toRow);
+}
+
 /**
  * Nedávno odehrané predikce pro záložku „Výsledky" (poslední `days` dní, max
  * `limit`). Nenačítá celou historii – seznam je jen UI pohled na čerstvé výsledky.

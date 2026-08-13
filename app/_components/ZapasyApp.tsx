@@ -1229,7 +1229,7 @@ function FixtureRow({
               onClick={() => setModelOpen((open) => !open)}
               className="min-h-11 rounded-lg px-3 text-xs font-semibold text-muted transition hover:bg-background hover:text-foreground"
             >
-              {modelOpen ? "Skrýt model" : "Model před zápasem · ⛳ · 🟨"}
+              {modelOpen ? "Skrýt model" : "Model před zápasem"}
             </button>
             {modelOpen && <FixtureModelCard fixtureId={fixture.fixtureId} />}
           </div>

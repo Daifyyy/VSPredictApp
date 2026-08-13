@@ -1,6 +1,8 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import type { MatchStat, Metric } from "@/lib/types";
+import type { PredictionRow } from "@/lib/types";
+import type { ActualCountTotals } from "@/lib/picks/performance";
 
 export type MatchContext = "league" | "euro" | "national";
 
@@ -160,6 +162,49 @@ export async function getCachedFixtureStats(
     where: { fixtureId, schemaVersion: { gte: MIN_READABLE_CACHE_VERSION } },
   });
   return new Map(rows.map((r) => [r.teamId, rowToMatchStat(r)]));
+}
+
+/**
+ * Hromadné skutečné počty pro diagnostiku modelů. Výhradně čte trvalou cache;
+ * chybějící zápas záměrně nedotahuje z API-Football.
+ */
+export async function getCachedCountTotals(
+  predictions: PredictionRow[]
+): Promise<Map<number, ActualCountTotals>> {
+  if (predictions.length === 0) return new Map();
+  const rows = await prisma.matchStatCache.findMany({
+    where: {
+      fixtureId: { in: predictions.map((row) => row.fixtureId) },
+      schemaVersion: { gte: MIN_READABLE_CACHE_VERSION },
+    },
+    select: {
+      fixtureId: true,
+      teamId: true,
+      corners: true,
+      yellowCards: true,
+      redCards: true,
+    },
+  });
+  const byFixture = new Map<number, Map<number, (typeof rows)[number]>>();
+  for (const row of rows) {
+    const teams = byFixture.get(row.fixtureId) ?? new Map();
+    teams.set(row.teamId, row);
+    byFixture.set(row.fixtureId, teams);
+  }
+  const out = new Map<number, ActualCountTotals>();
+  for (const prediction of predictions) {
+    const teams = byFixture.get(prediction.fixtureId);
+    const home = teams?.get(prediction.homeTeamId);
+    const away = teams?.get(prediction.awayTeamId);
+    const corners = home?.corners != null && away?.corners != null
+      ? home.corners + away.corners
+      : null;
+    const cards = home?.yellowCards != null && away?.yellowCards != null
+      ? home.yellowCards + (home.redCards ?? 0) + away.yellowCards + (away.redCards ?? 0)
+      : null;
+    if (corners != null || cards != null) out.set(prediction.fixtureId, { corners, cards });
+  }
+  return out;
 }
 
 function toRow(teamId: number, context: MatchContext, ms: MatchStat) {

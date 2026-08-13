@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSettledPredictionRows } from "@/lib/data/repository";
+import { getPublishedPredictionRows, getSettledPredictionRows } from "@/lib/data/repository";
 import {
   backtestRule,
   computeBenchmarkTrackRecord,
@@ -13,6 +13,9 @@ import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
 import { publicCache } from "@/lib/cacheHeaders";
 import { logError } from "@/lib/logError";
 import { isEuroCupLeague } from "@/lib/data/catalog";
+import { computeCountModelAccuracy, computePublishedTipRecord } from "@/lib/picks/performance";
+import { getCachedCountTotals } from "@/lib/data/cache";
+import { isRealDataConfigured } from "@/lib/db";
 
 // Track-record modelu + benchmark + backtest strategie z odehraných predikcí.
 // **FREE** (agregátní/historické metriky nic konkrétního neprozrazují a budují
@@ -34,9 +37,20 @@ export async function GET(req: Request) {
   }
 
   try {
-    const allRows = await getSettledPredictionRows();
-    const rows = allRows.filter((row) => !isEuroCupLeague(row.leagueId));
+    const [allRows, allPublishedRows] = await Promise.all([
+      getSettledPredictionRows(),
+      getPublishedPredictionRows(),
+    ]);
+    // Každá populační větev se měří samostatně. Reprezentace se nesmí přimíchat
+    // do ligového track recordu jen proto, že nejsou evropským klubovým pohárem.
+    const rows = allRows.filter((row) => row.modelContext === "LEAGUE");
     const europeanRows = allRows.filter((row) => isEuroCupLeague(row.leagueId));
+    const publishedRows = allPublishedRows.filter((row) => row.modelContext === "LEAGUE");
+    const europeanPublishedRows = allPublishedRows.filter((row) => isEuroCupLeague(row.leagueId));
+    // Jen DB cache. Tato diagnostika nikdy nesmí spustit placený lazy fetch statistik.
+    const actualCounts = isRealDataConfigured()
+      ? await getCachedCountTotals(allRows)
+      : new Map();
     // CLV navoleného pravidla: posunula se linie od našeho snímku k zavření směrem k nám?
     // Počítá se jen z řádků se DVĚMA snímky kurzu (od 26. 7. 2026), takže je zpočátku prázdné.
     const clvPicks = rows.flatMap((row) => {
@@ -48,6 +62,8 @@ export async function GET(req: Request) {
     return NextResponse.json(
       {
         trackRecord: computeTrackRecord(rows),
+        publishedTips: computePublishedTipRecord(publishedRows),
+        countAccuracy: computeCountModelAccuracy(rows, actualCounts),
         benchmark: computeBenchmarkTrackRecord(rows),
         market: computeMarketBenchmark(rows),
         backtest: backtestRule(rows, parsed.data),
@@ -57,6 +73,8 @@ export async function GET(req: Request) {
           experimental: true,
           promotionSample: 150,
           trackRecord: computeTrackRecord(europeanRows),
+          publishedTips: computePublishedTipRecord(europeanPublishedRows),
+          countAccuracy: computeCountModelAccuracy(europeanRows, actualCounts),
           benchmark: computeBenchmarkTrackRecord(europeanRows),
           market: computeMarketBenchmark(europeanRows),
           backtest: backtestRule(europeanRows, parsed.data),
