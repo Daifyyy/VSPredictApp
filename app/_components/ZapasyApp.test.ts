@@ -41,7 +41,14 @@ describe("mergeTodaySnapshot", () => {
   });
 
   it("preserves rank and settled-tip context from the server snapshot", () => {
-    const tip = { side: "home" as const, prob: 0.6, hit: true };
+    const tip = {
+      side: "home" as const,
+      prob: 0.6,
+      hit: true,
+      published: true as const,
+      experimental: false,
+      policyVersion: 1,
+    };
     const served: FixtureDay = {
       date: "2026-08-13",
       fixtures: [{ ...upcoming(8), homeRank: 2, awayRank: 7 }],

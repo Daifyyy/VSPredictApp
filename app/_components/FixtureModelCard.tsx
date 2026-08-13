@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { FixtureModelForecast } from "@/lib/types";
+import { COUNT_MARKET_PRESENTATION } from "@/lib/picks/countPresentation";
 
 type State =
   | { state: "loading" }
@@ -75,8 +76,8 @@ export function FixtureModelCard({
         </>
       )}
       <div className="grid grid-cols-2 gap-2 text-center tabular-nums">
-        <CountMetric label="Rohy" value={f.corners} />
-        <CountMetric label="Karty" value={f.cards} />
+        <CountMetric market="corners" value={f.corners} />
+        <CountMetric market="cards" value={f.cards} />
       </div>
     </div>
   );
@@ -94,10 +95,17 @@ function Metric({ label, value }: { label: string; value: string }) {
   return <span className="rounded-lg bg-surface px-2 py-2 text-muted"><small className="block">{label}</small><strong className="text-foreground">{value}</strong></span>;
 }
 
-function CountMetric({ label, value }: { label: string; value: FixtureModelForecast["corners"] }) {
+function CountMetric({
+  market,
+  value,
+}: {
+  market: keyof typeof COUNT_MARKET_PRESENTATION;
+  value: FixtureModelForecast["corners"];
+}) {
+  const presentation = COUNT_MARKET_PRESENTATION[market];
   return (
     <span className="rounded-lg bg-surface px-2 py-2 text-muted">
-      <small className="block">{label}</small>
+      <small className="block">{presentation.icon} {presentation.label}</small>
       <strong className="text-foreground">{value ? `${value.home.toFixed(1)} : ${value.away.toFixed(1)} · ${value.total.toFixed(1)} celkem` : "Model není dostupný"}</strong>
     </span>
   );

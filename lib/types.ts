@@ -295,6 +295,9 @@ export interface FixtureTip {
   side: "home" | "draw" | "away";
   prob: number;
   hit: boolean;
+  published: true;
+  experimental: boolean;
+  policyVersion: number;
 }
 
 /**
@@ -319,6 +322,12 @@ export interface PlayedFixture {
   awayGoals: number;
   /** Zápas se rozhodl až v prodloužení/na penalty → skóre výše je stav po 90 min. */
   afterExtraTime: boolean;
+  /** Stav po 120 minutách; null, pokud se prodloužení nehrálo nebo údaj chybí. */
+  extraTimeGoals?: { home: number; away: number } | null;
+  /** Samostatné skóre penaltového rozstřelu. */
+  penaltyGoals?: { home: number; away: number } | null;
+  /** Vítěz vyřazovacího zápasu, pouze pokud jej lze bezpečně odvodit. */
+  winnerTeamId?: number | null;
   national: boolean;
   europeanCup?: boolean;
   competitionRound?: string | null;
@@ -797,6 +806,10 @@ export interface PredictionRow {
   /** Odděluje nesrovnatelné populace bez globálního resetu modelu. */
   modelContext?: "LEAGUE" | "EURO_CUP" | "NATIONAL";
   contextVersion?: number;
+  published1x2Side?: "home" | "away" | null;
+  published1x2Prob?: number | null;
+  publicationPolicyVersion?: number | null;
+  publishedAt?: string | null;
   /**
    * Post-parametry, kterými byly z λ odvozeny pravděpodobnosti výše (Dixon–Coles ρ a
    * zostření λ). Mimo `modelVersion` schválně: jde je změnit a historii **přepočítat**
@@ -978,6 +991,7 @@ export interface SettledMatch {
   predictedProb: number;
   /** Trefila predikce 1X2 skutečný výsledek? */
   outcomeHit: boolean;
+  publicationPolicyVersion: number;
   compareMode: EntityType;
   homeCompareLeagueId: number | null;
   awayCompareLeagueId: number | null;

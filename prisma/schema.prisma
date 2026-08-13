@@ -180,6 +180,11 @@ model FixturePrediction {
   modelContext  String    @default("LEAGUE")
   /// Vlastní verze kontextu. Změna evropského sestavení neresetuje ligový vzorek.
   contextVersion Int      @default(1)
+  /// Snapshot skutečně publikovaného 1X2 tipu. null = prognóza nesplnila bránu nebo je starší.
+  published1x2Side          String?
+  published1x2Prob          Float?
+  publicationPolicyVersion Int?
+  publishedAt               DateTime?
   /// Post-parametry, kterými byly z λ odvozeny pravděpodobnosti výše (Dixon–Coles ρ,
   /// zostření λ). Umožňují ladit model bez ztráty historie: `npm run reprice` najde
   /// řádky s jinými hodnotami než aktuální konstanty a přepočte je z λ. null = řádek

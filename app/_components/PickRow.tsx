@@ -3,6 +3,7 @@ import type { MatchPick } from "@/lib/types";
 import { TeamLogo } from "./TeamLogo";
 import { RankBadge } from "./RankBadge";
 import { buildCompareHref } from "./compareHref";
+import { COUNT_MARKET_PRESENTATION } from "@/lib/picks/countPresentation";
 
 /**
  * Jeden řádek tipu = zápas + predikovaná pravděpodobnost + readiness odznak + value
@@ -87,18 +88,20 @@ export function PickRow({ pick }: { pick: MatchPick }) {
  */
 function CountsRow({ counts }: { counts: MatchPick["counts"] }) {
   if (counts.corners == null && counts.cards == null) return null;
+  const corners = COUNT_MARKET_PRESENTATION.corners;
+  const cards = COUNT_MARKET_PRESENTATION.cards;
   return (
     <p className="mt-1 flex gap-3 text-[11px] tabular-nums text-muted">
       {counts.corners != null && (
         <span title="Očekávaný počet rohů obou týmů dohromady za celý zápas">
-          ⛳ rohy <strong className="font-semibold text-foreground">
+          {corners.icon} {corners.label.toLocaleLowerCase("cs-CZ")} <strong className="font-semibold text-foreground">
             {counts.corners.toFixed(1)}
           </strong>
         </span>
       )}
       {counts.cards != null && (
         <span title="Očekávaný počet karet obou týmů dohromady za celý zápas">
-          🟨 karty <strong className="font-semibold text-foreground">
+          {cards.icon} {cards.label.toLocaleLowerCase("cs-CZ")} <strong className="font-semibold text-foreground">
             {counts.cards.toFixed(1)}
           </strong>
         </span>

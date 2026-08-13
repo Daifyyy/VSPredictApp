@@ -1226,23 +1226,28 @@ function LiveReportToggle({ fixture }: { fixture: UpcomingFixture }) {
 }
 
 function ResultsList({ played }: { played: PlayedFixture[] }) {
-  // Jmenovatel jsou **zápasy s predikcí**, ne všechny odehrané – jinak by číslo tiše
-  // tvrdilo, že jsme tipovali i to, co jsme netipovali.
+  // Jmenovatel tvoří jen před výkopem publikované tipy. Pravděpodobnostní
+  // prognóza bez uloženého výběru se zde nikdy zpětně nevydává za tip.
   const tipped = played.filter((p) => p.tip);
-  const hits = tipped.filter((p) => p.tip!.hit).length;
+  const leagueTips = tipped.filter((p) => !p.tip!.experimental);
+  const europeanTips = tipped.filter((p) => p.tip!.experimental);
   const groups = useMemo(() => groupByLeague(played), [played]);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
   return (
     <div className="mt-4">
       {tipped.length > 0 && (
-        <p className="px-1 text-xs text-muted">
-          Výsledek 1X2 trefen u{" "}
-          <span className="font-semibold text-foreground">
-            {hits} z {tipped.length}
-          </span>{" "}
-          {tipped.length === 1 ? "zápasu" : "zápasů"}, kde jsme měli predikci.
-        </p>
+        <div className="space-y-1 px-1 text-xs text-muted">
+          {leagueTips.length > 0 && (
+            <PublishedTipSummary label="Ligové publikované tipy" fixtures={leagueTips} />
+          )}
+          {europeanTips.length > 0 && (
+            <PublishedTipSummary
+              label="Experimentální – evropské poháry"
+              fixtures={europeanTips}
+            />
+          )}
+        </div>
       )}
       <div className="mt-2 space-y-3">
         {groups.map((g) => (
@@ -1262,6 +1267,21 @@ function ResultsList({ played }: { played: PlayedFixture[] }) {
         ))}
       </div>
     </div>
+  );
+}
+
+function PublishedTipSummary({
+  label,
+  fixtures,
+}: {
+  label: string;
+  fixtures: PlayedFixture[];
+}) {
+  const hits = fixtures.filter((fixture) => fixture.tip?.hit).length;
+  return (
+    <p>
+      {label}: <span className="font-semibold text-foreground">{hits} z {fixtures.length}</span>
+    </p>
   );
 }
 
@@ -1383,9 +1403,11 @@ function PlayedRow({ fixture }: { fixture: PlayedFixture }) {
       </div>
       {tip && (
         <div className="mt-1 text-[11px] uppercase tracking-wide text-muted">
-          Tip: {SIDE_LABELS[tip.side]} · {Math.round(tip.prob * 100)} %
+          Publikovaný tip: {SIDE_LABELS[tip.side]} · {Math.round(tip.prob * 100)} %
+          {tip.experimental ? " · experimentální" : ""}
         </div>
       )}
+      <KnockoutResult fixture={fixture} />
     </>
   );
   return (
@@ -1409,6 +1431,28 @@ function PlayedRow({ fixture }: { fixture: PlayedFixture }) {
       {/* Panel se montuje až po otevření → fetch se pustí jen na vyžádání. */}
       {open && <MatchReportPanel match={fixture} />}
     </li>
+  );
+}
+
+function KnockoutResult({ fixture }: { fixture: PlayedFixture }) {
+  const extraTime = fixture.extraTimeGoals;
+  const penalties = fixture.penaltyGoals;
+  const advancingTeam =
+    fixture.winnerTeamId === fixture.home.id
+      ? fixture.home.name
+      : fixture.winnerTeamId === fixture.away.id
+        ? fixture.away.name
+        : null;
+
+  if (!extraTime && !penalties && !advancingTeam) return null;
+
+  return (
+    <div className="mt-1 text-[11px] text-muted">
+      {fixture.homeGoals}:{fixture.awayGoals} po 90 minutách
+      {extraTime ? ` · ${extraTime.home}:${extraTime.away} po prodloužení` : ""}
+      {penalties ? ` · penalty ${penalties.home}:${penalties.away}` : ""}
+      {advancingTeam ? ` · postupuje ${advancingTeam}` : ""}
+    </div>
   );
 }
 

@@ -3,6 +3,7 @@ import type { PredictionRow } from "@/lib/types";
 import { prisma } from "@/lib/db";
 import { PREDICT_PARAMS } from "@/lib/stats/predict";
 import { FINISHED_STATUSES } from "./apiFootball";
+import { publishedOutcomeTip } from "@/lib/picks/publication";
 
 /**
  * Úložiště predikcí nad tabulkou `FixturePrediction` (real DB). Plní ho cron na
@@ -72,6 +73,10 @@ function toRow(p: PredictionRowSource): PredictionRow {
     modelVersion: p.modelVersion,
     modelContext: p.modelContext as PredictionRow["modelContext"],
     contextVersion: p.contextVersion,
+    published1x2Side: p.published1x2Side as PredictionRow["published1x2Side"],
+    published1x2Prob: p.published1x2Prob,
+    publicationPolicyVersion: p.publicationPolicyVersion,
+    publishedAt: p.publishedAt?.toISOString() ?? null,
     rho: p.rho,
     sharpen: p.sharpen,
     calibA: p.calibA,
@@ -109,7 +114,14 @@ function toRow(p: PredictionRowSource): PredictionRow {
 
 /** Upsert predikce (přepíše predikční pole, výsledek nechá být). */
 export async function upsertPrediction(row: PredictionUpsert): Promise<void> {
-  const data = {
+  const now = new Date();
+  // Obrana do hloubky: i kdyby volající omylem poslal již rozehraný zápas,
+  // publikační snapshot se po výkopu nesmí vytvořit.
+  const published = new Date(row.kickoff).getTime() > now.getTime()
+    ? publishedOutcomeTip(row)
+    : null;
+  const publishedAt = published ? now : null;
+  const predictionData = {
     leagueId: row.leagueId,
     season: row.season,
     kickoff: new Date(row.kickoff),
@@ -147,9 +159,29 @@ export async function upsertPrediction(row: PredictionUpsert): Promise<void> {
   };
   await prisma.fixturePrediction.upsert({
     where: { fixtureId: row.fixtureId },
-    create: { fixtureId: row.fixtureId, ...data },
-    update: data,
+    create: {
+      fixtureId: row.fixtureId,
+      ...predictionData,
+      published1x2Side: published?.side ?? null,
+      published1x2Prob: published?.prob ?? null,
+      publicationPolicyVersion: published?.policyVersion ?? null,
+      publishedAt,
+    },
+    // Již publikovaný tip je neměnný auditní snapshot. Pozdější přepočet
+    // prognózy ho nesmí změnit ani odstranit.
+    update: predictionData,
   });
+  if (published) {
+    await prisma.fixturePrediction.updateMany({
+      where: { fixtureId: row.fixtureId, published1x2Side: null },
+      data: {
+        published1x2Side: published.side,
+        published1x2Prob: published.prob,
+        publicationPolicyVersion: published.policyVersion,
+        publishedAt,
+      },
+    });
+  }
 }
 
 /**

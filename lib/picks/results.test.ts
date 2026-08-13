@@ -30,6 +30,10 @@ function row(
     over25: 0.5,
     lowConfidence: false,
     modelVersion: 1,
+    published1x2Side: "home",
+    published1x2Prob: 0.6,
+    publicationPolicyVersion: 1,
+    publishedAt: "2026-06-20T12:00:00.000Z",
     rho: -0.13,
     sharpen: 1,
     calibA: 1,
@@ -58,7 +62,7 @@ function row(
 }
 
 describe("summarizeSettled", () => {
-  it("trefená predikce: favorit domácí a domácí vyhráli → hit", () => {
+  it("trefený publikovaný tip: domácí vyhráli → hit", () => {
     const out = summarizeSettled([
       row({ homeWin: 0.6, draw: 0.25, awayWin: 0.15, homeGoals: 2, awayGoals: 0 }),
     ]);
@@ -68,7 +72,7 @@ describe("summarizeSettled", () => {
     expect(out[0].outcomeHit).toBe(true);
   });
 
-  it("netrefená predikce: favorit domácí, ale remíza → miss", () => {
+  it("netrefený publikovaný tip: domácí, ale remíza → miss", () => {
     const out = summarizeSettled([
       row({ homeWin: 0.6, draw: 0.25, awayWin: 0.15, homeGoals: 1, awayGoals: 1 }),
     ]);
@@ -79,6 +83,23 @@ describe("summarizeSettled", () => {
     const out = summarizeSettled([
       row({ homeWin: 0.6, draw: 0.25, awayWin: 0.15, homeGoals: null, awayGoals: null }),
       row({ available: false, homeWin: 0.6, draw: 0.25, awayWin: 0.15, homeGoals: 2, awayGoals: 0 }),
+    ]);
+    expect(out).toHaveLength(0);
+  });
+
+  it("36% argmax bez publikačního snapshotu není tip", () => {
+    const out = summarizeSettled([
+      row({
+        homeWin: 0.36,
+        draw: 0.33,
+        awayWin: 0.31,
+        published1x2Side: null,
+        published1x2Prob: null,
+        publicationPolicyVersion: null,
+        publishedAt: null,
+        homeGoals: 1,
+        awayGoals: 1,
+      }),
     ]);
     expect(out).toHaveLength(0);
   });
@@ -94,7 +115,16 @@ describe("summarizeSettled", () => {
 
   it("reprezentační turnaj (MS=1) → NATIONAL a konfederace null (dotahuje repo)", () => {
     const out = summarizeSettled([
-      row({ leagueId: 1, homeWin: 0.2, draw: 0.2, awayWin: 0.6, homeGoals: 0, awayGoals: 2 }),
+      row({
+        leagueId: 1,
+        homeWin: 0.2,
+        draw: 0.2,
+        awayWin: 0.6,
+        published1x2Side: "away",
+        published1x2Prob: 0.6,
+        homeGoals: 0,
+        awayGoals: 2,
+      }),
     ]);
     expect(out[0].compareMode).toBe("NATIONAL");
     expect(out[0].predictedSide).toBe("away");
@@ -160,10 +190,26 @@ const day = (played: PlayedFixture[]): FixtureDay => ({
 describe("mergeTips", () => {
   it("přiřadí tip zápasu podle fixtureId", () => {
     const settled = summarizeSettled([
-      row({ fixtureId: 7, homeWin: 0.2, draw: 0.25, awayWin: 0.55, homeGoals: 0, awayGoals: 4 }),
+      row({
+        fixtureId: 7,
+        homeWin: 0.2,
+        draw: 0.25,
+        awayWin: 0.55,
+        published1x2Side: "away",
+        published1x2Prob: 0.55,
+        homeGoals: 0,
+        awayGoals: 4,
+      }),
     ]);
     const [d] = mergeTips([day([playedFixture(7)])], settled);
-    expect(d.played[0].tip).toEqual({ side: "away", prob: 0.55, hit: true });
+    expect(d.played[0].tip).toEqual({
+      side: "away",
+      prob: 0.55,
+      hit: true,
+      published: true,
+      experimental: false,
+      policyVersion: 1,
+    });
   });
 
   it("zápas bez predikce projde beze změny – tip je překryv, ne filtr", () => {

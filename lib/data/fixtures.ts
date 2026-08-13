@@ -10,6 +10,14 @@ import {
 
 const FIXTURE_LEAGUES = new Set(FIXTURE_LIST_LEAGUE_IDS);
 
+function scorePair(
+  value: { home?: number | null; away?: number | null } | undefined
+): { home: number; away: number } | null {
+  return typeof value?.home === "number" && typeof value?.away === "number"
+    ? { home: value.home, away: value.away }
+    : null;
+}
+
 /**
  * Den (`YYYY-MM-DD`) v **pražské** zóně – hranice dne, na které stojí rozpis i Výsledky.
  * UTC by v létě posunulo večerní zápasy o den zpět (výkop 21:00 SELČ = 19:00 UTC je ještě
@@ -122,6 +130,20 @@ export function normalizeFinishedFixtures(raw: ApiFixture[]): PlayedFixture[] {
     if (!ft) continue;
     const national = isNationalTournamentLeague(f.league.id);
     const europeanCup = isEuroCupLeague(f.league.id);
+    const explicitExtra = scorePair(f.score?.extratime);
+    const extraTimeGoals =
+      status === "AET"
+        ? explicitExtra ?? scorePair(f.goals)
+        : status === "PEN"
+          ? explicitExtra
+          : null;
+    const penaltyGoals = status === "PEN" ? scorePair(f.score?.penalty) : null;
+    const winnerSide =
+      penaltyGoals && penaltyGoals.home !== penaltyGoals.away
+        ? penaltyGoals.home > penaltyGoals.away ? "home" : "away"
+        : extraTimeGoals && extraTimeGoals.home !== extraTimeGoals.away
+          ? extraTimeGoals.home > extraTimeGoals.away ? "home" : "away"
+          : null;
     out.push({
       fixtureId: f.fixture.id,
       leagueId: f.league.id,
@@ -133,6 +155,14 @@ export function normalizeFinishedFixtures(raw: ApiFixture[]): PlayedFixture[] {
       homeGoals: ft.home,
       awayGoals: ft.away,
       afterExtraTime: status === "AET" || status === "PEN",
+      extraTimeGoals,
+      penaltyGoals,
+      winnerTeamId:
+        winnerSide === "home"
+          ? f.teams.home.id
+          : winnerSide === "away"
+            ? f.teams.away.id
+            : null,
       national,
       europeanCup,
       competitionRound: f.league.round ?? null,

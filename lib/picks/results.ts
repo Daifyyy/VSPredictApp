@@ -5,7 +5,7 @@ import type {
   SettledMatch,
 } from "@/lib/types";
 import { isEuroCupLeague, isNationalTournamentLeague, leagueLogoUrl } from "@/lib/data/catalog";
-import { actualOutcome, argmaxOutcome, probOfSide } from "./trackRecord";
+import { actualOutcome } from "./trackRecord";
 
 /**
  * Zmapuje odehrané predikce na výsledkové řádky pro záložku „Výsledky" (jak dopadly
@@ -17,7 +17,14 @@ export function summarizeSettled(rows: PredictionRow[]): SettledMatch[] {
   const out: SettledMatch[] = [];
   for (const r of rows) {
     if (!r.available || r.homeGoals == null || r.awayGoals == null) continue;
-    const predictedSide = argmaxOutcome(r);
+    // Bez předzápasového snapshotu nešlo o publikovaný tip. Argmax prognózy zpětně
+    // nepřepisujeme na sázku – ani když by náhodou vyšel.
+    if (
+      (r.published1x2Side !== "home" && r.published1x2Side !== "away") ||
+      r.published1x2Prob == null ||
+      r.publicationPolicyVersion == null
+    ) continue;
+    const predictedSide = r.published1x2Side;
     const national = isNationalTournamentLeague(r.leagueId);
     const europeanCup = isEuroCupLeague(r.leagueId);
     out.push({
@@ -31,8 +38,9 @@ export function summarizeSettled(rows: PredictionRow[]): SettledMatch[] {
       awayGoals: r.awayGoals,
       afterExtraTime: r.status === "AET" || r.status === "PEN",
       predictedSide,
-      predictedProb: probOfSide(r, predictedSide),
+      predictedProb: r.published1x2Prob,
       outcomeHit: predictedSide === actualOutcome(r.homeGoals, r.awayGoals),
+      publicationPolicyVersion: r.publicationPolicyVersion,
       compareMode: national ? "NATIONAL" : "CLUB",
       europeanCup,
       homeCompareLeagueId: national ? null : r.leagueId,
@@ -60,6 +68,9 @@ export function mergeTips(days: FixtureDay[], settled: SettledMatch[]): FixtureD
       side: s.predictedSide,
       prob: s.predictedProb,
       hit: s.outcomeHit,
+      published: true,
+      experimental: Boolean(s.europeanCup),
+      policyVersion: s.publicationPolicyVersion,
     });
   }
   return days.map((day) => ({

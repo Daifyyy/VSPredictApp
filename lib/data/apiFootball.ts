@@ -187,6 +187,18 @@ const fixtureItemSchema = z.object({
           away: z.number().nullable().optional(),
         })
         .optional(),
+      extratime: z
+        .object({
+          home: z.number().nullable().optional(),
+          away: z.number().nullable().optional(),
+        })
+        .optional(),
+      penalty: z
+        .object({
+          home: z.number().nullable().optional(),
+          away: z.number().nullable().optional(),
+        })
+        .optional(),
     })
     .optional(),
 });

@@ -383,11 +383,39 @@ describe("European cup fixtures", () => {
 
   it("settles a penalty match from its 90-minute score", () => {
     const european = done(80, 3, "PEN", "2026-08-01T18:00:00+00:00", { home: 5, away: 4 }, { home: 1, away: 1 });
+    european.score = {
+      fulltime: { home: 1, away: 1 },
+      extratime: { home: 1, away: 1 },
+      penalty: { home: 4, away: 5 },
+    };
     european.league.round = "3rd Qualifying Round";
     const [out] = normalizeFinishedFixtures([european]);
     expect(out.europeanCup).toBe(true);
     expect(out.competitionRound).toBe("3rd Qualifying Round");
     expect([out.homeGoals, out.awayGoals]).toEqual([1, 1]);
     expect(out.afterExtraTime).toBe(true);
+    expect(out.extraTimeGoals).toEqual({ home: 1, away: 1 });
+    expect(out.penaltyGoals).toEqual({ home: 4, away: 5 });
+    expect(out.winnerTeamId).toBe(european.teams.away.id);
+  });
+
+  it("zobrazí bezpečně známý stav po prodloužení a jeho vítěze", () => {
+    const european = done(81, 2, "AET", "2026-08-01T18:00:00+00:00", { home: 2, away: 1 }, { home: 1, away: 1 });
+    european.score = {
+      fulltime: { home: 1, away: 1 },
+      extratime: { home: 2, away: 1 },
+    };
+    const [out] = normalizeFinishedFixtures([european]);
+    expect(out.extraTimeGoals).toEqual({ home: 2, away: 1 });
+    expect(out.penaltyGoals).toBeNull();
+    expect(out.winnerTeamId).toBe(european.teams.home.id);
+  });
+
+  it("u penalt bez detailního skóre nic neodhaduje z celkových gólů", () => {
+    const european = done(82, 3, "PEN", "2026-08-01T18:00:00+00:00", { home: 5, away: 4 }, { home: 1, away: 1 });
+    const [out] = normalizeFinishedFixtures([european]);
+    expect(out.extraTimeGoals).toBeNull();
+    expect(out.penaltyGoals).toBeNull();
+    expect(out.winnerTeamId).toBeNull();
   });
 });
