@@ -28,6 +28,7 @@ on:
     # Minuta 20 schválně: denní úlohy jedou na :00, :15 a :30, takže nikdy nenastane
     # okamžik, kdy by seděly dva rozvrhy naráz.
     - cron: "20 * * * *"
+    - cron: "50 */3 * * *" # refresh-referees
     # Denní údržba (časy odpovídají původnímu vercel.json).
     - cron: "0 3 * * *" # refresh-league-styles
     - cron: "0 4 * * *" # warm
@@ -56,6 +57,7 @@ on:
           - refresh-league-styles
           - warm
           - predict-upcoming
+          - refresh-referees
           - refresh-transfers
           - settle-results
           - settle-tips
@@ -85,6 +87,7 @@ jobs:
           fi
           case "$SCHEDULE" in
             "20 * * * *")   path="snapshot-odds" ;;
+            "50 */3 * * *") path="refresh-referees" ;;
             "0 3 * * *")    path="refresh-league-styles" ;;
             "0 4 * * *")    path="warm" ;;
             "30 4 * * *")   path="predict-upcoming" ;;

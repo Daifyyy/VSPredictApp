@@ -2,6 +2,7 @@ import type { ApiFixture } from "./apiFootball";
 import type { RefereeProfileForecast } from "@/lib/types";
 import { prisma } from "@/lib/db";
 import { DEFAULT_CARD_TUNING, normalizeRefereeName, refereeFactor } from "@/lib/picks/cards";
+import { fetchFixturesByIds } from "./apiFootball";
 
 const average = (values: number[]) => values.length
   ? values.reduce((sum, value) => sum + value, 0) / values.length
@@ -90,4 +91,47 @@ export async function ingestRefereeHistory(fixtures: ApiFixture[]): Promise<void
     };
     await prisma.refereeMatch.upsert({ where: { fixtureId: fixture.fixture.id }, create: { fixtureId: fixture.fixture.id, ...data }, update: data });
   }
+}
+
+export async function refreshUpcomingReferees(now = new Date()) {
+  const candidates = await prisma.fixturePrediction.findMany({
+    where: {
+      status: "NS",
+      kickoff: { gt: now, lt: new Date(now.getTime() + 7 * 86_400_000) },
+      refereeName: null,
+      lambdaCardsHomeBeforeRef: { not: null },
+      lambdaCardsAwayBeforeRef: { not: null },
+    },
+    orderBy: { kickoff: "asc" },
+    take: 100,
+  });
+  let batches = 0;
+  let assigned = 0;
+  let updated = 0;
+  for (let index = 0; index < candidates.length; index += 20) {
+    const chunk = candidates.slice(index, index + 20);
+    const fixtures = await fetchFixturesByIds(chunk.map((row) => row.fixtureId));
+    batches++;
+    const byId = new Map(fixtures.map((fixture) => [fixture.fixture.id, fixture]));
+    for (const row of chunk) {
+      const refereeName = byId.get(row.fixtureId)?.fixture.referee?.trim();
+      if (!refereeName) continue;
+      assigned++;
+      const profile = await getRefereeProfile(refereeName, row.leagueId, row.kickoff, row.modelContext);
+      await prisma.fixturePrediction.update({
+        where: { fixtureId: row.fixtureId },
+        data: {
+          refereeName,
+          refereeKey: normalizeRefereeName(refereeName),
+          refereeFactor: profile.factor,
+          refereeSample: profile.sample,
+          lambdaCardsHome: Math.min(8, Math.max(0.3, row.lambdaCardsHomeBeforeRef! * profile.factor)),
+          lambdaCardsAway: Math.min(8, Math.max(0.3, row.lambdaCardsAwayBeforeRef! * profile.factor)),
+          predictedAt: now,
+        },
+      });
+      updated++;
+    }
+  }
+  return { candidates: candidates.length, batches, assigned, updated };
 }
