@@ -19,13 +19,29 @@ import {
   benchProbs,
 } from "../lib/picks/trackRecord.ts";
 import { computeMarketBenchmark, isClubRow } from "../lib/picks/market.ts";
+import {
+  isCurrentContextVersion,
+  modelContextForLeague,
+  type ModelContext,
+} from "../lib/data/modelContext.ts";
 
 // Fit ρ/zostření i skórování 1X2 jsou sdílené čisté funkce (`lib/picks/fit.ts`,
 // `trackRecord.ts`) → tentýž kód žene kalibraci z DB i offline `npm run backtest`.
 
 async function main() {
-  const rows = await getSettledPredictions(MODEL_VERSION);
-  console.log(`Odehraných predikcí (modelVersion=${MODEL_VERSION}): ${rows.length}`);
+  const stored = await getSettledPredictions(MODEL_VERSION);
+  const requested = process.argv.find((arg) => arg.startsWith("--context="))?.split("=")[1] ?? "LEAGUE";
+  if (!["LEAGUE", "EURO_CUP", "NATIONAL"].includes(requested)) {
+    throw new Error("Neplatný --context; použij LEAGUE, EURO_CUP nebo NATIONAL");
+  }
+  const context = requested as ModelContext;
+  const current = stored.filter(isCurrentContextVersion);
+  const rows = current.filter((row) => modelContextForLeague(row.leagueId) === context);
+  const legacy = stored.filter((row) =>
+    modelContextForLeague(row.leagueId) === context && !isCurrentContextVersion(row)
+  ).length;
+  console.log(`Odehraných predikcí (modelVersion=${MODEL_VERSION}, context=${context}): ${rows.length}`);
+  console.log(`Historických řádků jiné kontextové verze: ${legacy} (uchovány, do kalibrace nevstupují)`);
   if (rows.length < 30) {
     console.log("⚠ Málo dat (<30) – výsledky jsou orientační, sbírej dál.");
   }

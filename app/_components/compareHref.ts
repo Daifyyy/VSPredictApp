@@ -9,6 +9,7 @@ import type { EntityType } from "@/lib/types";
  * Sdílí ho `FixtureRow` (Zápasy), `PickRow` (Tipy) i `PlayedRow` (Výsledky).
  */
 export interface CompareLinkSource {
+  fixtureId?: number;
   compareMode: EntityType;
   home: { id: number; name?: string; logoUrl?: string };
   away: { id: number; name?: string; logoUrl?: string };
@@ -26,6 +27,7 @@ export function buildCompareHref(x: CompareLinkSource): string | null {
     home: String(x.home.id),
     away: String(x.away.id),
   });
+  if (x.fixtureId != null) params.set("fixture", String(x.fixtureId));
   if (x.europeanCup) {
     params.set("context", "EURO_CUP");
     if (x.home.name) params.set("homeName", x.home.name);

@@ -55,6 +55,37 @@ export interface LiveReport {
   headline: string;
   /** Max 3 konkrétní pozorování, nejsilnější první. */
   notes: string[];
+  /** Kumulativní hodnoty pro výpočet změny mezi dvěma klientskými načteními. */
+  snapshot: LiveSnapshot;
+}
+
+export interface LiveSnapshot {
+  minute: number;
+  home: LiveSnapshotSide;
+  away: LiveSnapshotSide;
+  goals: { home: number; away: number } | null;
+}
+
+export interface LiveSnapshotSide {
+  xg: number | null;
+  shots: number | null;
+  shotsOnTarget: number | null;
+  corners: number | null;
+}
+
+function liveSnapshot(
+  minute: number,
+  home: MatchSide,
+  away: MatchSide,
+  goals: { home: number; away: number } | null
+): LiveSnapshot {
+  const side = (value: MatchSide): LiveSnapshotSide => ({
+    xg: num(value.XG),
+    shots: num(value.SHOTS),
+    shotsOnTarget: num(value.SHOTS_ON_TARGET),
+    corners: num(value.CORNERS),
+  });
+  return { minute, home: side(home), away: side(away), goals };
 }
 
 /**
@@ -506,6 +537,7 @@ export function buildLiveReport(input: {
     home: input.goals ? { ...input.home, GOALS_FOR: input.goals.home } : input.home,
     away: input.goals ? { ...input.away, GOALS_FOR: input.goals.away } : input.away,
   };
+  const snapshot = liveSnapshot(minute, input.home, input.away, input.goals);
 
   const all = buildMatchDimensions(withGoals.home, withGoals.away);
   const gates = gatesOf(withGoals.home, withGoals.away);
@@ -528,6 +560,7 @@ export function buildLiveReport(input: {
       // podle hodnoty, kterou dosazujeme z dat.
       headline: `Je teprve ${minute}. minuta – na přehled průběhu je zatím brzy.`,
       notes: [],
+      snapshot,
     };
   }
 
@@ -540,6 +573,7 @@ export function buildLiveReport(input: {
       character: EMPTY_CHARACTER,
       headline: "Pro tenhle zápas zatím nemáme dost živých statistik.",
       notes: [],
+      snapshot,
     };
   }
 
@@ -565,6 +599,7 @@ export function buildLiveReport(input: {
       minute,
       halftime
     ),
+    snapshot,
   };
 }
 

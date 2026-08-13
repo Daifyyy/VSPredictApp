@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { UpcomingFixture } from "@/lib/types";
-import type { LiveReport } from "@/lib/stats/liveReport";
+import type { LiveReport, LiveSnapshot } from "@/lib/stats/liveReport";
+import { deriveLiveMomentum, type LiveMomentum } from "@/lib/stats/liveMomentum";
 import type { MatchEvent } from "@/lib/stats/matchEvents";
 import { Chip, DimensionBar } from "./MatchDimensionBar";
 import { EventTimeline } from "./EventTimeline";
@@ -29,6 +30,7 @@ type PanelState =
       report: LiveReport | null;
       reason: string | null;
       events: MatchEvent[];
+      momentum: LiveMomentum | null;
     }
   | { state: "error" };
 
@@ -62,8 +64,10 @@ function queryFor(fixture: UpcomingFixture): URLSearchParams {
  */
 function useLiveReport(fixture: UpcomingFixture): PanelState {
   const [data, setData] = useState<PanelState>({ state: "loading" });
+  const previousSnapshot = useRef<LiveSnapshot | null>(null);
 
   useEffect(() => {
+    previousSnapshot.current = null;
     const signal = { cancelled: false };
     const run = () => {
       fetch(`/api/live-report?${queryFor(fixture)}`)
@@ -75,11 +79,18 @@ function useLiveReport(fixture: UpcomingFixture): PanelState {
             events?: MatchEvent[];
           }) => {
             if (!signal.cancelled) {
+              const snapshot = d.report?.snapshot ?? null;
+              const momentum = deriveLiveMomentum(previousSnapshot.current, snapshot, {
+                home: fixture.home.name,
+                away: fixture.away.name,
+              });
+              if (snapshot) previousSnapshot.current = snapshot;
               setData({
                 state: "done",
                 report: d.report ?? null,
                 reason: d.reason ?? null,
                 events: d.events ?? [],
+                momentum,
               });
             }
           }
@@ -175,6 +186,22 @@ export function LiveReportPanel({ fixture }: { fixture: UpcomingFixture }) {
             {chips.map((c) => (
               <Chip key={c}>{c}</Chip>
             ))}
+          </div>
+        )}
+
+        {data.momentum && (
+          <div className="rounded-lg border border-accent/30 bg-accent-soft px-3 py-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+              Poslední úsek
+            </p>
+            <p className="mt-0.5 text-xs font-medium text-foreground">
+              {data.momentum.headline}
+            </p>
+            {data.momentum.details.length > 0 && (
+              <p className="mt-1 text-[11px] text-muted">
+                {data.momentum.details.join(" · ")}
+              </p>
+            )}
           </div>
         )}
 

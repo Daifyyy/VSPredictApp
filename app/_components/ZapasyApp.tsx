@@ -21,6 +21,7 @@ import { buildTipHref } from "./tipHref";
 import { useCurrentUser } from "./useCurrentUser";
 import { InstallLink } from "./InstallLink";
 import { preferredProgramDayIndex } from "@/lib/homeDashboard";
+import { FixtureModelCard } from "./FixtureModelCard";
 
 type View = "program" | "results";
 
@@ -39,6 +40,61 @@ function pragueToday(): string {
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
+}
+
+/** Zachová SSR kontext (rank/tip), ale stav a skóre vezme z čerstvého dneška. */
+export function mergeTodaySnapshot(
+  served: FixtureDay | undefined,
+  fresh: FixtureDay
+): FixtureDay {
+  const servedFixtures = new Map((served?.fixtures ?? []).map((fixture) => [fixture.fixtureId, fixture]));
+  const servedPlayed = new Map((served?.played ?? []).map((fixture) => [fixture.fixtureId, fixture]));
+  return {
+    date: fresh.date,
+    fixtures: fresh.fixtures.map((fixture) => {
+      const old = servedFixtures.get(fixture.fixtureId);
+      return old ? { ...fixture, homeRank: old.homeRank, awayRank: old.awayRank } : fixture;
+    }),
+    played: fresh.played.map((fixture) => {
+      const old = servedPlayed.get(fixture.fixtureId);
+      return old?.tip ? { ...fixture, tip: old.tip } : fixture;
+    }),
+  };
+}
+
+/** Synchronizace běží v Programu i Výsledcích; server ji sdílí přes krátkou cache. */
+function useTodaySnapshot(today: string | null): FixtureDay | null {
+  const [snapshot, setSnapshot] = useState<FixtureDay | null>(null);
+  useEffect(() => {
+    if (!today) return;
+    let active = true;
+    const sync = () => {
+      if (document.hidden) return;
+      fetch("/api/fixtures/today")
+        .then((response) => {
+          if (!response.ok) throw new Error(String(response.status));
+          return response.json() as Promise<{ day?: FixtureDay }>;
+        })
+        .then(({ day }) => {
+          if (active && day?.date === today) setSnapshot(day);
+        })
+        .catch(() => {});
+    };
+    sync();
+    const timer = setInterval(sync, 90_000);
+    const onVisible = () => {
+      if (!document.hidden) sync();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [today]);
+  return snapshot;
 }
 
 /** Následující kalendářní den z YYYY-MM-DD (čistá aritmetika, nezávislá na zóně). */
@@ -405,6 +461,17 @@ export function ZapasyApp({
     };
   }, []);
 
+  const todaySnapshot = useTodaySnapshot(clientToday);
+  const syncedDays = useMemo(() => {
+    if (!todaySnapshot) return days;
+    const served = days.find((day) => day.date === todaySnapshot.date);
+    const merged = mergeTodaySnapshot(served, todaySnapshot);
+    return [
+      ...days.filter((day) => day.date !== todaySnapshot.date),
+      merged,
+    ].sort((a, b) => a.date.localeCompare(b.date));
+  }, [days, todaySnapshot]);
+
   // Odfiltruj minulé dny ze zastaralého snapshotu (yesterday-as-„Dnes" fix). Když by tím
   // nezbylo nic (extrémně starý snapshot), radši ukaž původní data než prázdno.
   //
@@ -413,10 +480,10 @@ export function ZapasyApp({
   // `resultDays` (= dnešek dle serveru) a Výsledky berou zbytek. Po mountu rozhoduje
   // skutečný pražský „dnes" na klientovi.
   const visibleDays = useMemo(() => {
-    if (!clientToday) return days.slice(resultDays);
-    const future = days.filter((d) => d.date >= clientToday);
-    return future.length > 0 ? future : days.slice(resultDays);
-  }, [days, clientToday, resultDays]);
+    if (!clientToday) return syncedDays.slice(resultDays);
+    const future = syncedDays.filter((d) => d.date >= clientToday);
+    return future.length > 0 ? future : syncedDays.slice(resultDays);
+  }, [syncedDays, clientToday, resultDays]);
 
   const nearestDayIdx = preferredProgramDayIndex(visibleDays);
   const effectiveDayIdx = !dayChosen && dayIdx === 0 && visibleDays[0]?.fixtures.length === 0 && nearestDayIdx > 0
@@ -438,9 +505,9 @@ export function ZapasyApp({
   // které dohrály za běhu stránky (jinak by čekaly na ISR regeneraci, až 10 min).
   const pastDays = useMemo(() => {
     const past = clientToday
-      ? days.filter((d) => d.date <= clientToday)
-      : days.slice(0, resultDays + 1);
-    const base = (past.length > 0 ? past : days.slice(0, resultDays + 1))
+      ? syncedDays.filter((d) => d.date <= clientToday)
+      : syncedDays.slice(0, resultDays + 1);
+    const base = (past.length > 0 ? past : syncedDays.slice(0, resultDays + 1))
       .slice()
       .reverse();
     if (justFinished.length === 0) return base;
@@ -449,7 +516,7 @@ export function ZapasyApp({
       const played = mergePlayed(d.played, extra);
       return played === d.played ? d : { ...d, played };
     });
-  }, [days, clientToday, resultDays, justFinished]);
+  }, [syncedDays, clientToday, resultDays, justFinished]);
 
   const activePast = pastDays[resultIdx] ?? pastDays[0];
   const playedCount = useMemo(
@@ -1038,6 +1105,7 @@ function FixtureRow({
   isFavorite: boolean;
   onToggleFavorite: (on: boolean) => void;
 }) {
+  const [modelOpen, setModelOpen] = useState(false);
   const time = new Date(fixture.kickoff).toLocaleTimeString("cs-CZ", {
     hour: "2-digit",
     minute: "2-digit",
@@ -1096,6 +1164,19 @@ function FixtureRow({
           </Link>
         ) : (
           <div className={cardClass}>{inner}</div>
+        )}
+        {!fixture.live && (
+          <div className="mt-1">
+            <button
+              type="button"
+              aria-expanded={modelOpen}
+              onClick={() => setModelOpen((open) => !open)}
+              className="min-h-11 rounded-lg px-3 text-xs font-semibold text-muted transition hover:bg-background hover:text-foreground"
+            >
+              {modelOpen ? "Skrýt model" : "Model před zápasem"}
+            </button>
+            {modelOpen && <FixtureModelCard fixtureId={fixture.fixtureId} />}
+          </div>
         )}
         {fixture.live && <LiveReportToggle fixture={fixture} />}
       </div>

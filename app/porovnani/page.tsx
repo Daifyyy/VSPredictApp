@@ -51,7 +51,9 @@ export async function generateMetadata({
   const mode = modeRaw === "NATIONAL" ? "NATIONAL" : "CLUB";
   const contextRaw = Array.isArray(sp.context) ? sp.context[0] : sp.context;
   const context = contextRaw === "EURO_CUP" ? "&context=EURO_CUP" : "";
-  const canonical = `/porovnani?mode=${mode}&homeLeague=${homeLeague}&awayLeague=${awayLeague}&home=${home}&away=${away}${context}`;
+  const fixture = num(sp.fixture);
+  const fixtureParam = fixture != null ? `&fixture=${fixture}` : "";
+  const canonical = `/porovnani?mode=${mode}&homeLeague=${homeLeague}&awayLeague=${awayLeague}&home=${home}&away=${away}${context}${fixtureParam}`;
 
   return {
     title,
@@ -90,6 +92,7 @@ export default async function PorovnaniPage({
   const sp = await searchParams;
   const modeRaw = Array.isArray(sp.mode) ? sp.mode[0] : sp.mode;
   const initial: InitialSelection = {
+    fixture: num(sp.fixture),
     mode:
       modeRaw === "NATIONAL" || modeRaw === "CLUB"
         ? (modeRaw as EntityType)

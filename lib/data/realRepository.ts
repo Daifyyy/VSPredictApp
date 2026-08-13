@@ -401,7 +401,8 @@ export async function getCompareEuroCupTeamFromFixture(
   );
   const domestic = catalogs.find(({ teams }) => teams.some((team) => team.id === teamId));
   if (domestic) {
-    return buildClubTeam(teamId, domestic.league.id, true, meta);
+    const team = await buildClubTeam(teamId, domestic.league.id, true, meta);
+    return team ? { ...team, competitionContext: "EURO_CUP" } : null;
   }
 
   const raw = await cachedJson(`cupfix:${teamId}`, LIST_TTL, () =>
@@ -424,6 +425,7 @@ export async function getCompareEuroCupTeamFromFixture(
     entityType: "CLUB",
     leagueId: competitionId,
     leagueMatches: matches,
+    competitionContext: "EURO_CUP",
   };
 }
 
@@ -1079,6 +1081,23 @@ export async function getFixturesByDates(dates: string[]): Promise<FixtureDay[]>
     }
   }
   return days;
+}
+
+/**
+ * Čerstvý stav dnešního rozpisu pro klientskou synchronizaci Programu/Výsledků.
+ * Oddělený krátký cache klíč nečeká na hodinový `fixdate:*`; jeden sdílený upstream
+ * request za 90 s obslouží všechny uživatele a vrací i právě dokončené zápasy.
+ */
+export async function getTodayFixtureSnapshot(): Promise<FixtureDay> {
+  const date = pragueDay(new Date());
+  const raw = await cachedJsonMemo(`fixdate-now:${date}`, 30, LIVE_TTL, () =>
+    fetchFixturesByDate(date)
+  );
+  return {
+    date,
+    fixtures: normalizeUpcomingFixtures(raw),
+    played: normalizeFinishedFixtures(raw),
+  };
 }
 
 /**

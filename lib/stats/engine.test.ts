@@ -215,6 +215,16 @@ describe("resolveSource", () => {
     expect(resolveSource(teamA, teamB).source).toBe("LEAGUE");
   });
 
+  it("evropský fixture vynutí pohárovou směs i klubům ze stejné ligy", () => {
+    const euro = Array.from({ length: 3 }, (_, i) => clubMatch(300 + i, i + 1));
+    const resolved = resolveSource(
+      { ...teamA, competitionContext: "EURO_CUP", euroMatches: euro },
+      { ...teamB, competitionContext: "EURO_CUP", euroMatches: euro }
+    );
+    expect(resolved.source).toBe("EURO_BLEND");
+    expect(resolved.blend?.euroWeight).toBeCloseTo(0.385);
+  });
+
   it("různé země bez evropských dat → FALLBACK s upozorněním", () => {
     const r = resolveSource(teamA, { ...teamB, leagueId: 140, country: "Španělsko" });
     expect(r.source).toBe("FALLBACK");

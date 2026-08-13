@@ -38,6 +38,7 @@ import {
   getPredictionByFixture,
 } from "./predictionStore";
 import { MODEL_VERSION } from "./modelVersion";
+import { isCurrentContextVersion } from "./modelContext";
 import { summarizeSettled } from "@/lib/picks/results";
 import {
   buildMatchReview,
@@ -307,7 +308,10 @@ export async function stampPickRanks(picks: MatchPick[]): Promise<MatchPick[]> {
 
 /** Nadcházející predikce pro záložku (real = DB store, mock = generátor). */
 export async function getUpcomingPredictions(): Promise<PredictionRow[]> {
-  if (useReal) return getUpcomingPredictionRows();
+  if (useReal) {
+    const rows = await getUpcomingPredictionRows(MODEL_VERSION);
+    return rows.filter(isCurrentContextVersion);
+  }
   return mockUpcomingPredictions();
 }
 
@@ -338,7 +342,10 @@ export async function getNationalConfedMap(): Promise<Map<number, number>> {
 export async function getSettledPredictionRows(
   modelVersion: number = MODEL_VERSION
 ): Promise<PredictionRow[]> {
-  if (useReal) return getSettledPredictions(modelVersion);
+  if (useReal) {
+    const rows = await getSettledPredictions(modelVersion);
+    return rows.filter(isCurrentContextVersion);
+  }
   return mockSettledPredictions();
 }
 
@@ -655,6 +662,28 @@ function mockMatchStats(fixtureId: number): {
 export async function getLeagueTable(leagueId: number): Promise<LeagueTable | null> {
   if (useReal) return real.getLeagueTable(leagueId);
   return mockLeagueTable(leagueId);
+}
+
+/** Jeden uložený předzápasový model pro kontextovou kartu u konkrétního fixture. */
+export async function getFixturePredictionRow(fixtureId: number): Promise<PredictionRow | null> {
+  if (useReal) {
+    const row = await getPredictionByFixture(fixtureId);
+    return row && row.modelVersion === MODEL_VERSION && isCurrentContextVersion(row) ? row : null;
+  }
+  return [...mockUpcomingPredictions(), ...mockSettledPredictions()]
+    .find((row) => row.fixtureId === fixtureId) ?? null;
+}
+
+/** Krátce cachovaný autoritativní stav dneška; bez tabulkových ranků, které UI zachová ze SSR. */
+export async function getTodayFixtureSnapshot(): Promise<FixtureDay> {
+  if (useReal) return real.getTodayFixtureSnapshot();
+  const date = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Prague",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  return mockFixturesByDates([date])[0] ?? { date, fixtures: [], played: [] };
 }
 
 export async function getCompareEuroCupTeamFromFixture(

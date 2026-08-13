@@ -176,6 +176,10 @@ model FixturePrediction {
   /// dataset (kalibrace/track-record běží per verzi), proto ho NEbumpuj kvůli ρ/zostření –
   /// ty jsou post-parametry nad λ a přepočítají se (viz `rho`/`sharpen`).
   modelVersion  Int       @default(1)
+  /// Datová populace predikce; kalibrace lig, Evropy a reprezentací se nikdy nemíchá.
+  modelContext  String    @default("LEAGUE")
+  /// Vlastní verze kontextu. Změna evropského sestavení neresetuje ligový vzorek.
+  contextVersion Int      @default(1)
   /// Post-parametry, kterými byly z λ odvozeny pravděpodobnosti výše (Dixon–Coles ρ,
   /// zostření λ). Umožňují ladit model bez ztráty historie: `npm run reprice` najde
   /// řádky s jinými hodnotami než aktuální konstanty a přepočte je z λ. null = řádek
@@ -274,6 +278,7 @@ model FixturePrediction {
   /// (`getSettledPredictionRows` filtruje defaultně), takže je to nejčastější predikát
   /// nad touhle tabulkou – a bez indexu se skenovala celá.
   @@index([modelVersion])
+  @@index([modelContext, contextVersion, modelVersion])
 }
 
 /// Přestup hráče (záložka Přestupy, top-5 lig). Plní cron na pozadí (refresh-transfers);

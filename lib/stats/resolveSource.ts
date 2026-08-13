@@ -35,7 +35,10 @@ export function resolveSource(home: Team, away: Team): ResolvedSource {
     };
   }
 
-  if (home.leagueId === away.leagueId) {
+  const forcedEuro =
+    home.competitionContext === "EURO_CUP" || away.competitionContext === "EURO_CUP";
+
+  if (home.leagueId === away.leagueId && !forcedEuro) {
     return {
       source: "LEAGUE",
       homeMatches: home.leagueMatches,

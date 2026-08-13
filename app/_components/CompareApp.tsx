@@ -41,6 +41,7 @@ import {
   type Selection,
 } from "./FavoritesSection";
 import type { SessionUser } from "./sessionUser";
+import { FixtureModelCard } from "./FixtureModelCard";
 
 interface TeamLite {
   id: number;
@@ -51,6 +52,7 @@ interface TeamLite {
 
 /** Počáteční výběr načtený z URL (server page → props). */
 export interface InitialSelection {
+  fixture?: number;
   mode?: EntityType;
   homeLeague?: number;
   awayLeague?: number;
@@ -275,6 +277,10 @@ export function CompareApp({
     isEuroCupLeague(homeLeagueId);
   const [homeId, setHomeId] = useState<number | null>(initial?.home ?? null);
   const [awayId, setAwayId] = useState<number | null>(initial?.away ?? null);
+  const fixtureId =
+    initial?.fixture != null && initial.home === homeId && initial.away === awayId
+      ? initial.fixture
+      : null;
   const [venue, setVenue] = useState<Venue>("TOTAL");
   const [result, setResult] = useState<CompareResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -457,8 +463,9 @@ export function CompareApp({
     if (homeId != null) params.set("home", String(homeId));
     if (awayId != null) params.set("away", String(awayId));
     if (europeanCup) params.set("context", "EURO_CUP");
+    if (fixtureId != null) params.set("fixture", String(fixtureId));
     window.history.replaceState(null, "", `?${params.toString()}`);
-  }, [mode, homeLeagueId, awayLeagueId, homeId, awayId, europeanCup]);
+  }, [mode, homeLeagueId, awayLeagueId, homeId, awayId, europeanCup, fixtureId]);
 
   // Klubový režim = výběr ligy, reprezentační = výběr konfederace (obojí per tým).
   const leagueLabel = mode === "CLUB" ? "Liga" : "Konfederace";
@@ -603,6 +610,7 @@ export function CompareApp({
         homeLeagueId={homeLeagueId}
         awayLeagueId={awayLeagueId}
         europeanCup={europeanCup}
+        fixtureId={fixtureId}
         user={user}
         trialAvailable={trialAvailable}
         unlocking={unlocking}
@@ -633,6 +641,7 @@ function ResultPanel({
   homeLeagueId,
   awayLeagueId,
   europeanCup,
+  fixtureId,
   user,
   trialAvailable,
   unlocking,
@@ -655,6 +664,7 @@ function ResultPanel({
   homeLeagueId: number | null;
   awayLeagueId: number | null;
   europeanCup: boolean;
+  fixtureId: number | null;
   user: SessionUser | null;
   trialAvailable: boolean;
   unlocking: boolean;
@@ -786,6 +796,11 @@ function ResultPanel({
                 awayName={result.away.team.name}
                 embedded
               />
+              {fixtureId != null && (
+                <div className="mt-3">
+                  <FixtureModelCard fixtureId={fixtureId} countsOnly />
+                </div>
+              )}
             </div>
           )}
           {result.insightReport && (

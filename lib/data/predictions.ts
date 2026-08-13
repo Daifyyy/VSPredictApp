@@ -68,6 +68,7 @@ import {
   type CoveredMarket,
   type MarketCoverage,
 } from "./oddsCoverage";
+import { MODEL_CONTEXT_VERSION, modelContextForLeague } from "./modelContext";
 
 /**
  * Orchestrace predikční pipeline (běží jen na pozadí / cron, real data).
@@ -299,6 +300,7 @@ export async function runPredictUpcoming(
     // venue-split (home/away z fixtures → predikce má domácí výhodu).
     const national = isNationalTournamentLeague(leagueId);
     const europeanCup = isEuroCupLeague(leagueId);
+    const modelContext = modelContextForLeague(leagueId);
     const homeAway = national && isNationalHomeAwayLeague(leagueId);
     // Ligové měřítko pro λ – 1× per liga, z už cachované tabulky (0 API navíc).
     // Reprezentace tabulku nemají → null → predikce použije typický default.
@@ -389,6 +391,8 @@ export async function runPredictUpcoming(
             ? Math.min(3, p.readiness.sample)
             : p.readiness.sample,
           modelVersion: MODEL_VERSION,
+          modelContext,
+          contextVersion: MODEL_CONTEXT_VERSION[modelContext],
           lambdaCornersHome: countLambdas?.corners?.lambdaHome ?? null,
           lambdaCornersAway: countLambdas?.corners?.lambdaAway ?? null,
           lambdaCardsHome: countLambdas?.cards?.lambdaHome ?? null,

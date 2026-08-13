@@ -374,6 +374,20 @@ export interface Team {
   leagueMatches: MatchStat[];
   /** Zápasy v evropských pohárech (UCL/UEL/UECL), pokud tým hraje. */
   euroMatches?: MatchStat[];
+  /** Soutěž konkrétního fixture může vynutit pohárový zdroj i u klubů ze stejné ligy. */
+  competitionContext?: "EURO_CUP";
+}
+
+/** Bezpečný UI payload uložené předzápasové predikce; bez kurzů a interních parametrů. */
+export interface FixtureModelForecast {
+  fixtureId: number;
+  experimental: boolean;
+  lowConfidence: boolean;
+  readinessSample: number;
+  outcome: { home: number; draw: number; away: number };
+  goals: { home: number; away: number; over25: number; btts: number };
+  corners: { home: number; away: number; total: number } | null;
+  cards: { home: number; away: number; total: number } | null;
 }
 
 export interface TeamStadium {
@@ -780,6 +794,9 @@ export interface PredictionRow {
   readinessSample: number;
   /** Verze modelu, který spočítal λ (okna/váhy/xG/build týmů). Bump = reset datasetu. */
   modelVersion: number;
+  /** Odděluje nesrovnatelné populace bez globálního resetu modelu. */
+  modelContext?: "LEAGUE" | "EURO_CUP" | "NATIONAL";
+  contextVersion?: number;
   /**
    * Post-parametry, kterými byly z λ odvozeny pravděpodobnosti výše (Dixon–Coles ρ a
    * zostření λ). Mimo `modelVersion` schválně: jde je změnit a historii **přepočítat**
