@@ -104,9 +104,15 @@ export function isHalfLine(line: number): boolean {
   return Number.isFinite(line) && Math.abs(line * 2 - Math.round(line * 2)) < 1e-8 && Math.abs(line - Math.round(line)) > 1e-8;
 }
 
-/** Nejlépe pokrytá skutečně uložená půlková linie. */
+/** Hlavní půlková linie je ta, na které je odmaržovaný trh nejblíž 50/50. */
 export function mainHalfLine(books: BookOdds[], market: LineMarket): number | null {
-  return marketLines(books, market).find(({ line }) => isHalfLine(line))?.line ?? null;
+  return marketLines(books, market)
+    .filter(({ line }) => isHalfLine(line))
+    .flatMap((candidate) => {
+      const fair = sharpLineFair(books, market, candidate.line);
+      return fair ? [{ ...candidate, balance: Math.abs(fair.over - 0.5) }] : [];
+    })
+    .sort((a, b) => a.balance - b.balance || b.books - a.books || a.line - b.line)[0]?.line ?? null;
 }
 
 export function buildCountForecast(

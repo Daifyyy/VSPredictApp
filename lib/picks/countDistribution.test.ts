@@ -65,7 +65,7 @@ describe("tržní směr", () => {
     expect(forecast.smallSample).toBe(true);
   });
 
-  it("použije jen nejlépe pokrytou půlkovou linii", () => {
+  it("použije vyrovnanou hlavní půlkovou linii", () => {
     const books = [
       book([{ line: 9, over: 1.9, under: 1.9 }, { line: 9.25, over: 1.9, under: 1.9 }, { line: 10.5, over: 1.9, under: 1.9 }]),
       book([{ line: 10.5, over: 1.8, under: 2 }]),
@@ -74,6 +74,15 @@ describe("tržní směr", () => {
     expect(isHalfLine(9)).toBe(false);
     expect(isHalfLine(9.25)).toBe(false);
     expect(isHalfLine(9.5)).toBe(true);
+  });
+
+  it("alternativní téměř jistou linii nezamění za hlavní trh", () => {
+    const books = [book([
+      { line: 4.5, over: 1.02, under: 15 },
+      { line: 8.5, over: 1.92, under: 1.92 },
+      { line: 10.5, over: 2.7, under: 1.45 },
+    ])];
+    expect(mainHalfLine(books, "corners")).toBe(8.5);
   });
 
   it("bez půlkové linie nic nevymýšlí", () => {

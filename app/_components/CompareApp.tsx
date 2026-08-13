@@ -539,22 +539,6 @@ export function CompareApp({
             onLeagueChange={handleAwayLeague}
           />
         </div>
-        {mode === "CLUB" && (
-          <div className="mt-4 border-t border-border pt-4">
-            <p className="mb-2 text-center text-[11px] font-semibold uppercase tracking-wide text-muted">
-              Prostředí porovnání
-            </p>
-            <Segmented
-              options={(["HOME", "AWAY", "TOTAL"] as Venue[]).map((v) => ({
-                value: v,
-                label: VENUE_LABELS[v],
-              }))}
-              value={venue}
-              onChange={setVenue}
-              ariaLabel="Doma / Venku / Celkově"
-            />
-          </div>
-        )}
       </section>
 
       {(homeId != null || awayId != null) && (
@@ -595,6 +579,7 @@ export function CompareApp({
         key={`${homeId ?? 0}-${awayId ?? 0}`}
         result={result}
         venue={venue}
+        onVenueChange={setVenue}
         loading={loading}
         error={error}
         ready={canCompare}
@@ -626,6 +611,7 @@ type ViewMode = "raw" | "category" | "style";
 function ResultPanel({
   result,
   venue,
+  onVenueChange,
   loading,
   error,
   ready,
@@ -649,6 +635,7 @@ function ResultPanel({
 }: {
   result: CompareResult | null;
   venue: Venue;
+  onVenueChange: (venue: Venue) => void;
   loading: boolean;
   error: string | null;
   ready: boolean;
@@ -824,16 +811,26 @@ function ResultPanel({
             Jak si týmy vedou
           </h2>
         </div>
-        <Segmented
-          options={[
-            { value: "category" as ViewMode, label: "Kategorie" },
-            { value: "style" as ViewMode, label: "Styl hry" },
-            { value: "raw" as ViewMode, label: "Detailní statistiky" },
-          ]}
-          value={viewMode}
-          onChange={setViewMode}
-          ariaLabel="Pohled na statistiky"
-        />
+        <div className={`grid gap-2 ${entityMode === "CLUB" ? "lg:grid-cols-[minmax(0,1fr)_minmax(18rem,.55fr)]" : ""}`}>
+          <Segmented
+            options={[
+              { value: "category" as ViewMode, label: "Kategorie" },
+              { value: "style" as ViewMode, label: "Styl hry" },
+              { value: "raw" as ViewMode, label: "Detailní statistiky" },
+            ]}
+            value={viewMode}
+            onChange={setViewMode}
+            ariaLabel="Pohled na statistiky"
+          />
+          {entityMode === "CLUB" && (
+            <Segmented
+              options={(["HOME", "AWAY", "TOTAL"] as Venue[]).map((value) => ({ value, label: VENUE_LABELS[value] }))}
+              value={venue}
+              onChange={onVenueChange}
+              ariaLabel="Prostředí statistik: doma, venku nebo celkově"
+            />
+          )}
+        </div>
 
       {viewMode === "raw" && (
         <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6">
