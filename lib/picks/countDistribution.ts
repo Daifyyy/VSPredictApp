@@ -1,11 +1,10 @@
 import type { BookOdds } from "@/lib/data/apiFootball";
-import { marketLines, type LineMarket } from "./books";
+import { marketLines, sharpLineFair, type LineMarket } from "./books";
 import { overProbNegBin } from "./corners";
 
 export const COUNT_VARIANCE_RATIO = 1.2;
 export const COUNT_INTERVAL_MASS = 0.7;
-export const COUNT_DIRECTION_MIN_PROBABILITY = 0.65;
-export const COUNT_DIRECTION_MIN_SAMPLE = 6;
+export const COUNT_EXPERIMENTAL_SAMPLE = 200;
 
 export interface CountProbability {
   count: number;
@@ -18,10 +17,11 @@ export interface CountProbabilityInterval {
   probability: number;
 }
 
-export interface CountDirection {
-  side: "over" | "under";
-  line: number;
-  probability: number;
+function nextReviewSample(sample: number): 50 | 100 | 200 | null {
+  if (sample < 50) return 50;
+  if (sample < 100) return 100;
+  if (sample < 200) return 200;
+  return null;
 }
 
 /** Normalizované negativně binomické rozdělení celkového počtu. */
@@ -109,50 +109,38 @@ export function mainHalfLine(books: BookOdds[], market: LineMarket): number | nu
   return marketLines(books, market).find(({ line }) => isHalfLine(line))?.line ?? null;
 }
 
-export function chooseCountDirection(
-  line: number,
-  overProbability: number,
-  reliable: boolean,
-  minimum = COUNT_DIRECTION_MIN_PROBABILITY
-): CountDirection | null {
-  if (!reliable) return null;
-  const underProbability = 1 - overProbability;
-  if (overProbability >= minimum) return { side: "over", line, probability: overProbability };
-  if (underProbability >= minimum) return { side: "under", line, probability: underProbability };
-  return null;
-}
-
 export function buildCountForecast(
   home: number | null | undefined,
   away: number | null | undefined,
   options: {
     books: BookOdds[];
     market: Extract<LineMarket, "corners" | "cards">;
-    lowConfidence: boolean;
-    readinessSample: number;
+    varianceRatio?: number | null;
+    version?: number | null;
+    evaluatedSample: number;
   }
 ) {
   if (home == null || away == null) return null;
   const total = home + away;
-  const probabilities = countProbabilities(total);
-  const interval = shortestProbabilityInterval(probabilities);
-  if (!interval) return null;
   const line = mainHalfLine(options.books, options.market);
-  const reliable = !options.lowConfidence && options.readinessSample >= COUNT_DIRECTION_MIN_SAMPLE;
-  const overProbability = line == null ? null : overProbNegBin(total, line, COUNT_VARIANCE_RATIO);
+  const varianceRatio = options.varianceRatio ?? COUNT_VARIANCE_RATIO;
+  const overProbability = line == null ? null : overProbNegBin(total, line, varianceRatio);
+  const market = line == null ? null : sharpLineFair(options.books, options.market, line);
   return {
     home,
     away,
     total,
-    interval,
-    topCounts: topExactCounts(probabilities),
     line,
     overProbability,
     underProbability: overProbability == null ? null : 1 - overProbability,
-    reliable,
-    direction:
-      line == null || overProbability == null
-        ? null
-        : chooseCountDirection(line, overProbability, reliable),
+    marketOverProbability: market?.over ?? null,
+    marketUnderProbability: market?.under ?? null,
+    overDifference:
+      overProbability != null && market != null ? overProbability - market.over : null,
+    version: options.version ?? 0,
+    varianceRatio,
+    evaluatedSample: options.evaluatedSample,
+    smallSample: options.evaluatedSample < COUNT_EXPERIMENTAL_SAMPLE,
+    nextReviewSample: nextReviewSample(options.evaluatedSample),
   };
 }

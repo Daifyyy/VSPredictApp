@@ -360,9 +360,13 @@ function CountResult({ label, value }: { label: string; value: NonNullable<Match
   return (
     <div className="border-b border-border/70 py-2 last:border-b-0">
       <Row label={`${label} (očekávání × skutečnost)`} value={`${value.expectedTotal} × ${value.actualTotal}`} />
-      <p className="text-[10px] text-muted">
-        Tehdejší 70% interval {value.interval.low}–{value.interval.high} · skutečnost byla {value.actualWithinInterval ? "uvnitř" : "mimo"} interval.
-      </p>
+      {value.line != null && value.overProbability != null ? (
+        <p className="text-[10px] text-muted">
+          Linie {value.line.toLocaleString("cs-CZ")} · model Over {Math.round(value.overProbability * 100)} %
+          {value.marketOverProbability != null ? ` · trh ${Math.round(value.marketOverProbability * 100)} %` : ""}
+          {` · skutečnost ${value.actualTotal} (${value.actualOver ? "Over" : "Under"})`}. Experimentální prognóza, nikoli tip.
+        </p>
+      ) : <p className="text-[10px] text-muted">Předzápasová půlková linie nebyla uložená.</p>}
     </div>
   );
 }

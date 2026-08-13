@@ -53,4 +53,28 @@ describe("computeCountModelAccuracy", () => {
     expect(out.corners).toMatchObject({ eligible: 2, n: 1, coverage: .5 });
     expect(out.cards).toMatchObject({ eligible: 2, n: 0, coverage: 0 });
   });
+
+  it("vyhodnotí Over/Under proti uložené linii a nemíchá verze", () => {
+    const oddsBooks = [{
+      id: 1, name: "Sharp", home: null, draw: null, away: null,
+      over25: null, under25: null, btts: null, bttsNo: null,
+      corners: [{ line: 9.5, over: 1.9, under: 1.9 }],
+      cards: [{ line: 4.5, over: 2, under: 2 }],
+    }];
+    const rows = [
+      row({ fixtureId: 1, oddsBooks, countModelVersion: 1, cornerVarianceRatio: 1.2, cardVarianceRatio: 1.2 }),
+      row({ fixtureId: 2, oddsBooks, countModelVersion: 0, cornerVarianceRatio: 1.2, cardVarianceRatio: 1.2 }),
+    ];
+    const actual = new Map([
+      [1, { corners: 11, cards: 6 }],
+      [2, { corners: 8, cards: 3 }],
+    ]);
+    const out = computeCountModelAccuracy(rows, actual);
+    expect(out.corners.versions.map((version) => version.version)).toEqual([1, 0]);
+    expect(out.corners.versions[0]).toMatchObject({ n: 1, lineN: 1, varianceRatio: 1.2 });
+    expect(out.corners.versions[0].brier).not.toBeNull();
+    expect(out.corners.versions[0].logLoss).not.toBeNull();
+    expect(out.corners.versions[0].calibration.reduce((sum, bin) => sum + bin.n, 0)).toBe(1);
+    expect(out.corners.versions[0].edgeBands.reduce((sum, band) => sum + band.n, 0)).toBe(1);
+  });
 });

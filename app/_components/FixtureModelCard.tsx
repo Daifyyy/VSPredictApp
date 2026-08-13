@@ -81,7 +81,7 @@ export function FixtureModelCard({
       </div>
       {(f.corners || f.cards) && (
         <p className="text-[10px] leading-relaxed text-muted">
-          Statistický směr není publikovaný tip ani potvrzená výhoda proti trhu.
+          Jde o experimentální porovnání, nikoli publikovaný tip ani potvrzenou výhodu proti trhu.
         </p>
       )}
     </div>
@@ -117,36 +117,46 @@ function CountMetric({
     );
   }
   const pct = (probability: number) => `${Math.round(probability * 100)} %`;
-  const unit = market === "corners" ? "rohu" : "karty";
-  const exact = value.topCounts
-    .map(({ count, probability }) => `${count} · ${pct(probability)}`)
-    .join(" · ");
-  const direction = value.direction
-    ? `${value.direction.side === "over" ? "Přes" : "Méně než"} ${value.direction.line.toLocaleString("cs-CZ")} ${unit} · ${pct(value.direction.probability)}`
-    : value.line == null
-      ? "Tržní půlková linie není uložená"
-      : "Bez jasného statistického směru";
+  const pp = (difference: number) => `${difference >= 0 ? "+" : ""}${Math.round(difference * 100)} p. b.`;
   return (
     <div className="rounded-lg bg-surface px-3 py-3 text-left text-muted">
-      <strong className="text-foreground">{presentation.icon} {presentation.label}</strong>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <strong className="text-foreground">{presentation.icon} {presentation.label}</strong>
+        <span className="rounded-full bg-warning/10 px-2 py-0.5 text-[10px] font-semibold text-warning">
+          Experimentální odhad · {value.evaluatedSample} vyhodnoceno
+        </span>
+      </div>
       <dl className="mt-2 space-y-1.5">
         <CountRow label="Očekávání" value={`${value.home.toFixed(1)} : ${value.away.toFixed(1)} · ${value.total.toFixed(1)} celkem`} />
-        <CountRow label="70% interval" value={`${value.interval.low}–${value.interval.high}`} />
-        <CountRow label="Nejčastější počty" value={exact} />
-        <CountRow label="Statistický směr" value={direction} strong={Boolean(value.direction)} />
+        {value.line != null && value.overProbability != null && value.underProbability != null ? (
+          <>
+            <CountRow label={`Model · linie ${value.line.toLocaleString("cs-CZ")}`} value={`Over ${pct(value.overProbability)} · Under ${pct(value.underProbability)}`} />
+            {value.marketOverProbability != null && value.marketUnderProbability != null && value.overDifference != null ? (
+              <>
+                <CountRow label="Odmaržovaný trh" value={`Over ${pct(value.marketOverProbability)} · Under ${pct(value.marketUnderProbability)}`} />
+                <CountRow
+                  label="Rozdíl model–trh"
+                  value={`${value.overDifference >= 0 ? "Over" : "Under"} ${pp(Math.abs(value.overDifference))}`}
+                />
+              </>
+            ) : <CountRow label="Porovnání s trhem" value="Chybí obě strany kurzu" />}
+          </>
+        ) : <CountRow label="Porovnání s trhem" value="Půlková linie není uložená" />}
       </dl>
       <p className="mt-2 text-[10px] leading-relaxed">
-        Očekávání je modelový průměr, interval pokrývá nejméně 70 % možností a směr se ukáže jen proti uložené tržní linii.
+        Verze {value.version} · disperze {value.varianceRatio.toFixed(1)}
+        {value.nextReviewSample ? ` · další kontrola při ${value.nextReviewSample}` : " · připraveno k ručnímu posouzení"}.
+        Rozdíl pouze ukazuje, kde se neověřený model liší od trhu.
       </p>
     </div>
   );
 }
 
-function CountRow({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
+function CountRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 border-b border-border/60 pb-1 last:border-0">
       <dt>{label}</dt>
-      <dd className={strong ? "font-semibold text-positive" : "font-semibold text-foreground"}>{value}</dd>
+      <dd className="font-semibold text-foreground">{value}</dd>
     </div>
   );
 }

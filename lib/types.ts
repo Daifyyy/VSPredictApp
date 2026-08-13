@@ -403,13 +403,17 @@ export interface CountModelForecast {
   home: number;
   away: number;
   total: number;
-  interval: { low: number; high: number; probability: number };
-  topCounts: { count: number; probability: number }[];
   line: number | null;
   overProbability: number | null;
   underProbability: number | null;
-  reliable: boolean;
-  direction: { side: "over" | "under"; line: number; probability: number } | null;
+  marketOverProbability: number | null;
+  marketUnderProbability: number | null;
+  overDifference: number | null;
+  version: number;
+  varianceRatio: number;
+  evaluatedSample: number;
+  smallSample: boolean;
+  nextReviewSample: 50 | 100 | 200 | null;
 }
 
 export interface TeamStadium {
@@ -851,6 +855,9 @@ export interface PredictionRow {
   lambdaCornersAway?: number | null;
   lambdaCardsHome?: number | null;
   lambdaCardsAway?: number | null;
+  countModelVersion?: number | null;
+  cornerVarianceRatio?: number | null;
+  cardVarianceRatio?: number | null;
   /** Faktor rozhodčího u karet; `1`/`0` = neutrální (index se zatím nestaví). */
   refereeFactor?: number | null;
   refereeSample?: number | null;

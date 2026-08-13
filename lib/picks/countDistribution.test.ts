@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { BookOdds } from "@/lib/data/apiFootball";
 import {
-  chooseCountDirection,
+  buildCountForecast,
   countProbabilities,
   isHalfLine,
   mainHalfLine,
@@ -51,14 +51,18 @@ describe("countProbabilities", () => {
 });
 
 describe("tržní směr", () => {
-  it("hranice 65 % je včetně, 64,9 % nestačí", () => {
-    expect(chooseCountDirection(9.5, 0.649, true)).toBeNull();
-    expect(chooseCountDirection(9.5, 0.65, true)).toMatchObject({ side: "over" });
-    expect(chooseCountDirection(9.5, 0.35, true)).toMatchObject({ side: "under" });
-  });
-
-  it("malý nebo low-confidence vzorek směr nevydá", () => {
-    expect(chooseCountDirection(4.5, 0.8, false)).toBeNull();
+  it("porovná model s odmaržovaným trhem bez sázkového prahu", () => {
+    const forecast = buildCountForecast(5, 5, {
+      books: [book([{ line: 9.5, over: 2, under: 2 }])],
+      market: "corners",
+      varianceRatio: 1.2,
+      version: 1,
+      evaluatedSample: 18,
+    })!;
+    expect(forecast.line).toBe(9.5);
+    expect(forecast.marketOverProbability).toBeCloseTo(0.5);
+    expect(forecast.overDifference).toBeCloseTo(forecast.overProbability! - 0.5);
+    expect(forecast.smallSample).toBe(true);
   });
 
   it("použije jen nejlépe pokrytou půlkovou linii", () => {

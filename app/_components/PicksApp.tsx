@@ -571,6 +571,35 @@ function CountAccuracyCard({ icon, label, value }: { icon: string; label: string
     <div className="rounded-xl bg-background p-3">
       <div className="flex items-center justify-between"><span className="text-sm font-semibold text-foreground">{icon} {label}</span><span className="text-[10px] text-muted">pokrytí {value.coverage == null ? "—" : `${Math.round(value.coverage * 100)} %`}</span></div>
       {value.n > 0 ? <><div className="mt-2 flex items-baseline gap-2"><strong className="text-2xl tabular-nums text-foreground">{Math.round(value.toleranceRate! * 100)} %</strong><span className="text-xs text-muted">v toleranci ({value.withinTolerance}/{value.n})</span></div><p className="mt-1 text-[11px] text-muted">Průměrná absolutní chyba {value.mae!.toFixed(1)}</p></> : <p className="mt-2 text-sm text-muted">Zatím chybí společný vzorek predikce a skutečnosti.</p>}
+      {value.versions.map((version) => (
+        <details key={version.version} className="mt-3 border-t border-border pt-2 text-[11px]">
+          <summary className="cursor-pointer font-semibold text-foreground">
+            Experimentální model v{version.version} · {version.lineN}/{version.n} s tržní linií
+          </summary>
+          <div className="mt-2 grid grid-cols-3 gap-2 text-muted">
+            <span>Brier<br /><b className="text-foreground">{version.brier?.toFixed(3) ?? "—"}</b></span>
+            <span>Log-loss<br /><b className="text-foreground">{version.logLoss?.toFixed(3) ?? "—"}</b></span>
+            <span>Kalibrační chyba<br /><b className="text-foreground">{version.ece?.toFixed(3) ?? "—"}</b></span>
+          </div>
+          <p className="mt-2 text-muted">Disperze {version.varianceRatio.toFixed(1)} · malý vzorek, bez sázkového doporučení.</p>
+          {version.calibration.some((bin) => bin.n > 0) && (
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full min-w-[320px] text-left">
+                <thead><tr className="text-muted"><th>Pásmo modelu</th><th>n</th><th>Model</th><th>Skutečnost</th></tr></thead>
+                <tbody>{version.calibration.filter((bin) => bin.n > 0).map((bin) => <tr key={bin.lower} className="border-t border-border"><td>{Math.round(bin.lower * 100)}–{Math.round(bin.upper * 100)} %</td><td>{bin.n}</td><td>{bin.predicted == null ? "—" : `${Math.round(bin.predicted * 100)} %`}</td><td>{bin.observed == null ? "—" : `${Math.round(bin.observed * 100)} %`}</td></tr>)}</tbody>
+              </table>
+            </div>
+          )}
+          {version.edgeBands.some((band) => band.n > 0) && (
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full min-w-[390px] text-left">
+                <thead><tr className="text-muted"><th>Model–trh</th><th>n</th><th>Model</th><th>Trh</th><th>Skutečnost</th></tr></thead>
+                <tbody>{version.edgeBands.filter((band) => band.n > 0).map((band) => <tr key={band.label} className="border-t border-border"><td>{band.label}</td><td>{band.n}</td><td>{band.predicted == null ? "—" : `${Math.round(band.predicted * 100)} %`}</td><td>{band.market == null ? "—" : `${Math.round(band.market * 100)} %`}</td><td>{band.observed == null ? "—" : `${Math.round(band.observed * 100)} %`}</td></tr>)}</tbody>
+              </table>
+            </div>
+          )}
+        </details>
+      ))}
     </div>
   );
 }

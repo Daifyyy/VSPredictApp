@@ -210,6 +210,10 @@ model FixturePrediction {
   lambdaCornersAway Float?
   lambdaCardsHome   Float?
   lambdaCardsAway   Float?
+  /// Auditní snapshot počtového modelu. v0 = legacy s disperzí 1,2; v1 = explicitní verze.
+  countModelVersion    Int?
+  cornerVarianceRatio Float?
+  cardVarianceRatio   Float?
   /// Faktor rozhodčího použitý u karet a velikost vzorku, ze kterého vyšel. `1`/`0`
   /// = rozhodčí se nepromítl (index se v produkci zatím nestaví) – ať je poznat
   /// „neutrální faktor" od „změřeného faktoru, který vyšel 1".

@@ -8,6 +8,32 @@ import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
 import { logError } from "@/lib/logError";
 import { parseBooks } from "@/lib/picks/books";
 import { buildCountForecast } from "@/lib/picks/countDistribution";
+import { getSettledPredictionRows } from "@/lib/data/repository";
+import { getCachedCountTotals } from "@/lib/data/cache";
+import { unstable_cache } from "next/cache";
+import { isRealDataConfigured } from "@/lib/db";
+
+const countSamples = unstable_cache(async () => {
+  if (!isRealDataConfigured()) return {};
+  const rows = await getSettledPredictionRows();
+  const actual = await getCachedCountTotals(rows);
+  const out = new Map<string, number>();
+  for (const row of rows) {
+    const context = row.modelContext ?? "LEAGUE";
+    const counts = actual.get(row.fixtureId);
+    for (const market of ["corners", "cards"] as const) {
+      const home = market === "corners" ? row.lambdaCornersHome : row.lambdaCardsHome;
+      const away = market === "corners" ? row.lambdaCornersAway : row.lambdaCardsAway;
+      if (home == null || away == null || counts?.[market] == null) continue;
+      const version = row.countModelVersion ?? 0;
+      const varianceRatio =
+        (market === "corners" ? row.cornerVarianceRatio : row.cardVarianceRatio) ?? 1.2;
+      const key = `${context}:${market}:${version}:${varianceRatio}`;
+      out.set(key, (out.get(key) ?? 0) + 1);
+    }
+  }
+  return Object.fromEntries(out);
+}, ["count-model-samples"], { revalidate: 300 });
 
 export async function GET(req: Request) {
   if (!allowRequest(`fixture-model:${clientKey(req)}`, 60, 60_000)) return tooMany();
@@ -24,10 +50,12 @@ export async function GET(req: Request) {
     const row = await getFixturePredictionRow(fixtureId);
     if (!row || !row.available) return NextResponse.json({ forecast: null });
     const books = parseBooks(row.oddsBooks);
+    const samples = await countSamples();
+    const context = row.modelContext ?? "LEAGUE";
+    const version = row.countModelVersion ?? 0;
     const countOptions = {
       books,
-      lowConfidence: row.lowConfidence,
-      readinessSample: row.readinessSample,
+      evaluatedSample: 0,
     };
     const forecast: FixtureModelForecast = {
       fixtureId,
@@ -44,10 +72,16 @@ export async function GET(req: Request) {
       corners: buildCountForecast(row.lambdaCornersHome, row.lambdaCornersAway, {
         ...countOptions,
         market: "corners",
+        varianceRatio: row.cornerVarianceRatio,
+        version,
+        evaluatedSample: samples[`${context}:corners:${version}:${row.cornerVarianceRatio ?? 1.2}`] ?? 0,
       }),
       cards: buildCountForecast(row.lambdaCardsHome, row.lambdaCardsAway, {
         ...countOptions,
         market: "cards",
+        varianceRatio: row.cardVarianceRatio,
+        version,
+        evaluatedSample: samples[`${context}:cards:${version}:${row.cardVarianceRatio ?? 1.2}`] ?? 0,
       }),
     };
     return NextResponse.json({ forecast });

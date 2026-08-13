@@ -210,9 +210,12 @@ describe("buildMatchReview – rohy a karty", () => {
       actualHome: 3,
       actualAway: 8,
       actualTotal: 11,
-      actualWithinInterval: true,
+      line: null,
+      overProbability: null,
+      marketOverProbability: null,
+      actualOver: null,
+      version: 0,
     });
-    expect(review.corners?.interval.probability).toBeGreaterThanOrEqual(0.7);
     expect(review.cards?.expectedTotal).toBe(4.2);
     expect(review.cards?.actualTotal).toBe(6);
   });

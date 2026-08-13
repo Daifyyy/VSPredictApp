@@ -2,7 +2,9 @@ import type { PredictionRow, ScoreProbability } from "@/lib/types";
 import { PREDICT_PARAMS, gridProbs } from "@/lib/stats/predict";
 import { rowClv } from "./clv";
 import { actualOutcome, argmaxOutcome, probOfSide } from "./trackRecord";
-import { countProbabilities, shortestProbabilityInterval } from "./countDistribution";
+import { mainHalfLine } from "./countDistribution";
+import { overProbNegBin } from "./corners";
+import { parseBooks, sharpLineFair } from "./books";
 
 /**
  * **Model vs. skutečnost** k odehranému zápasu: co jsme před výkopem řekli, co říkal trh
@@ -68,8 +70,11 @@ export interface CountReview {
   actualHome: number;
   actualAway: number;
   actualTotal: number;
-  interval: { low: number; high: number; probability: number };
-  actualWithinInterval: boolean;
+  line: number | null;
+  overProbability: number | null;
+  marketOverProbability: number | null;
+  actualOver: boolean | null;
+  version: number;
 }
 
 export interface MatchReview {
@@ -112,12 +117,13 @@ export function buildMatchReview(
 ): MatchReview {
   const model = buildModel(row, goals);
   const market = model ? buildMarket(row, model) : null;
-  const corners = buildCount(
+  const corners = buildCount(row,
     row.lambdaCornersHome,
     row.lambdaCornersAway,
-    counts.corners
+    counts.corners,
+    "corners"
   );
-  const cards = buildCount(row.lambdaCardsHome, row.lambdaCardsAway, counts.cards);
+  const cards = buildCount(row, row.lambdaCardsHome, row.lambdaCardsAway, counts.cards, "cards");
 
   return { model, market, corners, cards, marketNotes: marketNotesOf(market) };
 }
@@ -180,15 +186,21 @@ function buildMarket(row: PredictionRow, model: ModelReview): MarketReview | nul
 
 /** Očekávané vs. skutečné počty; `null`, když chybí λ **nebo** skutečnost. */
 function buildCount(
+  row: PredictionRow,
   lambdaHome: number | null | undefined,
   lambdaAway: number | null | undefined,
-  actual: { home: number; away: number } | null
+  actual: { home: number; away: number } | null,
+  market: "corners" | "cards"
 ): CountReview | null {
   if (lambdaHome == null || lambdaAway == null || !actual) return null;
   const expectedTotal = lambdaHome + lambdaAway;
-  const interval = shortestProbabilityInterval(countProbabilities(expectedTotal));
-  if (!interval) return null;
   const actualTotal = actual.home + actual.away;
+  const books = parseBooks(row.oddsBooks);
+  const line = mainHalfLine(books, market);
+  const varianceRatio =
+    (market === "corners" ? row.cornerVarianceRatio : row.cardVarianceRatio) ?? 1.2;
+  const overProbability = line == null ? null : overProbNegBin(expectedTotal, line, varianceRatio);
+  const marketOverProbability = line == null ? null : sharpLineFair(books, market, line)?.over ?? null;
   return {
     expectedHome: round1(lambdaHome),
     expectedAway: round1(lambdaAway),
@@ -196,8 +208,11 @@ function buildCount(
     actualHome: actual.home,
     actualAway: actual.away,
     actualTotal,
-    interval,
-    actualWithinInterval: actualTotal >= interval.low && actualTotal <= interval.high,
+    line,
+    overProbability,
+    marketOverProbability,
+    actualOver: line == null ? null : actualTotal > line,
+    version: row.countModelVersion ?? 0,
   };
 }
 

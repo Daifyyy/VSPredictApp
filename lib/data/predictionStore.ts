@@ -4,6 +4,10 @@ import { prisma } from "@/lib/db";
 import { PREDICT_PARAMS } from "@/lib/stats/predict";
 import { FINISHED_STATUSES } from "./apiFootball";
 import { publishedOutcomeTip } from "@/lib/picks/publication";
+import { DEFAULT_CORNER_TUNING } from "@/lib/picks/corners";
+import { DEFAULT_CARD_TUNING } from "@/lib/picks/cards";
+
+export const COUNT_MODEL_VERSION = 1;
 
 /**
  * Úložiště predikcí nad tabulkou `FixturePrediction` (real DB). Plní ho cron na
@@ -85,6 +89,9 @@ function toRow(p: PredictionRowSource): PredictionRow {
     lambdaCornersAway: p.lambdaCornersAway,
     lambdaCardsHome: p.lambdaCardsHome,
     lambdaCardsAway: p.lambdaCardsAway,
+    countModelVersion: p.countModelVersion,
+    cornerVarianceRatio: p.cornerVarianceRatio,
+    cardVarianceRatio: p.cardVarianceRatio,
     refereeFactor: p.refereeFactor,
     refereeSample: p.refereeSample,
     status: p.status,
@@ -148,6 +155,12 @@ export async function upsertPrediction(row: PredictionUpsert): Promise<void> {
     lambdaCornersAway: row.lambdaCornersAway ?? null,
     lambdaCardsHome: row.lambdaCardsHome ?? null,
     lambdaCardsAway: row.lambdaCardsAway ?? null,
+    countModelVersion:
+      row.lambdaCornersHome != null || row.lambdaCardsHome != null ? COUNT_MODEL_VERSION : null,
+    cornerVarianceRatio:
+      row.lambdaCornersHome != null ? DEFAULT_CORNER_TUNING.varianceRatio : null,
+    cardVarianceRatio:
+      row.lambdaCardsHome != null ? DEFAULT_CARD_TUNING.varianceRatio : null,
     refereeFactor: row.refereeFactor ?? null,
     refereeSample: row.refereeSample ?? null,
     // Čím byly pravděpodobnosti odvozeny z λ – `reprice` podle toho pozná zastaralý řádek.
