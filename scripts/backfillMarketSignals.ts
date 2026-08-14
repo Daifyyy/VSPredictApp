@@ -7,7 +7,7 @@ import { parseSeries, pointProbs } from "../lib/picks/oddsSeries";
 async function main() {
   const rows = await prisma.fixturePrediction.findMany({
     where: { oddsBooks: { not: Prisma.DbNull } },
-    select: { fixtureId: true, oddsBooks: true, oddsCloseBooks: true, oddsFetchedAt: true, oddsCloseAt: true, oddsSeries: true },
+    select: { fixtureId: true, oddsBooks: true, oddsCloseBooks: true, oddsFetchedAt: true, oddsCloseAt: true, oddsSeries: true, oddsSeriesAt: true },
     orderBy: { kickoff: "asc" },
   });
   let opened = 0;
@@ -36,7 +36,6 @@ async function main() {
         // Starý kompaktní formát průběžné linky rohů a karet neobsahoval.
         return [];
       });
-      if (!restored.length) continue;
       const current = Array.isArray(signal.series)
         ? signal.series.filter((point): point is { t: number; p: number } =>
             typeof point === "object" && point !== null &&
@@ -46,7 +45,14 @@ async function main() {
       const merged = new Map<number, { t: number; p: number }>();
       for (const point of [...restored, ...current]) merged.set(point.t, point);
       const series = [...merged.values()].sort((a, b) => b.t - a.t).slice(-40);
-      await prisma.marketSignalSnapshot.update({ where: { id: signal.id }, data: { series } });
+      await prisma.marketSignalSnapshot.update({
+        where: { id: signal.id },
+        data: {
+          series,
+          sampleAttempts: Math.max(signal.sampleAttempts, legacy.length || 1),
+          lastSampleAttemptAt: row.oddsSeriesAt ?? row.oddsFetchedAt ?? null,
+        },
+      });
       restoredPoints += Math.max(0, series.length - current.length);
     }
     const closeBooks = parseBooks(row.oddsCloseBooks);

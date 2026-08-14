@@ -410,6 +410,7 @@ export interface FixtureModelForecast {
     currentMarketProbability: number;
     currentMove: number;
     samples: number;
+    sampleAttempts: number;
     lastSampleMinutesToKickoff: number | null;
     lastSampleAt: string | null;
     points: Array<{ minutesToKickoff: number; probability: number; sampledAt: string }>;

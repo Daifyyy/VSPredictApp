@@ -110,7 +110,7 @@ function CurrentMarketMovement({ signals }: { signals: FixtureModelForecast["mar
     <div className="mt-2 space-y-2">
       {signals.map((signal) => <div key={signal.market} className="rounded-lg border border-border/70 bg-surface px-3 py-2">
         <CountRow label={`${labels[signal.market]} · ${sides[signal.side]}${signal.line != null ? ` ${signal.line.toLocaleString("cs-CZ")}` : ""}`} value={`model ${pct(signal.modelProbability)} · otevření ${pct(signal.openMarketProbability)} → ${signal.closed ? "uzavření" : "poslední vzorek"} ${pct(signal.currentMarketProbability)} · ${signal.currentMove >= 0 ? "+" : ""}${(signal.currentMove * 100).toFixed(1)} p. b.`} />
-        {signal.points.length >= 3 ? <MarketMovementChart signal={signal} /> : <p className="mt-1 text-[10px] text-muted">{signal.samples}× měřeno · graf se zobrazí od 3 vzorků{signal.lastSampleAt ? ` · poslední ${new Date(signal.lastSampleAt).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}</p>}
+        {signal.points.length >= 3 ? <MarketMovementChart signal={signal} /> : <p className="mt-1 text-[10px] text-muted">{signal.samples} použitelných vzorků z {signal.sampleAttempts} načtení · graf se zobrazí od 3 použitelných bodů{signal.lastSampleAt ? ` · poslední použitelný ${new Date(signal.lastSampleAt).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}</p>}
       </div>)}
     </div>
   </section>;
@@ -134,7 +134,7 @@ function MarketMovementChart({ signal }: { signal: FixtureModelForecast["marketS
   const modelY = y(signal.modelProbability);
   const trend = signal.currentMove > 0.002 ? "směrem k modelu" : signal.currentMove < -0.002 ? "proti modelu" : "bez výrazného pohybu";
   return <figure className="mt-2">
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-24 w-full overflow-visible" role="img" aria-label={`Průběžný pohyb trhu: ${trend}, ${signal.samples} měření`}>
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-24 w-full overflow-visible" role="img" aria-label={`Průběžný pohyb trhu: ${trend}, ${signal.samples} použitelných vzorků z ${signal.sampleAttempts} načtení`}>
       <line x1={padX} x2={width - padX} y1={modelY} y2={modelY} stroke="currentColor" strokeDasharray="5 4" className="text-accent-strong/60" />
       <path d={path} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-info" />
       {signal.points.map((point, index) => <circle key={`${point.sampledAt}-${index}`} cx={x(index)} cy={y(point.probability)} r="4" fill="currentColor" className="text-info">
@@ -143,7 +143,7 @@ function MarketMovementChart({ signal }: { signal: FixtureModelForecast["marketS
       <text x={width - padX} y={Math.max(9, modelY - 5)} textAnchor="end" className="fill-muted text-[9px]">model {Math.round(signal.modelProbability * 100)} %</text>
     </svg>
     <figcaption className="flex flex-wrap justify-between gap-2 text-[10px] text-muted">
-      <span>Otevření {Math.round(signal.openMarketProbability * 100)} % · {signal.samples} měření</span>
+      <span>Otevření {Math.round(signal.openMarketProbability * 100)} % · {signal.samples} použitelných z {signal.sampleAttempts} načtení</span>
       <span>{signal.closed ? "Uzavřeno" : "Průběžný pohyb"} · {trend}</span>
     </figcaption>
   </figure>;

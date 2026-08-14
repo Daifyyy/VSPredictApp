@@ -321,6 +321,8 @@ model MarketSignalSnapshot {
   openedAt              DateTime
   closedAt              DateTime?
   series                Json?
+  sampleAttempts        Int      @default(0)
+  lastSampleAttemptAt   DateTime?
 
   @@unique([fixtureId, market, policyVersion])
   @@index([market, closedAt])

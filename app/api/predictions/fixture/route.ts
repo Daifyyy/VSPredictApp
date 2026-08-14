@@ -118,6 +118,7 @@ export async function GET(req: Request) {
         currentMarketProbability: current,
         currentMove: current - signal.openMarketProbability,
         samples: points.length,
+        sampleAttempts: Math.max(signal.sampleAttempts, points.length),
         lastSampleMinutesToKickoff: latest?.t ?? null,
         lastSampleAt: latest ? new Date(signal.kickoff.getTime() - latest.t * 60_000).toISOString() : null,
         points: points.map((point) => ({

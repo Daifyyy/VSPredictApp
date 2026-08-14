@@ -31,6 +31,7 @@ export async function openMarketSignals(fixtureId: number, books: BookOdds[], at
       publishedTip: signal.publishedTip,
       openedAt: at,
       series: [{ t: Math.max(0, Math.round((new Date(row.kickoff).getTime() - at.getTime()) / 60_000)), p: signal.marketProbability }],
+      sampleAttempts: 0,
     },
     update: {},
   })));
@@ -40,11 +41,20 @@ export async function appendMarketSignalPoints(fixtureId: number, books: BookOdd
   const rows = await prisma.marketSignalSnapshot.findMany({ where: { fixtureId } });
   for (const row of rows) {
     const probability = marketProbabilityAt(books, row.market as never, row.side as never, row.line);
-    if (probability == null) continue;
+    if (probability == null) {
+      await prisma.marketSignalSnapshot.update({
+        where: { id: row.id },
+        data: { sampleAttempts: { increment: 1 }, lastSampleAttemptAt: at },
+      });
+      continue;
+    }
     const previous = Array.isArray(row.series) ? row.series as Array<{ t: number; p: number }> : [];
     const point = { t: Math.max(0, Math.round((row.kickoff.getTime() - at.getTime()) / 60_000)), p: probability };
     const series = [...previous.filter((item) => item.t > point.t), point].slice(-40);
-    await prisma.marketSignalSnapshot.update({ where: { id: row.id }, data: { series } });
+    await prisma.marketSignalSnapshot.update({
+      where: { id: row.id },
+      data: { series, sampleAttempts: { increment: 1 }, lastSampleAttemptAt: at },
+    });
   }
 }
 
