@@ -57,9 +57,8 @@ export function PredictionOffers({ user, marketView }: { user: SessionUser | nul
       return kickoff.toLocaleDateString("cs-CZ") === now.toLocaleDateString("cs-CZ");
     })
     .filter((offer) => !marketView || direction === "all" || offer.largestDifference != null && (direction === "positive" ? offer.largestDifference >= 0 : offer.largestDifference < 0))
-    .sort((a, b) => marketView
-      ? Math.abs(b.largestDifference ?? -1) - Math.abs(a.largestDifference ?? -1)
-      : new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime()), [offers, competition, odds, league, window, direction, marketView]);
+    .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime()
+      || Number(b.hasOdds) - Number(a.hasOdds)), [offers, competition, odds, league, window, direction, marketView]);
 
   if (locked) return <div className="mt-4"><ProLock user={user} /></div>;
   if (error) return <p className="mt-4 rounded-xl border border-border p-5 text-muted">Nabídku se nepodařilo načíst.</p>;
@@ -74,7 +73,7 @@ export function PredictionOffers({ user, marketView }: { user: SessionUser | nul
         {marketView && <Select label="Rozdíl" value={direction} onChange={(value) => setDirection(value as typeof direction)} options={[["all", "Oba směry"], ["positive", "Model výše"], ["negative", "Trh výše"]]} />}
         <span className="ml-auto self-center px-2 text-xs text-muted">{visible.length} zápasů</span>
       </div>
-      {marketView && <p className="mt-3 text-xs text-muted">Kompletní nabídka seřazená podle největší absolutní neshody modelu a odmaržovaného trhu. Rozdíl není potvrzená sázková výhoda.</p>}
+      {marketView && <p className="mt-3 text-xs text-muted">Kompletní nabídka je seřazená podle nejbližšího výkopu. Odchylka je jen srovnání tehdejšího modelu s odmaržovaným trhem; po rozbalení uvidíš i dosavadní pohyb z pravidelných vzorků.</p>}
       <div className="mt-3 space-y-2">
         {visible.map((offer) => {
           const open = expanded === offer.fixtureId;
@@ -86,6 +85,7 @@ export function PredictionOffers({ user, marketView }: { user: SessionUser | nul
               </span>
               <span className="flex items-center gap-2 text-xs tabular-nums text-muted">
                 {marketView && offer.largestDifference != null && <strong className={offer.largestDifference >= 0 ? "text-positive" : "text-warning"}>{offer.largestDifference >= 0 ? "+" : ""}{Math.round(offer.largestDifference * 100)} p. b.</strong>}
+                {marketView && !offer.hasOdds && <span className="rounded-full bg-surface px-2 py-1 text-[10px]">Kurzy zatím nejsou</span>}
                 <span aria-hidden="true">{open ? "▲" : "▼"}</span>
               </span>
             </button>

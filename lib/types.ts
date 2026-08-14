@@ -401,6 +401,20 @@ export interface FixtureModelForecast {
     goalsOpen: { over: number; under: number } | null;
     goalsClose: { over: number; under: number } | null;
   };
+  marketSignals: Array<{
+    market: "1X2" | "OVER_25" | "CORNERS" | "CARDS";
+    side: "HOME" | "DRAW" | "AWAY" | "OVER" | "UNDER";
+    line: number | null;
+    modelProbability: number;
+    openMarketProbability: number;
+    currentMarketProbability: number;
+    currentMove: number;
+    samples: number;
+    lastSampleMinutesToKickoff: number | null;
+    lastSampleAt: string | null;
+    points: Array<{ minutesToKickoff: number; probability: number; sampledAt: string }>;
+    closed: boolean;
+  }>;
   corners: CountModelForecast | null;
   cards: CountModelForecast | null;
   refereeProfile: RefereeProfileForecast | null;

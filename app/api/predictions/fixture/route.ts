@@ -11,7 +11,7 @@ import { buildCountForecast } from "@/lib/picks/countDistribution";
 import { getSettledPredictionRows } from "@/lib/data/repository";
 import { getCachedCountTotals } from "@/lib/data/cache";
 import { unstable_cache } from "next/cache";
-import { isRealDataConfigured } from "@/lib/db";
+import { isRealDataConfigured, prisma } from "@/lib/db";
 import { getRefereeProfile } from "@/lib/data/refereeStore";
 
 const countSamples = unstable_cache(async () => {
@@ -97,6 +97,37 @@ export async function GET(req: Request) {
     const closeOutcome = sharpFair(closeBooks);
     const openGoals = sharpFairTotal(books);
     const closeGoals = sharpFairTotal(closeBooks);
+    const signalRows = isRealDataConfigured()
+      ? await prisma.marketSignalSnapshot.findMany({ where: { fixtureId }, orderBy: { market: "asc" } })
+      : [];
+    const marketSignals: FixtureModelForecast["marketSignals"] = signalRows.map((signal) => {
+      const points = Array.isArray(signal.series)
+        ? signal.series.filter((point): point is { t: number; p: number } =>
+            typeof point === "object" && point !== null &&
+            typeof (point as { t?: unknown }).t === "number" &&
+            typeof (point as { p?: unknown }).p === "number")
+        : [];
+      const latest = points.at(-1);
+      const current = signal.closeMarketProbability ?? latest?.p ?? signal.openMarketProbability;
+      return {
+        market: signal.market as FixtureModelForecast["marketSignals"][number]["market"],
+        side: signal.side as FixtureModelForecast["marketSignals"][number]["side"],
+        line: signal.line,
+        modelProbability: signal.modelProbability,
+        openMarketProbability: signal.openMarketProbability,
+        currentMarketProbability: current,
+        currentMove: current - signal.openMarketProbability,
+        samples: points.length,
+        lastSampleMinutesToKickoff: latest?.t ?? null,
+        lastSampleAt: latest ? new Date(signal.kickoff.getTime() - latest.t * 60_000).toISOString() : null,
+        points: points.map((point) => ({
+          minutesToKickoff: point.t,
+          probability: point.p,
+          sampledAt: new Date(signal.kickoff.getTime() - point.t * 60_000).toISOString(),
+        })),
+        closed: signal.closedAt != null,
+      };
+    });
     const forecast: FixtureModelForecast = {
       fixtureId,
       experimental: isEuroCupLeague(row.leagueId),
@@ -115,6 +146,7 @@ export async function GET(req: Request) {
         goalsOpen: openGoals ? { over: openGoals.over25, under: openGoals.under25 } : null,
         goalsClose: closeGoals ? { over: closeGoals.over25, under: closeGoals.under25 } : null,
       },
+      marketSignals,
       corners: withClose(corners, "corners"),
       cards: withClose(cards, "cards"),
       refereeProfile,

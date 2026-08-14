@@ -78,6 +78,7 @@ export function FixtureModelCard({
               <CountRow label="Góly · Over 2,5" value={`Model ${pct(f.goals.over25)} · otevření ${f.market.goalsOpen ? pct(f.market.goalsOpen.over) : "—"} · uzavření ${f.market.goalsClose ? pct(f.market.goalsClose.over) : "—"}`} />
             </dl>
           </div>
+          <CurrentMarketMovement signals={f.marketSignals} />
           <div className="grid grid-cols-3 gap-2 text-center tabular-nums">
             <Metric label="Očekávané góly" value={`${f.goals.home.toFixed(1)} : ${f.goals.away.toFixed(1)}`} />
             <Metric label="Over 2.5" value={pct(f.goals.over25)} />
@@ -97,6 +98,55 @@ export function FixtureModelCard({
       )}
     </div>
   );
+}
+
+function CurrentMarketMovement({ signals }: { signals: FixtureModelForecast["marketSignals"] }) {
+  if (!signals.length) return <p className="rounded-lg bg-surface px-3 py-3 text-muted">Pohyb trhu zatím nelze ukázat – nemáme první použitelný kurzový snapshot.</p>;
+  const labels = { "1X2": "1X2", OVER_25: "Góly 2,5", CORNERS: "⛳ Rohy", CARDS: "🟨 Karty" } as const;
+  const sides = { HOME: "domácí", DRAW: "remíza", AWAY: "hosté", OVER: "Over", UNDER: "Under" } as const;
+  const pct = (value: number) => `${Math.round(value * 100)} %`;
+  return <section className="rounded-lg border border-border bg-background px-3 py-3 text-muted" aria-label="Dosavadní pohyb trhu">
+    <div><strong className="text-foreground">Dosavadní pohyb trhu</strong><p className="mt-1 text-[10px] leading-4">Průběžný stav z uložených vzorků. Konečným CLV se stane až poslední srovnatelný vzorek před výkopem.</p></div>
+    <div className="mt-2 space-y-2">
+      {signals.map((signal) => <div key={signal.market} className="rounded-lg border border-border/70 bg-surface px-3 py-2">
+        <CountRow label={`${labels[signal.market]} · ${sides[signal.side]}${signal.line != null ? ` ${signal.line.toLocaleString("cs-CZ")}` : ""}`} value={`model ${pct(signal.modelProbability)} · otevření ${pct(signal.openMarketProbability)} → ${signal.closed ? "uzavření" : "poslední vzorek"} ${pct(signal.currentMarketProbability)} · ${signal.currentMove >= 0 ? "+" : ""}${(signal.currentMove * 100).toFixed(1)} p. b.`} />
+        {signal.points.length >= 3 ? <MarketMovementChart signal={signal} /> : <p className="mt-1 text-[10px] text-muted">{signal.samples}× měřeno · graf se zobrazí od 3 vzorků{signal.lastSampleAt ? ` · poslední ${new Date(signal.lastSampleAt).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}</p>}
+      </div>)}
+    </div>
+  </section>;
+}
+
+function MarketMovementChart({ signal }: { signal: FixtureModelForecast["marketSignals"][number] }) {
+  const width = 420;
+  const height = 94;
+  const padX = 12;
+  const padY = 12;
+  const values = [...signal.points.map((point) => point.probability), signal.modelProbability];
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  const padding = Math.max(0.02, (rawMax - rawMin) * 0.2);
+  const min = Math.max(0, rawMin - padding);
+  const max = Math.min(1, rawMax + padding);
+  const spread = Math.max(0.01, max - min);
+  const x = (index: number) => padX + index * (width - 2 * padX) / Math.max(1, signal.points.length - 1);
+  const y = (value: number) => padY + (max - value) / spread * (height - 2 * padY);
+  const path = signal.points.map((point, index) => `${index ? "L" : "M"} ${x(index).toFixed(1)} ${y(point.probability).toFixed(1)}`).join(" ");
+  const modelY = y(signal.modelProbability);
+  const trend = signal.currentMove > 0.002 ? "směrem k modelu" : signal.currentMove < -0.002 ? "proti modelu" : "bez výrazného pohybu";
+  return <figure className="mt-2">
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-24 w-full overflow-visible" role="img" aria-label={`Průběžný pohyb trhu: ${trend}, ${signal.samples} měření`}>
+      <line x1={padX} x2={width - padX} y1={modelY} y2={modelY} stroke="currentColor" strokeDasharray="5 4" className="text-accent-strong/60" />
+      <path d={path} fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-info" />
+      {signal.points.map((point, index) => <circle key={`${point.sampledAt}-${index}`} cx={x(index)} cy={y(point.probability)} r="4" fill="currentColor" className="text-info">
+        <title>{`${new Date(point.sampledAt).toLocaleString("cs-CZ")} · trh ${Math.round(point.probability * 100)} % · ${point.minutesToKickoff} min do výkopu`}</title>
+      </circle>)}
+      <text x={width - padX} y={Math.max(9, modelY - 5)} textAnchor="end" className="fill-muted text-[9px]">model {Math.round(signal.modelProbability * 100)} %</text>
+    </svg>
+    <figcaption className="flex flex-wrap justify-between gap-2 text-[10px] text-muted">
+      <span>Otevření {Math.round(signal.openMarketProbability * 100)} % · {signal.samples} měření</span>
+      <span>{signal.closed ? "Uzavřeno" : "Průběžný pohyb"} · {trend}</span>
+    </figcaption>
+  </figure>;
 }
 
 function RefereeProfile({
