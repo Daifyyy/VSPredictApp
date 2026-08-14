@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { MatchPick, PickMarket } from "@/lib/types";
+import type { PickMarket } from "@/lib/types";
 import { PICK_PRESETS } from "@/lib/picks/rules";
-import { PREDICTION_READY_SAMPLE } from "@/lib/stats/readiness";
 import type {
   BacktestResult,
   BacktestSample,
@@ -29,10 +28,9 @@ import {
 import { TeamLogo } from "./TeamLogo";
 import { AppHeader } from "./AppHeader";
 import { Empty } from "./Empty";
-import { ProLock } from "./ProLock";
-import { PickRow } from "./PickRow";
 import { ViewTabs } from "./ViewTabs";
 import type { SessionUser } from "./sessionUser";
+import { PredictionOffers } from "./PredictionOffers";
 
 type Venue = "home" | "away" | "any";
 
@@ -40,54 +38,13 @@ type Venue = "home" | "away" | "any";
  * Dva pohledy nad **týmiž** načtenými daty: „Tipy" = k čemu tam člověk jde, „Model" =
  * jestli se tomu dá věřit. Přepnutí nic nedotahuje.
  */
-type View = "picks" | "model";
+type View = "picks" | "market" | "model";
 
 const MARKET_LABELS: Record<PickMarket, string> = {
   win: "Výhra",
   over25: "Přes 2.5 gólu",
   btts: "Oba skórují",
 };
-
-interface PicksSetters {
-  setLoading: (v: boolean) => void;
-  setError: (v: string | null) => void;
-  setLocked: (v: boolean) => void;
-  setPicks: (v: MatchPick[] | null) => void;
-}
-
-// Mimo komponentu (vzor CompareApp): žádné synchronní setState přímo v efektu.
-async function loadPicks(
-  market: PickMarket,
-  venue: Venue,
-  minProb: number,
-  minEdge: number | undefined,
-  minReadiness: number | undefined,
-  isActive: () => boolean,
-  { setLoading, setError, setLocked, setPicks }: PicksSetters
-): Promise<void> {
-  setLoading(true);
-  setError(null);
-  try {
-    const q = new URLSearchParams({ market, venue, minProb: String(minProb) });
-    if (minEdge != null) q.set("minEdge", String(minEdge));
-    if (minReadiness != null) q.set("minReadiness", String(minReadiness));
-    const r = await fetch(`/api/picks?${q.toString()}`);
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error ?? "Chyba tipů");
-    if (!isActive()) return;
-    if (d.locked) {
-      setLocked(true);
-      setPicks(null);
-    } else {
-      setLocked(false);
-      setPicks(d.picks ?? []);
-    }
-  } catch (e) {
-    if (isActive()) setError(e instanceof Error ? e.message : "Chyba tipů");
-  } finally {
-    if (isActive()) setLoading(false);
-  }
-}
 
 /**
  * Zpožděná hodnota. Posuvník minimální pravděpodobnosti má 9 kroků a **každý** z nich
@@ -114,7 +71,21 @@ interface StatsSetters {
   setEuropean: (v: EuropeanStats | null) => void;
   setPublishedTips: (v: PublishedTipRecord | null) => void;
   setCountAccuracy: (v: CountModelAccuracy | null) => void;
+  setClvByMarket: (v: MarketClvSummary[]) => void;
   setStatsState: (v: "loading" | "ok" | "error") => void;
+}
+
+interface MarketClvSummary {
+  market: "1X2" | "OVER_25" | "CORNERS" | "CARDS";
+  context: "LEAGUE" | "EURO_CUP";
+  publishedOnly: boolean;
+  eligible: number;
+  measured: number;
+  completeness: number;
+  averageClv: number;
+  beatRate: number;
+  averageModelVsOpen: number;
+  averageModelVsClose: number;
 }
 
 interface EuropeanStats {
@@ -162,6 +133,7 @@ async function loadStats(
     s.setEuropean(d.european ?? null);
     s.setPublishedTips(d.publishedTips ?? null);
     s.setCountAccuracy(d.countAccuracy ?? null);
+    s.setClvByMarket(d.clvByMarket ?? []);
     s.setStatsState("ok");
   } catch {
     if (isActive()) s.setStatsState("error");
@@ -171,7 +143,6 @@ async function loadStats(
 export function PicksApp({ user }: { user: SessionUser | null }) {
   const [restored, setRestored] = useState(false);
   const [view, setView] = useState<View>("picks");
-  const [competition, setCompetition] = useState<"all" | "league" | "europe">("all");
   const [market, setMarket] = useState<PickMarket>("win");
   const [venue, setVenue] = useState<Venue>("home");
   const [minProbInput, setMinProb] = useState(0.65);
@@ -183,12 +154,6 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
   // Skrýt tipy s málo daty (default ON) – ochrana na startu sezóny, kdy je vzorek tenký.
   // Gatuje jen seznam nadcházejících tipů, ne historický backtest (ten běží nad vším).
   const [hideUnready, setHideUnready] = useState(true);
-  const minReadiness = hideUnready ? PREDICTION_READY_SAMPLE : undefined;
-
-  const [picks, setPicks] = useState<MatchPick[] | null>(null);
-  const [locked, setLocked] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [track, setTrack] = useState<TrackRecord | null>(null);
   const [benchmark, setBenchmark] = useState<BenchmarkTrackRecord | null>(null);
   // `market` je už název pravidla (trh tipu) → benchmark proti sázkovce má vlastní jméno.
@@ -199,18 +164,17 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
   const [european, setEuropean] = useState<EuropeanStats | null>(null);
   const [publishedTips, setPublishedTips] = useState<PublishedTipRecord | null>(null);
   const [countAccuracy, setCountAccuracy] = useState<CountModelAccuracy | null>(null);
+  const [clvByMarket, setClvByMarket] = useState<MarketClvSummary[]>([]);
   const [statsState, setStatsState] = useState<"loading" | "ok" | "error">("loading");
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     queueMicrotask(() => {
       const nextView = params.get("view");
-      const nextCompetition = params.get("competition");
       const nextMarket = params.get("market") as PickMarket | null;
       const nextVenue = params.get("venue") as Venue | null;
       const nextProbability = Number(params.get("minProb"));
-      if (nextView === "picks" || nextView === "model") setView(nextView);
-      if (nextCompetition === "all" || nextCompetition === "league" || nextCompetition === "europe") setCompetition(nextCompetition);
+      if (nextView === "picks" || nextView === "market" || nextView === "model") setView(nextView);
       if (nextMarket === "win" || nextMarket === "over25" || nextMarket === "btts") setMarket(nextMarket);
       if (nextVenue === "home" || nextVenue === "away" || nextVenue === "any") setVenue(nextVenue);
       if (Number.isFinite(nextProbability) && nextProbability >= 0.5 && nextProbability <= 0.95) setMinProb(nextProbability);
@@ -224,7 +188,6 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
     if (!restored) return;
     const url = new URL(window.location.href);
     url.searchParams.set("view", view);
-    url.searchParams.set("competition", competition);
     url.searchParams.set("market", market);
     url.searchParams.set("venue", venue);
     url.searchParams.set("minProb", minProbInput.toFixed(2));
@@ -233,37 +196,7 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
     if (hideUnready) url.searchParams.delete("unready");
     else url.searchParams.set("unready", "1");
     window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
-  }, [restored, view, competition, market, venue, minProbInput, valueOnly, hideUnready]);
-  const visiblePicks = picks?.filter((pick) =>
-    competition === "all"
-      ? true
-      : competition === "europe"
-        ? pick.europeanCup
-        : !pick.europeanCup
-  ) ?? null;
-
-  const retry = useCallback(() => {
-    void loadPicks(market, venue, minProb, minEdge, minReadiness, () => true, {
-      setLoading,
-      setError,
-      setLocked,
-      setPicks,
-    });
-  }, [market, venue, minProb, minEdge, minReadiness]);
-
-  useEffect(() => {
-    if (!restored) return;
-    let active = true;
-    void loadPicks(market, venue, minProb, minEdge, minReadiness, () => active, {
-      setLoading,
-      setError,
-      setLocked,
-      setPicks,
-    });
-    return () => {
-      active = false;
-    };
-  }, [restored, market, venue, minProb, minEdge, minReadiness]);
+  }, [restored, view, market, venue, minProbInput, valueOnly, hideUnready]);
 
   // Track-record (globální) + backtest strategie dle navolených parametrů.
   //
@@ -282,6 +215,7 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
     setEuropean,
     setPublishedTips,
     setCountAccuracy,
+    setClvByMarket,
     setStatsState,
   });
 
@@ -298,12 +232,6 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
     };
   }, [restored, view, market, venue, minProb, minEdge]);
 
-  function applyPreset(rule: { market: PickMarket; venue: Venue; minProb: number }) {
-    setMarket(rule.market);
-    setVenue(rule.venue);
-    setMinProb(rule.minProb);
-  }
-
   return (
     <main className="app-page">
       <AppHeader user={user} />
@@ -312,101 +240,22 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
       {/* Rozpor „jmenuje se to tipy, ale nesázej podle toho" se řeší TADY, ne až ve
           třetím panelu, kam se doroluje málokdo. */}
       <p className="mt-1 text-sm text-muted">
-        Které zápasy má model za nejjistější.{" "}
-        <span className="font-medium text-foreground">Není to sázkové doporučení</span> —
-        na gólových trzích model nepřekonává kurzy sázkovek.
+        Kompletní nabídka uložených prognóz, jejich porovnání s odmaržovaným trhem a
+        dlouhodobá výkonnost. <span className="font-medium text-foreground">Rozdíl proti trhu není automaticky sázkové doporučení.</span>
       </p>
 
       <ViewTabs
         tabs={[
-          { value: "picks", label: "Výběr zápasů" },
+          { value: "picks", label: "Nabídka zápasů" },
+          { value: "market", label: "Model vs. trh" },
           { value: "model", label: "Výkonnost modelů" },
         ]}
         active={view}
         onSelect={setView}
       />
 
-      {view === "picks" ? (
-        <>
-          <RuleControls
-            market={market}
-            venue={venue}
-            minProb={minProbInput}
-            valueOnly={valueOnly}
-            hideUnready={hideUnready}
-            onMarket={setMarket}
-            onVenue={setVenue}
-            onMinProb={setMinProb}
-            onValueOnly={setValueOnly}
-            onHideUnready={setHideUnready}
-            onPreset={applyPreset}
-          />
-
-          <div className="mt-3 flex max-w-md rounded-xl border border-border bg-surface p-1" role="group" aria-label="Typ soutěže">
-            {([
-              ["all", "Vše"],
-              ["league", "Ligové soutěže"],
-              ["europe", "Evropské poháry"],
-            ] as const).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setCompetition(value)}
-                aria-pressed={competition === value}
-                className={`min-h-11 flex-1 rounded-lg px-3 text-xs font-semibold transition ${
-                  competition === value
-                    ? "bg-accent text-foreground"
-                    : "text-muted hover:bg-accent-soft hover:text-foreground"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* Backtest NAVOLENÉHO pravidla patří k tipům, ne do diagnostiky: je to jediné
-              číslo, které k rozhodnutí „mám tomuhle pravidlu věřit" stačí. */}
-          {backtest && (
-            <StrategyPanel
-              backtest={backtest}
-              market={market}
-              venue={venue}
-              minProb={minProb}
-              settled={track?.n ?? 0}
-            />
-          )}
-
-          {/* Sekce nadcházejících tipů = PRO. FREE/anonym → ProLock místo seznamu. */}
-          {locked ? (
-            <div className="mt-4">
-              <ProLock user={user} />
-            </div>
-          ) : loading && !picks ? (
-            <PicksSkeleton />
-          ) : error ? (
-            <Empty>
-              <p>{error}</p>
-              <button
-                type="button"
-                onClick={retry}
-                className="mt-3 rounded-full border border-border bg-surface px-4 py-1.5 text-sm font-medium text-foreground transition hover:bg-background"
-              >
-                ↻ Zkusit znovu
-              </button>
-            </Empty>
-          ) : visiblePicks && visiblePicks.length > 0 ? (
-            <ul className="mt-4 space-y-2">
-              {visiblePicks.map((p) => (
-                <PickRow key={p.fixtureId} pick={p} />
-              ))}
-            </ul>
-          ) : (
-            <Empty>
-              Žádné nadcházející zápasy neodpovídají pravidlu. Mimo sezónu (léto) nemají
-              top ligy naplánované zápasy – zkus jiné pravidlo nebo se vrať během sezóny.
-            </Empty>
-          )}
-        </>
+      {view === "picks" || view === "market" ? (
+        <PredictionOffers user={user} marketView={view === "market"} />
       ) : (
         <ModelView
           reliability={reliability}
@@ -418,6 +267,11 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
           european={european}
           publishedTips={publishedTips}
           countAccuracy={countAccuracy}
+          clvByMarket={clvByMarket}
+          backtest={backtest}
+          market={market}
+          venue={venue}
+          minProb={minProb}
           onRetry={retryStats}
         />
       )}
@@ -441,6 +295,11 @@ function ModelView({
   european,
   publishedTips,
   countAccuracy,
+  clvByMarket,
+  backtest,
+  market,
+  venue,
+  minProb,
   onRetry,
 }: {
   reliability: ReliabilityReport | null;
@@ -452,6 +311,11 @@ function ModelView({
   european: EuropeanStats | null;
   publishedTips: PublishedTipRecord | null;
   countAccuracy: CountModelAccuracy | null;
+  clvByMarket: MarketClvSummary[];
+  backtest: BacktestResult | null;
+  market: PickMarket;
+  venue: Venue;
+  minProb: number;
   onRetry: () => void;
 }) {
   // Verdikt se smí vykreslit až nad načtenými daty. Brána sama o sobě `null` vstupy snese
@@ -485,6 +349,8 @@ function ModelView({
 
   return (
     <div className="mt-4 space-y-3">
+      <MarketClvDashboard rows={clvByMarket} />
+      {backtest && <StrategyPanel backtest={backtest} market={market} venue={venue} minProb={minProb} settled={track?.n ?? 0} />}
       <PublishedTipsPanel league={publishedTips} european={european?.publishedTips ?? null} />
       <ForecastOverview track={track} counts={countAccuracy} />
       <GateHeadline gate={gate} />
@@ -515,6 +381,95 @@ function ModelView({
       )}
     </div>
   );
+}
+
+const CLV_MARKET_LABELS: Record<MarketClvSummary["market"], string> = {
+  "1X2": "1X2",
+  OVER_25: "Góly · Over/Under 2,5",
+  CORNERS: "⛳ Rohy",
+  CARDS: "🟨 Karty",
+};
+
+function MarketClvDashboard({ rows }: { rows: MarketClvSummary[] }) {
+  const [history, setHistory] = useState<Array<{
+    id: string; fixtureId: number; market: string; side: string; line: number | null;
+    modelProbability: number; openMarketProbability: number; closeMarketProbability: number | null;
+    clv: number | null; kickoff: string; series: unknown;
+    prediction: { homeName: string; awayName: string; homeGoals: number | null; awayGoals: number | null; status: string } | null;
+    actual: { corners: number; cards: number } | null;
+  }> | null>(null);
+  const [historyLocked, setHistoryLocked] = useState(false);
+
+  function loadHistory() {
+    if (history || historyLocked) return;
+    fetch("/api/picks/clv?limit=20")
+      .then(async (response) => ({ response, body: await response.json() }))
+      .then(({ response, body }) => {
+        if (response.status === 403) setHistoryLocked(true);
+        else if (response.ok) setHistory(body.rows ?? []);
+      });
+  }
+
+  return (
+    <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
+      <p className="page-kicker">Pohyb trhu po prognóze</p>
+      <h2 className="mt-1 text-lg font-bold text-foreground">Closing line value (CLV)</h2>
+      <p className="mt-1 max-w-3xl text-xs leading-5 text-muted">
+        Sledujeme stejnou stranu a stejnou linii od prvního uloženého kurzu do uzavření.
+        Kladný posun znamená, že se trh později přiklonil směrem k tehdejšímu názoru modelu;
+        není to výhra zápasu ani automaticky zisková sázka.
+      </p>
+      {rows.length ? <div className="mt-3 grid gap-2 md:grid-cols-2">
+        {rows.map((row) => <ClvMarketCard key={`${row.context}-${row.market}-${row.publishedOnly}`} row={row} />)}
+      </div> : <p className="mt-3 rounded-xl bg-background p-3 text-sm text-muted">Nové verzované měření začíná prvním kurzovým snapshotem po nasazení. Starší průběh zpětně nevymýšlíme.</p>}
+      <details className="mt-3 rounded-xl border border-border bg-background" onToggle={(event) => event.currentTarget.open && loadHistory()}>
+        <summary className="cursor-pointer px-3 py-3 text-sm font-semibold text-foreground">Historie jednotlivých zápasů</summary>
+        <div className="border-t border-border p-3">
+          {historyLocked ? <p className="text-sm text-muted">Detailní historie a průběhy trhu jsou součástí PRO.</p>
+            : history == null ? <p className="text-sm text-muted">Načítám historii…</p>
+            : history.length === 0 ? <p className="text-sm text-muted">Zatím není uzavřený měřený zápas.</p>
+            : <div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left text-xs"><thead><tr className="text-muted"><th className="p-2">Zápas</th><th>Trh</th><th>Model</th><th>Otevření</th><th>Průběh</th><th>Uzavření</th><th>CLV</th><th>Výsledek</th></tr></thead><tbody>{history.map((row) => <ClvHistoryRow key={row.id} row={row} />)}</tbody></table></div>}
+        </div>
+      </details>
+    </section>
+  );
+}
+
+function ClvMarketCard({ row }: { row: MarketClvSummary }) {
+  const pct = (value: number) => `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)} p. b.`;
+  return <article className="rounded-xl border border-border bg-background p-3">
+    <div className="flex items-start justify-between gap-2"><div><strong className="text-foreground">{CLV_MARKET_LABELS[row.market]}</strong><p className="text-[10px] text-muted">{row.context === "EURO_CUP" ? "Experimentální · Evropa" : "Ligové zápasy"}{row.publishedOnly ? " · publikované tipy" : " · všechny směry"}</p></div><span className="text-[10px] text-muted">{row.measured}/{row.eligible}</span></div>
+    <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
+      <div><dt className="text-muted">Průměrný posun trhu</dt><dd className="font-bold tabular-nums text-foreground">{pct(row.averageClv)}</dd></div>
+      <div><dt className="text-muted">Před trhem</dt><dd className="font-bold tabular-nums text-foreground">{Math.round(row.beatRate * 100)} %</dd></div>
+      <div><dt className="text-muted">Datová úplnost</dt><dd className="font-bold tabular-nums text-foreground">{Math.round(row.completeness * 100)} %</dd></div>
+      <div><dt className="text-muted">Model vs. uzavření</dt><dd className="font-bold tabular-nums text-foreground">{pct(row.averageModelVsClose)}</dd></div>
+    </dl>
+    <p className="mt-2 text-[10px] leading-4 text-muted">Úplnost říká, u kolika způsobilých prognóz máme srovnatelné otevření i uzavření. Nízká hodnota znamená méně reprezentativní vzorek.</p>
+  </article>;
+}
+
+function ClvHistoryRow({ row }: { row: {
+  market: string; side: string; line: number | null; modelProbability: number; openMarketProbability: number;
+  closeMarketProbability: number | null; clv: number | null;
+  series?: unknown;
+  prediction: { homeName: string; awayName: string; homeGoals: number | null; awayGoals: number | null } | null;
+  actual: { corners: number; cards: number } | null;
+} }) {
+  const probability = (value: number | null) => value == null ? "—" : `${Math.round(value * 100)} %`;
+  const result = row.market === "CORNERS" ? row.actual?.corners : row.market === "CARDS" ? row.actual?.cards : row.prediction?.homeGoals != null ? `${row.prediction.homeGoals}:${row.prediction.awayGoals}` : null;
+  return <tr className="border-t border-border"><td className="p-2 font-medium text-foreground">{row.prediction ? `${row.prediction.homeName} – ${row.prediction.awayName}` : "Zápas"}</td><td>{row.market}{row.line != null ? ` ${row.line}` : ""} · {row.side}</td><td>{probability(row.modelProbability)}</td><td>{probability(row.openMarketProbability)}</td><td><ClvSparkline value={row.series} /></td><td>{probability(row.closeMarketProbability)}</td><td className={row.clv != null && row.clv > 0 ? "font-bold text-positive" : "text-warning"}>{row.clv == null ? "—" : `${row.clv >= 0 ? "+" : ""}${(row.clv * 100).toFixed(1)} p. b.`}</td><td>{result ?? "—"}</td></tr>;
+}
+
+function ClvSparkline({ value }: { value: unknown }) {
+  if (!Array.isArray(value)) return <span className="text-muted">—</span>;
+  const points = value.filter((item): item is { t: number; p: number } => typeof item === "object" && item !== null && typeof item.t === "number" && typeof item.p === "number");
+  if (points.length < 2) return <span className="text-muted">—</span>;
+  const min = Math.min(...points.map((point) => point.p));
+  const max = Math.max(...points.map((point) => point.p));
+  const spread = Math.max(0.01, max - min);
+  const path = points.map((point, index) => `${index ? "L" : "M"} ${index * 72 / (points.length - 1)} ${22 - (point.p - min) / spread * 18}`).join(" ");
+  return <svg viewBox="0 0 72 24" className="h-6 w-[72px]" role="img" aria-label={`Vývoj trhu z ${Math.round(points[0].p * 100)} na ${Math.round(points.at(-1)!.p * 100)} procent`}><path d={path} fill="none" stroke="currentColor" strokeWidth="2" className="text-accent-strong" /></svg>;
 }
 
 function formatRecordDate(value: string | null): string {
@@ -1184,7 +1139,7 @@ function ReliabilityBinRow({
   );
 }
 
-function RuleControls({
+export function RuleControls({
   market,
   venue,
   minProb,
@@ -1352,7 +1307,7 @@ function ModelSkeleton() {
   );
 }
 
-function PicksSkeleton() {
+export function PicksSkeleton() {
   return (
     <div className="mt-4 space-y-2">
       {Array.from({ length: 5 }).map((_, i) => (

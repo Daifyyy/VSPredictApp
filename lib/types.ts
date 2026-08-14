@@ -395,6 +395,12 @@ export interface FixtureModelForecast {
   readinessSample: number;
   outcome: { home: number; draw: number; away: number };
   goals: { home: number; away: number; over25: number; btts: number };
+  market: {
+    outcomeOpen: { home: number; draw: number; away: number } | null;
+    outcomeClose: { home: number; draw: number; away: number } | null;
+    goalsOpen: { over: number; under: number } | null;
+    goalsClose: { over: number; under: number } | null;
+  };
   corners: CountModelForecast | null;
   cards: CountModelForecast | null;
   refereeProfile: RefereeProfileForecast | null;
@@ -426,6 +432,8 @@ export interface CountModelForecast {
   underProbability: number | null;
   marketOverProbability: number | null;
   marketUnderProbability: number | null;
+  closingOverProbability?: number | null;
+  closingUnderProbability?: number | null;
   overDifference: number | null;
   version: number;
   varianceRatio: number;

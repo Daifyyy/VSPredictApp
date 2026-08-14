@@ -6,7 +6,7 @@ import { isEuroCupLeague } from "@/lib/data/catalog";
 import type { FixtureModelForecast } from "@/lib/types";
 import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
 import { logError } from "@/lib/logError";
-import { parseBooks } from "@/lib/picks/books";
+import { parseBooks, sharpFair, sharpFairTotal, sharpLineFair } from "@/lib/picks/books";
 import { buildCountForecast } from "@/lib/picks/countDistribution";
 import { getSettledPredictionRows } from "@/lib/data/repository";
 import { getCachedCountTotals } from "@/lib/data/cache";
@@ -51,6 +51,7 @@ export async function GET(req: Request) {
     const row = await getFixturePredictionRow(fixtureId);
     if (!row || !row.available) return NextResponse.json({ forecast: null });
     const books = parseBooks(row.oddsBooks);
+    const closeBooks = parseBooks(row.oddsCloseBooks);
     const samples = await countSamples();
     const context = row.modelContext ?? "LEAGUE";
     const version = row.countModelVersion ?? 0;
@@ -73,6 +74,29 @@ export async function GET(req: Request) {
           ? row.lambdaCardsHome + row.lambdaCardsAway
           : null;
     }
+    const corners = buildCountForecast(row.lambdaCornersHome, row.lambdaCornersAway, {
+      ...countOptions,
+      market: "corners",
+      varianceRatio: row.cornerVarianceRatio,
+      version,
+      evaluatedSample: samples[`${context}:corners:${version}:${row.cornerVarianceRatio ?? 1.2}`] ?? 0,
+    });
+    const cards = buildCountForecast(row.lambdaCardsHome, row.lambdaCardsAway, {
+      ...countOptions,
+      market: "cards",
+      varianceRatio: row.cardVarianceRatio,
+      version,
+      evaluatedSample: samples[`${context}:cards:${version}:${row.cardVarianceRatio ?? 1.2}`] ?? 0,
+    });
+    const withClose = (value: typeof corners, market: "corners" | "cards") => {
+      if (!value) return null;
+      const closing = value.line == null ? null : sharpLineFair(closeBooks, market, value.line);
+      return { ...value, closingOverProbability: closing?.over ?? null, closingUnderProbability: closing?.under ?? null };
+    };
+    const openOutcome = sharpFair(books);
+    const closeOutcome = sharpFair(closeBooks);
+    const openGoals = sharpFairTotal(books);
+    const closeGoals = sharpFairTotal(closeBooks);
     const forecast: FixtureModelForecast = {
       fixtureId,
       experimental: isEuroCupLeague(row.leagueId),
@@ -85,20 +109,14 @@ export async function GET(req: Request) {
         over25: row.over25,
         btts: row.bttsYes,
       },
-      corners: buildCountForecast(row.lambdaCornersHome, row.lambdaCornersAway, {
-        ...countOptions,
-        market: "corners",
-        varianceRatio: row.cornerVarianceRatio,
-        version,
-        evaluatedSample: samples[`${context}:corners:${version}:${row.cornerVarianceRatio ?? 1.2}`] ?? 0,
-      }),
-      cards: buildCountForecast(row.lambdaCardsHome, row.lambdaCardsAway, {
-        ...countOptions,
-        market: "cards",
-        varianceRatio: row.cardVarianceRatio,
-        version,
-        evaluatedSample: samples[`${context}:cards:${version}:${row.cardVarianceRatio ?? 1.2}`] ?? 0,
-      }),
+      market: {
+        outcomeOpen: openOutcome ? { home: openOutcome.home, draw: openOutcome.draw, away: openOutcome.away } : null,
+        outcomeClose: closeOutcome ? { home: closeOutcome.home, draw: closeOutcome.draw, away: closeOutcome.away } : null,
+        goalsOpen: openGoals ? { over: openGoals.over25, under: openGoals.under25 } : null,
+        goalsClose: closeGoals ? { over: closeGoals.over25, under: closeGoals.under25 } : null,
+      },
+      corners: withClose(corners, "corners"),
+      cards: withClose(cards, "cards"),
       refereeProfile,
     };
     return NextResponse.json({ forecast });

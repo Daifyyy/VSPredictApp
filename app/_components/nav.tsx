@@ -18,7 +18,6 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/porovnani", label: "Porovnání", section: "analysis", description: "Tým proti týmu" },
   { href: "/tabulky", label: "Tabulky", section: "analysis", description: "Ligové pořadí" },
   { href: "/predikce", label: "Predikce", section: "analysis", description: "Co čeká model" },
-  { href: "/digest", label: "Model vs. trh", section: "analysis", description: "Kde se lišíme" },
   { href: "/transfers", label: "Přestupy", section: "analysis", description: "Pohyb v klubech" },
   { href: "/tipovacka", label: "Moje tipy", section: "tips", description: "Osobní deník" },
   { href: "/hra", label: "Manažer", section: "game", description: "Vlastní kariéra" },

@@ -299,6 +299,35 @@ model FixturePrediction {
   @@index([modelContext, contextVersion, modelVersion])
 }
 
+/// Neměnný předzápasový názor modelu na konkrétní trh. Odděluje tehdejší signál
+/// od pozdějších změn modelu a dovoluje poctivě měřit pohyb k uzavírací linii.
+model MarketSignalSnapshot {
+  id                    String   @id @default(cuid())
+  fixtureId             Int
+  leagueId              Int
+  kickoff               DateTime
+  market                String
+  side                  String
+  line                  Float?
+  modelProbability      Float
+  openMarketProbability Float
+  closeMarketProbability Float?
+  modelContext          String
+  modelVersion          Int
+  contextVersion        Int
+  countModelVersion     Int?
+  policyVersion         Int
+  publishedTip          Boolean  @default(false)
+  openedAt              DateTime
+  closedAt              DateTime?
+  series                Json?
+
+  @@unique([fixtureId, market, policyVersion])
+  @@index([market, closedAt])
+  @@index([modelContext, market, closedAt])
+  @@index([leagueId, kickoff])
+}
+
 /// Audit změn delegace. Uchovává i automatické nahrazení ruční volby údajem z API.
 model RefereeAssignmentAudit {
   id             String   @id @default(cuid())

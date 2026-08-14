@@ -71,6 +71,13 @@ export function FixtureModelCard({
             <Metric label="Remíza" value={pct(f.outcome.draw)} />
             <Metric label="Hosté" value={pct(f.outcome.away)} />
           </div>
+          <div className="rounded-lg bg-surface px-3 py-3 text-muted">
+            <strong className="text-foreground">Model vs. trh</strong>
+            <dl className="mt-2 space-y-1.5">
+              {(["home", "draw", "away"] as const).map((side) => <CountRow key={side} label={side === "home" ? "Domácí" : side === "draw" ? "Remíza" : "Hosté"} value={`Model ${pct(f.outcome[side])} · otevření ${f.market.outcomeOpen ? pct(f.market.outcomeOpen[side]) : "—"} · uzavření ${f.market.outcomeClose ? pct(f.market.outcomeClose[side]) : "—"}`} />)}
+              <CountRow label="Góly · Over 2,5" value={`Model ${pct(f.goals.over25)} · otevření ${f.market.goalsOpen ? pct(f.market.goalsOpen.over) : "—"} · uzavření ${f.market.goalsClose ? pct(f.market.goalsClose.over) : "—"}`} />
+            </dl>
+          </div>
           <div className="grid grid-cols-3 gap-2 text-center tabular-nums">
             <Metric label="Očekávané góly" value={`${f.goals.home.toFixed(1)} : ${f.goals.away.toFixed(1)}`} />
             <Metric label="Over 2.5" value={pct(f.goals.over25)} />
@@ -116,6 +123,11 @@ function RefereeProfile({
     );
   }
   const number = (value: number | null, digits = 1) => value == null ? "—" : value.toFixed(digits);
+  const hasHistory = profile.sample > 0;
+  const neutral = hasHistory && Math.abs(profile.factor - 1) < 0.015;
+  const influence = profile.lambdaBefore != null && profile.lambdaAfter != null
+    ? `${profile.factor >= 1 ? "+" : ""}${Math.round((profile.factor - 1) * 100)} % · ${profile.lambdaBefore.toFixed(1)} → ${profile.lambdaAfter.toFixed(1)} karty`
+    : "—";
   return (
     <section className="rounded-lg bg-surface px-3 py-3 text-muted" aria-label="Profil rozhodčího">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -133,19 +145,17 @@ function RefereeProfile({
         <Metric label="Karty / zápas" value={number(profile.cardsPerMatch)} />
         <Metric label="Fauly / zápas" value={number(profile.foulsPerMatch)} />
         <Metric label="Červené / zápas" value={number(profile.redCardsPerMatch, 2)} />
-        <Metric label="Upravený faktor" value={`${profile.factor.toFixed(2)}×`} />
+        <Metric label="Upravený faktor" value={hasHistory ? `${profile.factor.toFixed(2)}×` : "Bez dat"} />
         <Metric
           label="Vliv na očekávání"
-          value={profile.lambdaBefore != null && profile.lambdaAfter != null
-            ? `${profile.lambdaBefore.toFixed(1)} → ${profile.lambdaAfter.toFixed(1)}`
-            : "—"}
+          value={!hasHistory ? "Nezapočítal se" : neutral ? `Neutrální · ${influence}` : influence}
         />
         {expanded && <Metric label="Karty na faul" value={number(profile.cardsPerFoul, 2)} />}
         {expanded && <Metric label="Percentil karet" value={profile.cardPercentile == null ? "—" : `${profile.cardPercentile}.`} />}
         {expanded && <Metric label="Percentil faulů" value={profile.foulPercentile == null ? "—" : `${profile.foulPercentile}.`} />}
       </dl>
       <p className="mt-2 text-[10px] leading-relaxed">
-        Faktor porovnává skutečné karty s tím, co čekal týmový model, a je smrštěný k průměru.
+        {hasHistory ? "Faktor porovnává skutečné karty s tím, co čekal týmový model, a je smrštěný k průměru." : "Pro tohoto rozhodčího nemáme použitelnou historii, proto zůstal faktor neutrální 1,00 a model karet se nezměnil."}
         Jde o jeden vstup prognózy, nikoli sázkový tip; průměr může ovlivnit i typ přidělovaných zápasů.
       </p>
     </section>
@@ -289,6 +299,7 @@ function CountMetric({
             {value.marketOverProbability != null && value.marketUnderProbability != null && value.overDifference != null ? (
               <>
                 <CountRow label="Odmaržovaný trh" value={`Over ${pct(value.marketOverProbability)} · Under ${pct(value.marketUnderProbability)}`} />
+                {value.closingOverProbability != null && value.closingUnderProbability != null && <CountRow label="Trh při uzavření" value={`Over ${pct(value.closingOverProbability)} · Under ${pct(value.closingUnderProbability)}`} />}
                 <CountRow
                   label="Rozdíl model–trh"
                   value={`${value.overDifference >= 0 ? "Over" : "Under"} ${pp(Math.abs(value.overDifference))}`}

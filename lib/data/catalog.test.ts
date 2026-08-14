@@ -51,4 +51,8 @@ describe("rozsahy lig", () => {
     const known = new Set(CLUB_LEAGUES.map((l) => l.id));
     for (const id of PROGRAM_CLUB_LEAGUE_IDS) expect(known.has(id)).toBe(true);
   });
+
+  it("zahrnuje Süper Lig do společného programu", () => {
+    expect(PROGRAM_CLUB_LEAGUE_IDS).toContain(203);
+  });
 });

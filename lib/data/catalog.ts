@@ -181,7 +181,7 @@ export function isNationalTournamentLeague(leagueId: number): boolean {
  * ODDĚLENO od `PREDICTION_LEAGUES` (dřív byly jeden zdroj pravdy → buď appka nabízela
  * moc lig denně, nebo model počítal málo lig; potřeby jsou různé).
  */
-export const PROGRAM_CLUB_LEAGUE_IDS = [39, 140, 135, 78, 61, 94, 88, 144, 345];
+export const PROGRAM_CLUB_LEAGUE_IDS = [39, 140, 135, 78, 61, 94, 88, 144, 345, 203];
 
 /** Je klubová liga v užším seznamu pro Zápasy/Tipovačku (ne ve všech 18 `CLUB_LEAGUES`)? */
 export function isProgramClubLeague(leagueId: number): boolean {

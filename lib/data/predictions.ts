@@ -60,6 +60,11 @@ import {
   seriesPointFrom,
   snapshotPlan,
 } from "@/lib/picks/oddsSeries";
+import {
+  appendMarketSignalPoints,
+  closeMarketSignals,
+  openMarketSignals,
+} from "./marketSignalStore";
 import { logError } from "@/lib/logError";
 import {
   addFixtureCoverage,
@@ -561,10 +566,12 @@ export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
       }
       if (plan.open) {
         await saveOdds(item.fixtureId, odds);
+        await openMarketSignals(item.fixtureId, odds.books ?? [], now);
         open++;
       }
       if (plan.close) {
         await saveClosingOdds(item.fixtureId, odds);
+        await closeMarketSignals(item.fixtureId, odds.books ?? [], now);
         close++;
       }
       if (plan.series) {
@@ -578,6 +585,7 @@ export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
           );
           series++;
         }
+        await appendMarketSignalPoints(item.fixtureId, odds.books ?? [], now);
       }
     } catch (e) {
       errors++;
