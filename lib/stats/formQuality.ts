@@ -89,6 +89,15 @@ function qualityOf(m: MatchStat): FormMatchQuality {
 
   const xgFor = num(m.metrics.XG);
   const xgAgainst = num(m.metrics.XG_AGAINST);
+  const performance = {
+    shots: num(m.metrics.SHOTS),
+    shotsOnTarget: num(m.metrics.SHOTS_ON_TARGET),
+    possession: num(m.metrics.POSSESSION),
+    corners: num(m.metrics.CORNERS),
+    cards: m.metrics.YELLOW_CARDS == null
+      ? null
+      : m.metrics.YELLOW_CARDS + (m.metrics.RED_CARDS ?? 0),
+  };
 
   // Obě strany, nebo nic. Jednostranné xG by dalo xP, ve kterém soupeř nemá šance vůbec.
   if (xgFor == null || xgAgainst == null) {
@@ -100,6 +109,7 @@ function qualityOf(m: MatchStat): FormMatchQuality {
       goalsAgainst,
       xgFor: null,
       xgAgainst: null,
+      ...performance,
       points,
       expectedPoints: null,
       edge: null,
@@ -118,6 +128,7 @@ function qualityOf(m: MatchStat): FormMatchQuality {
     goalsAgainst,
     xgFor: round2(xgFor),
     xgAgainst: round2(xgAgainst),
+    ...performance,
     points,
     expectedPoints: round2(expectedPoints),
     edge: round2(edge),

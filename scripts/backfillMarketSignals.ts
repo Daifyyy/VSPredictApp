@@ -16,7 +16,10 @@ async function main() {
   for (const row of rows) {
     const openBooks = parseBooks(row.oddsBooks);
     if (!openBooks.length) continue;
-    await openMarketSignals(row.fixtureId, openBooks, row.oddsFetchedAt ?? new Date());
+    // Staré oddsBooks už neuchovávají název původního trhu. Count trhy proto nelze
+    // bezpečně odlišit od týmových/poločasových totalů a do čisté politiky v2 je
+    // zpětně nezakládáme.
+    await openMarketSignals(row.fixtureId, openBooks, row.oddsFetchedAt ?? new Date(), { includeCounts: false });
     opened++;
     const legacy = parseSeries(row.oddsSeries);
     const signals = await prisma.marketSignalSnapshot.findMany({ where: { fixtureId: row.fixtureId } });

@@ -696,7 +696,14 @@ export async function fetchOdds(
  * (`npm run probe-odds` vypíše všechny trhy zápasu i s id).
  */
 export function isCornerBet(bet: { id: number; name?: string }): boolean {
-  return bet.name != null && /corner/i.test(bet.name);
+  const n = bet.name;
+  if (!n || !/corner/i.test(n)) return false;
+  // Pouze total CELÉHO zápasu. Dřívější široký matcher pustil i „Home Team
+  // Total Corners“ nebo „1st Half Corners“, jejichž hlavní linie 4,5 pak byla
+  // chybně vydávána za total zápasu.
+  if (/home|away|team|half|1st|2nd|first|second/i.test(n)) return false;
+  if (/handicap|race|odd|even|first|last|time|minute|interval/i.test(n)) return false;
+  return /total|over\s*\/\s*under|over.?under/i.test(n);
 }
 
 /**

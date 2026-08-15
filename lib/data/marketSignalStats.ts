@@ -1,4 +1,13 @@
 import { prisma } from "@/lib/db";
+import type { Prisma } from "@prisma/client";
+import { COUNT_MARKET_SIGNAL_POLICY_VERSION, MARKET_SIGNAL_POLICY_VERSION } from "@/lib/picks/marketSignals";
+
+const activePolicyWhere: Prisma.MarketSignalSnapshotWhereInput = {
+  OR: [
+    { market: { in: ["1X2", "OVER_25"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
+    { market: { in: ["CORNERS", "CARDS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
+  ],
+};
 
 export interface MarketClvSummary {
   market: string;
@@ -15,6 +24,7 @@ export interface MarketClvSummary {
 
 export async function marketClvSummaries(): Promise<MarketClvSummary[]> {
   const rows = await prisma.marketSignalSnapshot.findMany({
+    where: activePolicyWhere,
     select: {
       market: true,
       modelContext: true,
@@ -64,6 +74,7 @@ export interface MarketSignalHistoryOptions {
 export async function marketSignalHistory(options: MarketSignalHistoryOptions) {
   const rows = await prisma.marketSignalSnapshot.findMany({
     where: {
+      AND: [activePolicyWhere],
       ...(options.market ? { market: options.market } : {}),
       ...(options.context ? { modelContext: options.context } : {}),
       ...(options.leagueId ? { leagueId: options.leagueId } : {}),

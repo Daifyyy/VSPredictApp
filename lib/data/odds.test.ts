@@ -89,6 +89,15 @@ describe("matchery trhů", () => {
     expect(isCardBet(bet("Time of First Card"))).toBe(false);
   });
 
+  it("rohy přijme jen jako total celého zápasu", () => {
+    expect(isCornerBet(bet("Total Corners"))).toBe(true);
+    expect(isCornerBet(bet("Corners Over/Under"))).toBe(true);
+    expect(isCornerBet(bet("Home Team Total Corners"))).toBe(false);
+    expect(isCornerBet(bet("Away Corners Over/Under"))).toBe(false);
+    expect(isCornerBet(bet("First Half Corners"))).toBe(false);
+    expect(isCornerBet(bet("Corner Handicap"))).toBe(false);
+  });
+
   it("tři matchery se VZÁJEMNĚ VYLUČUJÍ", () => {
     // Kdyby se překrývaly, model by porovnal gólovou λ s cenou na rohy a nic by
     // nekřičelo – proto je to invariant, ne detail.

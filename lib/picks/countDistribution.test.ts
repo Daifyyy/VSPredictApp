@@ -85,6 +85,10 @@ describe("tržní směr", () => {
     expect(mainHalfLine(books, "corners")).toBe(8.5);
   });
 
+  it("nepustí týmovou rohovou linii 4,5 do totalu zápasu", () => {
+    expect(mainHalfLine([book([{ line: 4.5, over: 1.9, under: 1.9 }])], "corners")).toBeNull();
+  });
+
   it("bez půlkové linie nic nevymýšlí", () => {
     expect(mainHalfLine([book([{ line: 9.25, over: 1.9, under: 1.9 }])], "corners")).toBeNull();
   });

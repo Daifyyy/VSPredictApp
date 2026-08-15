@@ -498,6 +498,11 @@ export interface FormMatchQuality {
   goalsAgainst: number;
   xgFor: number | null;
   xgAgainst: number | null;
+  shots?: number | null;
+  shotsOnTarget?: number | null;
+  possession?: number | null;
+  corners?: number | null;
+  cards?: number | null;
   /** Skutečné body (3/1/0). */
   points: number;
   /** Očekávané body z xG obou stran (0–3). `null` bez xG. */

@@ -2,7 +2,7 @@
 // Záměrně konzervativní – necachuje API ani HTML porovnání (vždy z čerstva přes síť);
 // jen statické assety a kořenovou stránku jako offline shell.
 
-const CACHE = "football-insight-shell-v2";
+const CACHE = "football-insight-shell-v3";
 const SHELL = ["/", "/manifest.webmanifest", "/icon-192.png", "/logoapp.png"];
 
 self.addEventListener("install", (event) => {
@@ -50,4 +50,30 @@ self.addEventListener("fetch", (event) => {
         })
     )
   );
+});
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try { payload = event.data ? event.data.json() : {}; } catch {}
+  event.waitUntil(self.registration.showNotification(payload.title || "Football Insight", {
+    body: payload.body || "Nové upozornění",
+    icon: "/icon-192.png",
+    badge: "/icon-192.png",
+    tag: payload.tag || "football-insight",
+    data: { url: payload.url || "/" },
+  }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url || "/", self.location.origin).href;
+  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+    for (const client of clients) {
+      if ("focus" in client) {
+        client.navigate(target);
+        return client.focus();
+      }
+    }
+    return self.clients.openWindow(target);
+  }));
 });

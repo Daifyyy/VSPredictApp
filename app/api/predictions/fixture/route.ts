@@ -12,6 +12,7 @@ import { getSettledPredictionRows } from "@/lib/data/repository";
 import { getCachedCountTotals } from "@/lib/data/cache";
 import { unstable_cache } from "next/cache";
 import { isRealDataConfigured, prisma } from "@/lib/db";
+import { COUNT_MARKET_SIGNAL_POLICY_VERSION, MARKET_SIGNAL_POLICY_VERSION } from "@/lib/picks/marketSignals";
 import { getRefereeProfile } from "@/lib/data/refereeStore";
 
 const countSamples = unstable_cache(async () => {
@@ -98,7 +99,10 @@ export async function GET(req: Request) {
     const openGoals = sharpFairTotal(books);
     const closeGoals = sharpFairTotal(closeBooks);
     const signalRows = isRealDataConfigured()
-      ? await prisma.marketSignalSnapshot.findMany({ where: { fixtureId }, orderBy: { market: "asc" } })
+      ? await prisma.marketSignalSnapshot.findMany({ where: { fixtureId, OR: [
+          { market: { in: ["1X2", "OVER_25"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
+          { market: { in: ["CORNERS", "CARDS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
+        ] }, orderBy: { market: "asc" } })
       : [];
     const marketSignals: FixtureModelForecast["marketSignals"] = signalRows.map((signal) => {
       const points = Array.isArray(signal.series)

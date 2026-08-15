@@ -106,8 +106,14 @@ export function isHalfLine(line: number): boolean {
 
 /** Hlavní půlková linie je ta, na které je odmaržovaný trh nejblíž 50/50. */
 export function mainHalfLine(books: BookOdds[], market: LineMarket): number | null {
+  const range = market === "corners"
+    ? { min: 6.5, max: 14.5 }
+    : market === "cards"
+      ? { min: 1.5, max: 8.5 }
+      : null;
   return marketLines(books, market)
     .filter(({ line }) => isHalfLine(line))
+    .filter(({ line }) => range == null || (line >= range.min && line <= range.max))
     .flatMap((candidate) => {
       const fair = sharpLineFair(books, market, candidate.line);
       return fair ? [{ ...candidate, balance: Math.abs(fair.over - 0.5) }] : [];

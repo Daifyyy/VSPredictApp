@@ -5,6 +5,7 @@ import { overProbNegBin } from "./corners";
 import { mainHalfLine } from "./countDistribution";
 
 export const MARKET_SIGNAL_POLICY_VERSION = 1;
+export const COUNT_MARKET_SIGNAL_POLICY_VERSION = 2;
 export type SignalMarket = "1X2" | "OVER_25" | "CORNERS" | "CARDS";
 export type SignalSide = "HOME" | "DRAW" | "AWAY" | "OVER" | "UNDER";
 
@@ -15,6 +16,12 @@ export interface FrozenMarketSignal {
   modelProbability: number;
   marketProbability: number;
   publishedTip: boolean;
+}
+
+export function marketSignalPolicyVersion(market: SignalMarket): number {
+  return market === "CORNERS" || market === "CARDS"
+    ? COUNT_MARKET_SIGNAL_POLICY_VERSION
+    : MARKET_SIGNAL_POLICY_VERSION;
 }
 
 /** Vytvoří tehdejší pohled modelu pouze z jednoho uloženého kurzového snapshotu. */

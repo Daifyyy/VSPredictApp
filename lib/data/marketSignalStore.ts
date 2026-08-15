@@ -4,16 +4,25 @@ import { getPredictionByFixture } from "./predictionStore";
 import {
   freezeMarketSignals,
   MARKET_SIGNAL_POLICY_VERSION,
+  COUNT_MARKET_SIGNAL_POLICY_VERSION,
+  marketSignalPolicyVersion,
   marketProbabilityAt,
 } from "@/lib/picks/marketSignals";
 import { isEuroCupLeague } from "./catalog";
 
-export async function openMarketSignals(fixtureId: number, books: BookOdds[], at: Date): Promise<void> {
+export async function openMarketSignals(
+  fixtureId: number,
+  books: BookOdds[],
+  at: Date,
+  options: { includeCounts?: boolean } = {}
+): Promise<void> {
   const row = await getPredictionByFixture(fixtureId);
   if (!row) return;
-  const signals = freezeMarketSignals(row, books);
+  const signals = freezeMarketSignals(row, books).filter((signal) =>
+    options.includeCounts !== false || (signal.market !== "CORNERS" && signal.market !== "CARDS")
+  );
   await Promise.all(signals.map((signal) => prisma.marketSignalSnapshot.upsert({
-    where: { fixtureId_market_policyVersion: { fixtureId, market: signal.market, policyVersion: MARKET_SIGNAL_POLICY_VERSION } },
+    where: { fixtureId_market_policyVersion: { fixtureId, market: signal.market, policyVersion: marketSignalPolicyVersion(signal.market) } },
     create: {
       fixtureId,
       leagueId: row.leagueId,
@@ -27,7 +36,7 @@ export async function openMarketSignals(fixtureId: number, books: BookOdds[], at
       modelVersion: row.modelVersion,
       contextVersion: row.contextVersion ?? 1,
       countModelVersion: signal.market === "CORNERS" || signal.market === "CARDS" ? row.countModelVersion : null,
-      policyVersion: MARKET_SIGNAL_POLICY_VERSION,
+      policyVersion: marketSignalPolicyVersion(signal.market),
       publishedTip: signal.publishedTip,
       openedAt: at,
       series: [{ t: Math.max(0, Math.round((new Date(row.kickoff).getTime() - at.getTime()) / 60_000)), p: signal.marketProbability }],
@@ -38,7 +47,10 @@ export async function openMarketSignals(fixtureId: number, books: BookOdds[], at
 }
 
 export async function appendMarketSignalPoints(fixtureId: number, books: BookOdds[], at: Date): Promise<void> {
-  const rows = await prisma.marketSignalSnapshot.findMany({ where: { fixtureId } });
+  const rows = await prisma.marketSignalSnapshot.findMany({ where: { fixtureId, OR: [
+    { market: { in: ["1X2", "OVER_25"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
+    { market: { in: ["CORNERS", "CARDS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
+  ] } });
   for (const row of rows) {
     const probability = marketProbabilityAt(books, row.market as never, row.side as never, row.line);
     if (probability == null) {
@@ -59,7 +71,10 @@ export async function appendMarketSignalPoints(fixtureId: number, books: BookOdd
 }
 
 export async function closeMarketSignals(fixtureId: number, books: BookOdds[], at: Date): Promise<void> {
-  const rows = await prisma.marketSignalSnapshot.findMany({ where: { fixtureId, closedAt: null } });
+  const rows = await prisma.marketSignalSnapshot.findMany({ where: { fixtureId, closedAt: null, OR: [
+    { market: { in: ["1X2", "OVER_25"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
+    { market: { in: ["CORNERS", "CARDS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
+  ] } });
   for (const row of rows) {
     const probability = marketProbabilityAt(books, row.market as never, row.side as never, row.line);
     if (probability == null) continue;

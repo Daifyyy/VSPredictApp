@@ -100,6 +100,11 @@ export default async function TeamPage(props: Props) {
         <StatCard label="Skóre v tabulce" value={profile.standing ? `${profile.standing.all.goalsFor}:${profile.standing.all.goalsAgainst}` : "—"} note={profile.standing ? `${profile.standing.all.played} utkání` : "tabulka není dostupná"} />
       </section>
 
+      <RecentPerformances
+        matches={quality?.matches ?? []}
+        opponents={summary?.formOpponents ?? []}
+      />
+
       <div className="mt-4 grid gap-4 xl:grid-cols-[.8fr_1.2fr]">
         <section className="ui-panel p-5">
           <h2 className="text-lg font-bold text-foreground">Herní profil</h2>
@@ -135,6 +140,55 @@ function FormCard({ form, sample }: { form: ("W" | "D" | "L")[]; sample: number 
   const labels = { W: "V", D: "R", L: "P" } as const;
   const colors = { W: "bg-positive text-white", D: "bg-muted/25 text-foreground", L: "bg-negative text-white" } as const;
   return <article className="data-card p-4"><p className="text-xs font-semibold text-muted">Forma</p><div className="mt-3 flex min-h-8 gap-1.5">{form.length ? form.map((result, index) => <span key={`${result}-${index}`} className={`grid h-8 min-w-8 place-items-center rounded-md px-2 text-xs font-bold ${colors[result]}`} title={result === "W" ? "Výhra" : result === "D" ? "Remíza" : "Prohra"}>{labels[result]}</span>) : <span className="text-2xl font-bold text-foreground">—</span>}</div><p className="mt-2 text-xs text-muted">posledních {sample} zápasů</p></article>;
+}
+
+function RecentPerformances({
+  matches,
+  opponents,
+}: {
+  matches: import("@/lib/types").FormMatchQuality[];
+  opponents: ({ id: number; name: string; logoUrl: string | null } | null)[];
+}) {
+  const resultLabel = { W: "V", D: "R", L: "P" } as const;
+  const resultTone = { W: "bg-positive text-white", D: "bg-muted/20 text-foreground", L: "bg-negative text-white" } as const;
+  const number = (value: number | null | undefined, digits = 0) => value == null ? "—" : value.toFixed(digits);
+  return (
+    <section className="ui-panel mt-4 overflow-hidden" aria-labelledby="recent-performances-title">
+      <div className="border-b border-border px-4 py-4 sm:px-5">
+        <h2 id="recent-performances-title" className="text-lg font-bold text-foreground">Poslední výkony</h2>
+        <p className="mt-1 text-xs text-muted">Všechny údaje jsou načtené společně s profilem. Řádky nic dalšího nestahují.</p>
+      </div>
+      {matches.length ? <div className="divide-y divide-border">
+        {matches.map((match, index) => {
+          const opponent = opponents[index];
+          const verdict = match.verdict === "lucky" ? "Výsledek nad výkonem" : match.verdict === "unlucky" ? "Výkon nad výsledkem" : match.verdict === "matched" ? "Výsledek odpovídá výkonu" : "Bez xG hodnocení";
+          return <article key={match.fixtureId} className="grid grid-cols-3 gap-3 px-4 py-3 sm:grid-cols-[minmax(190px,1.4fr)_repeat(5,minmax(64px,.55fr))] sm:items-center sm:px-5">
+            <div className="col-span-3 flex min-w-0 items-center gap-3 sm:col-span-1">
+              <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-md text-xs font-bold ${resultTone[match.result]}`}>{resultLabel[match.result]}</span>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-foreground">{opponent?.name ?? "Neznámý soupeř"}</p>
+                <p className="text-[11px] text-muted">{new Date(match.date).toLocaleDateString("cs-CZ")} · {verdict}</p>
+              </div>
+            </div>
+            <PerformanceValue label="Skóre" value={`${match.goalsFor}:${match.goalsAgainst}`} />
+            <PerformanceValue label="xG" value={match.xgFor == null || match.xgAgainst == null ? "—" : `${number(match.xgFor, 2)}:${number(match.xgAgainst, 2)}`} />
+            <PerformanceValue label="Střely" value={number(match.shots)} />
+            <PerformanceValue label="Na branku" value={number(match.shotsOnTarget)} />
+            <PerformanceValue label="Držení" value={match.possession == null ? "—" : `${number(match.possession)} %`} />
+            <div className="col-span-full flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted sm:justify-end">
+              <span>Rohy <b className="text-foreground">{number(match.corners)}</b></span>
+              <span>Karty <b className="text-foreground">{number(match.cards)}</b></span>
+              {match.expectedPoints != null && <span>xB <b className="text-foreground">{number(match.expectedPoints, 2)}</b></span>}
+            </div>
+          </article>;
+        })}
+      </div> : <p className="px-5 py-5 text-sm text-muted">Detailní výkony zatím nejsou v cache dostupné.</p>}
+    </section>
+  );
+}
+
+function PerformanceValue({ label, value }: { label: string; value: string }) {
+  return <div className="text-left sm:text-right"><p className="text-[10px] uppercase tracking-wide text-muted">{label}</p><p className="mt-0.5 text-sm font-bold tabular-nums text-foreground">{value}</p></div>;
 }
 
 function StyleBar({ label, leftLabel, rightLabel, score, available }: { label: string; leftLabel: string; rightLabel: string; score: number; available: boolean }) { return <div><div className="flex items-center justify-between text-xs"><span className="font-semibold text-foreground">{label}</span><span className="font-bold tabular-nums text-positive">{available ? `${score.toFixed(1)}/10` : "—"}</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-border"><div className="bar-fill h-full rounded-full bg-positive" style={{ width: available ? `${score * 10}%` : "0%" }} /></div><div className="mt-1 flex justify-between text-[10px] text-muted"><span>{leftLabel}</span><span>{rightLabel}</span></div></div>; }

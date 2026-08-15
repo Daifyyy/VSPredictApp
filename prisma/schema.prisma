@@ -104,6 +104,9 @@ model User {
   tips             UserTip[]
   favoriteLeagues  FavoriteLeague[]
   favoriteFixtures FavoriteFixture[]
+  pushSubscriptions PushSubscription[]
+  notificationPreference NotificationPreference?
+  notificationDeliveries NotificationDelivery[]
 }
 
 model Account {
@@ -514,4 +517,51 @@ model FavoriteFixture {
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@id([email, fixtureId])
+}
+
+/// Web Push zařízení přihlášeného uživatele. Endpoint i klíče jsou tajné doručovací údaje
+/// a nikdy se neposílají jinému uživateli ani do veřejného payloadu.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique @db.Text
+  p256dh    String   @db.Text
+  auth      String   @db.Text
+  userAgent String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// První verze notifikací je záměrně malá: připomínka oblíbeného zápasu. Další typy
+/// lze přidat bez změny PushSubscription a bez opětovného povolování zařízení.
+model NotificationPreference {
+  userId          String   @id
+  enabled         Boolean  @default(true)
+  favoriteKickoff Boolean  @default(true)
+  kickoffMinutes  Int      @default(60)
+  publishedPrediction Boolean @default(false)
+  marketMovement      Boolean @default(false)
+  movementThreshold   Int     @default(3)
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Idempotence push cronu: stejný uživatel nedostane tutéž událost dvakrát ani při
+/// opakovaném nebo zpožděném běhu GitHub Actions.
+model NotificationDelivery {
+  id        String   @id @default(cuid())
+  userId    String
+  fixtureId Int
+  type      String
+  sentAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fixtureId, type])
+  @@index([sentAt])
 }

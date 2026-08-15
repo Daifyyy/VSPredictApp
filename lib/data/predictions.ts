@@ -564,9 +564,12 @@ export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
         withBooks++;
         addFixtureCoverage(coverage, odds.books);
       }
+      // Upsert je levný a idempotentní. Je potřeba i mimo první opening fetch,
+      // protože nová verze parseru count trhů musí umět založit čistý snapshot
+      // také u zápasu, který už starší opening snapshot měl.
+      await openMarketSignals(item.fixtureId, odds.books ?? [], now);
       if (plan.open) {
         await saveOdds(item.fixtureId, odds);
-        await openMarketSignals(item.fixtureId, odds.books ?? [], now);
         open++;
       }
       if (plan.close) {
