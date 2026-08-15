@@ -87,6 +87,7 @@ import { standingsToTeams } from "@/lib/game/teams";
 import type { GameTeam, LeagueAccess } from "@/lib/game/types";
 import {
   CLUB_LEAGUES,
+  PUBLIC_CLUB_LEAGUES,
   CURRENT_SEASON,
   EURO_CUP_LEAGUES,
   EURO_LEAGUE_IDS,
@@ -137,7 +138,7 @@ export type ClubMeta = Pick<Team, "name" | "logoUrl" | "country" | "stadium">;
 export function getLeagues(): League[] {
   // Evropské poháry jsou první v Porovnání a globálním katalogu, ale zůstávají mimo
   // `CLUB_LEAGUES`, takže se pro ně nikdy nevytváří tabulka ani stylový snapshot.
-  return [...EURO_CUP_LEAGUES, ...CLUB_LEAGUES, ...NATIONAL_LEAGUES];
+  return [...EURO_CUP_LEAGUES, ...PUBLIC_CLUB_LEAGUES, ...NATIONAL_LEAGUES];
 }
 
 /**
@@ -159,7 +160,7 @@ export async function warmCatalog(): Promise<{ warmed: number; failed: number }>
   // Ligové tabulky klubových lig (levné, ~18 volání) → rank v seznamech Zápasy/Tipy
   // je pak instantní (jinak by je líně tahal cold homepage load).
   const standings = await Promise.all(
-    CLUB_LEAGUES.map((l) =>
+    PUBLIC_CLUB_LEAGUES.map((l) =>
       cachedLeagueStandings(l.id).then(
         () => true,
         () => false

@@ -54,6 +54,7 @@ import {
   PROGRAM_CLUB_LEAGUE_IDS,
   isEuroCupLeague,
   isProgramClubLeague,
+  isPublicCompetition,
 } from "./catalog";
 import * as real from "./realRepository";
 import type { SearchableTeam } from "@/lib/teamSearch";
@@ -311,7 +312,7 @@ export async function stampPickRanks(picks: MatchPick[]): Promise<MatchPick[]> {
 export async function getUpcomingPredictions(): Promise<PredictionRow[]> {
   if (useReal) {
     const rows = await getUpcomingPredictionRows(MODEL_VERSION);
-    return rows.filter(isCurrentContextVersion);
+    return rows.filter((row) => isCurrentContextVersion(row) && isPublicCompetition(row.leagueId));
   }
   return mockUpcomingPredictions();
 }
@@ -345,7 +346,7 @@ export async function getSettledPredictionRows(
 ): Promise<PredictionRow[]> {
   if (useReal) {
     const rows = await getSettledPredictions(modelVersion);
-    return rows.filter(isCurrentContextVersion);
+    return rows.filter((row) => isCurrentContextVersion(row) && isPublicCompetition(row.leagueId));
   }
   return mockSettledPredictions();
 }
@@ -356,7 +357,7 @@ export async function getPublishedPredictionRows(
 ): Promise<PredictionRow[]> {
   if (useReal) {
     const rows = await getPublishedPredictions(modelVersion);
-    return rows.filter(isCurrentContextVersion);
+    return rows.filter((row) => isCurrentContextVersion(row) && isPublicCompetition(row.leagueId));
   }
   return mockSettledPredictions().filter((row) => row.publishedAt != null);
 }

@@ -419,7 +419,18 @@ export interface FixtureModelForecast {
   }>;
   corners: CountModelForecast | null;
   cards: CountModelForecast | null;
+  fouls: FoulModelForecast | null;
   refereeProfile: RefereeProfileForecast | null;
+}
+
+export interface FoulModelForecast {
+  home: number;
+  away: number;
+  total: number;
+  version: number;
+  evaluatedSample: number;
+  mae: number | null;
+  smallSample: boolean;
 }
 
 export interface RefereeProfileForecast {
@@ -902,6 +913,9 @@ export interface PredictionRow {
   lambdaCornersAway?: number | null;
   lambdaCardsHome?: number | null;
   lambdaCardsAway?: number | null;
+  lambdaFoulsHome?: number | null;
+  lambdaFoulsAway?: number | null;
+  foulModelVersion?: number | null;
   countModelVersion?: number | null;
   cornerVarianceRatio?: number | null;
   cardVarianceRatio?: number | null;

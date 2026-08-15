@@ -47,6 +47,10 @@ export function FixtureModelCard({
       active = false;
     };
   }, [fixtureId, revision]);
+  useEffect(() => {
+    if (data.state !== "ready" || window.location.hash !== `#model-${fixtureId}`) return;
+    requestAnimationFrame(() => document.getElementById(`model-${fixtureId}`)?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, [data.state, fixtureId]);
 
   if (data.state === "loading") return <Message text="Načítám model…" />;
   if (data.state === "locked") return <Message text="Kompletní model zápasu je součástí PRO." />;
@@ -56,7 +60,7 @@ export function FixtureModelCard({
   const f = data.forecast;
   const pct = (value: number) => `${Math.round(value * 100)} %`;
   return (
-    <div className="space-y-3 rounded-xl border border-border bg-background/55 p-3 text-xs">
+    <div id={`model-${fixtureId}`} className="scroll-mt-20 space-y-3 rounded-xl border border-border bg-background/55 p-3 text-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <strong className="text-foreground">Model před zápasem</strong>
         <div className="flex gap-1.5">
@@ -90,14 +94,47 @@ export function FixtureModelCard({
         <CountMetric market="corners" value={f.corners} />
         <CountMetric market="cards" value={f.cards} />
       </div>
+      <TempoDiscipline fouls={f.fouls} cards={f.cards} referee={f.refereeProfile} />
       <RefereeProfile profile={f.refereeProfile} expanded={countsOnly} fixtureId={fixtureId} canEdit={user?.isAdmin === true} onAssigned={() => setRevision((value) => value + 1)} />
-      {(f.corners || f.cards) && (
+      {(f.corners || f.cards || f.fouls) && (
         <p className="text-[10px] leading-relaxed text-muted">
           Jde o experimentální porovnání, nikoli publikovaný tip ani potvrzenou výhodu proti trhu.
         </p>
       )}
     </div>
   );
+}
+
+function TempoDiscipline({
+  fouls,
+  cards,
+  referee,
+}: {
+  fouls: FixtureModelForecast["fouls"];
+  cards: FixtureModelForecast["cards"];
+  referee: FixtureModelForecast["refereeProfile"];
+}) {
+  if (!fouls && !cards) return null;
+  const tempo = fouls
+    ? fouls.total >= 25 ? "Často přerušovaný zápas" : fouls.total <= 20 ? "Plynulejší tempo" : "Běžná intenzita"
+    : "Tempo bez dostatku dat";
+  const discipline = cards
+    ? cards.total >= 5 ? "Vyšší karetní intenzita" : cards.total <= 3.5 ? "Klidnější karetní profil" : "Běžný karetní profil"
+    : "Karty bez dostatku dat";
+  return <section className="rounded-lg border border-border bg-background px-3 py-3 text-muted" aria-label="Tempo a disciplína">
+    <div className="flex flex-wrap items-start justify-between gap-2">
+      <div><strong className="text-foreground">Tempo a disciplína</strong><p className="mt-1 text-[10px]">Společný pohled na fauly, karty a známý vliv rozhodčího.</p></div>
+      <Badge>Experimentální</Badge>
+    </div>
+    <div className="mt-3 grid gap-2 sm:grid-cols-3">
+      <Metric label="Očekávané fauly" value={fouls ? `${fouls.home.toFixed(1)} : ${fouls.away.toFixed(1)}` : "—"} />
+      <Metric label="Fauly celkem" value={fouls ? fouls.total.toFixed(1) : "—"} />
+      <Metric label="Karty celkem" value={cards ? cards.total.toFixed(1) : "—"} />
+    </div>
+    <div className="mt-2 flex flex-wrap gap-1.5"><Badge>{tempo}</Badge><Badge>{discipline}</Badge>{referee?.sample ? <Badge>Rozhodčí · {referee.sample} zápasů</Badge> : null}</div>
+    <p className="mt-2 text-[10px] leading-4">Fauly zatím nemají ověřenou tržní kalibraci. Ukazujeme předzápasové očekávání a po utkání měříme chybu; nejde o sázkový tip.</p>
+    {fouls && <p className="mt-1 text-[10px]">Vyhodnoceno {fouls.evaluatedSample} prognóz{fouls.mae != null ? ` · průměrná chyba ${fouls.mae.toFixed(1)} faulu` : ""}.</p>}
+  </section>;
 }
 
 function CurrentMarketMovement({ signals }: { signals: FixtureModelForecast["marketSignals"] }) {

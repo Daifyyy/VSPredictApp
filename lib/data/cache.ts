@@ -193,6 +193,7 @@ export async function getCachedCountTotals(
       corners: true,
       yellowCards: true,
       redCards: true,
+      fouls: true,
     },
   });
   const byFixture = new Map<number, Map<number, (typeof rows)[number]>>();
@@ -212,7 +213,10 @@ export async function getCachedCountTotals(
     const cards = home?.yellowCards != null && away?.yellowCards != null
       ? home.yellowCards + (home.redCards ?? 0) + away.yellowCards + (away.redCards ?? 0)
       : null;
-    if (corners != null || cards != null) out.set(prediction.fixtureId, { corners, cards });
+    const fouls = home?.fouls != null && away?.fouls != null
+      ? home.fouls + away.fouls
+      : null;
+    if (corners != null || cards != null || fouls != null) out.set(prediction.fixtureId, { corners, cards, fouls });
   }
   return out;
 }

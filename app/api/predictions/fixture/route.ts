@@ -38,6 +38,24 @@ const countSamples = unstable_cache(async () => {
   return Object.fromEntries(out);
 }, ["count-model-samples"], { revalidate: 300 });
 
+const foulSamples = unstable_cache(async () => {
+  if (!isRealDataConfigured()) return {};
+  const rows = await getSettledPredictionRows();
+  const actual = await getCachedCountTotals(rows);
+  const buckets = new Map<string, { n: number; error: number }>();
+  for (const row of rows) {
+    if (row.lambdaFoulsHome == null || row.lambdaFoulsAway == null) continue;
+    const observed = actual.get(row.fixtureId)?.fouls;
+    if (observed == null) continue;
+    const key = `${row.modelContext ?? "LEAGUE"}:${row.foulModelVersion ?? 0}`;
+    const bucket = buckets.get(key) ?? { n: 0, error: 0 };
+    bucket.n += 1;
+    bucket.error += Math.abs(row.lambdaFoulsHome + row.lambdaFoulsAway - observed);
+    buckets.set(key, bucket);
+  }
+  return Object.fromEntries([...buckets].map(([key, value]) => [key, { n: value.n, mae: value.error / value.n }]));
+}, ["foul-model-samples"], { revalidate: 300 });
+
 export async function GET(req: Request) {
   if (!allowRequest(`fixture-model:${clientKey(req)}`, 60, 60_000)) return tooMany();
   const fixtureId = Number(new URL(req.url).searchParams.get("fixture"));
@@ -54,7 +72,7 @@ export async function GET(req: Request) {
     if (!row || !row.available) return NextResponse.json({ forecast: null });
     const books = parseBooks(row.oddsBooks);
     const closeBooks = parseBooks(row.oddsCloseBooks);
-    const samples = await countSamples();
+    const [samples, foulStats] = await Promise.all([countSamples(), foulSamples()]);
     const context = row.modelContext ?? "LEAGUE";
     const version = row.countModelVersion ?? 0;
     const countOptions = {
@@ -90,6 +108,16 @@ export async function GET(req: Request) {
       version,
       evaluatedSample: samples[`${context}:cards:${version}:${row.cardVarianceRatio ?? 1.2}`] ?? 0,
     });
+    const foulPerformance = foulStats[`${context}:${row.foulModelVersion ?? 0}`] as { n: number; mae: number } | undefined;
+    const fouls = row.lambdaFoulsHome != null && row.lambdaFoulsAway != null ? {
+      home: row.lambdaFoulsHome,
+      away: row.lambdaFoulsAway,
+      total: row.lambdaFoulsHome + row.lambdaFoulsAway,
+      version: row.foulModelVersion ?? 0,
+      evaluatedSample: foulPerformance?.n ?? 0,
+      mae: foulPerformance?.mae ?? null,
+      smallSample: (foulPerformance?.n ?? 0) < 50,
+    } : null;
     const withClose = (value: typeof corners, market: "corners" | "cards") => {
       if (!value) return null;
       const closing = value.line == null ? null : sharpLineFair(closeBooks, market, value.line);
@@ -158,6 +186,7 @@ export async function GET(req: Request) {
       marketSignals,
       corners: withClose(corners, "corners"),
       cards: withClose(cards, "cards"),
+      fouls,
       refereeProfile,
     };
     return NextResponse.json({ forecast });

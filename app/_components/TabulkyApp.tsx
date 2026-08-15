@@ -7,7 +7,7 @@ import { TeamLogo } from "./TeamLogo";
 import { StandingsTable, ZoneLegend } from "./StandingsTable";
 import { LeagueScorerList } from "./LeagueScorerList";
 import { buildCompareHref } from "./compareHref";
-import { CLUB_LEAGUES, leagueDisplayName } from "@/lib/data/catalog";
+import { CLUB_LEAGUES, PUBLIC_CLUB_LEAGUES, leagueDisplayName } from "@/lib/data/catalog";
 import type { LeagueRound, LeagueScorer, LeagueStyleKey, LeagueStyleSnapshot, LeagueTable, RoundFixture, Venue } from "@/lib/types";
 import { useCurrentUser } from "./useCurrentUser";
 import { leagueRowsForVenue } from "@/lib/leagueTable";
@@ -114,7 +114,7 @@ async function loadScorers(
 function restoreLeague(apply: (id: number) => void): void {
   try {
     const saved = Number(localStorage.getItem(STORAGE_KEY));
-    if (Number.isFinite(saved) && CLUB_LEAGUES.some((l) => l.id === saved)) apply(saved);
+    if (Number.isFinite(saved) && PUBLIC_CLUB_LEAGUES.some((l) => l.id === saved)) apply(saved);
   } catch {
     // localStorage nemusí být dostupný (privátní režim) – nevadí
   }
@@ -151,6 +151,7 @@ export function TabulkyApp() {
     const requestedVenue = params.get("venue");
     const requestedMetric = params.get("metric") as LeagueStyleKey | null;
     queueMicrotask(() => {
+      // Starý přímý odkaz zůstává funkční, skrytá liga se ale nenabízí ve výběru.
       if (CLUB_LEAGUES.some((league) => league.id === requestedLeague)) setLeagueId(requestedLeague);
       else restoreLeague(setLeagueId);
       if (requestedVenue === "TOTAL" || requestedVenue === "HOME" || requestedVenue === "AWAY") setVenue(requestedVenue);
@@ -376,7 +377,7 @@ function LeagueToolbar({ selected, venue, onSelect, onVenue }: {
   const [query, setQuery] = useState("");
   const selectedLeague = CLUB_LEAGUES.find((league) => league.id === selected)!;
   const needle = query.trim().toLocaleLowerCase("cs");
-  const filtered = CLUB_LEAGUES.filter((league) => `${leagueDisplayName(league)} ${league.country}`.toLocaleLowerCase("cs").includes(needle));
+  const filtered = PUBLIC_CLUB_LEAGUES.filter((league) => `${leagueDisplayName(league)} ${league.country}`.toLocaleLowerCase("cs").includes(needle));
   return <div className="sticky top-0 z-20 mt-5 rounded-xl border border-border bg-background/95 p-2 shadow-sm backdrop-blur">
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
       <button type="button" onClick={() => setOpen(true)} aria-haspopup="dialog" className="ui-control flex min-w-0 items-center gap-2 px-3 text-left font-semibold text-foreground hover:border-positive/40">

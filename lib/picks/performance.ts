@@ -17,6 +17,7 @@ export interface PublishedTipRecord {
 export interface ActualCountTotals {
   corners: number | null;
   cards: number | null;
+  fouls?: number | null;
 }
 
 export interface CountAccuracy {

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import type { Prisma } from "@prisma/client";
 import { COUNT_MARKET_SIGNAL_POLICY_VERSION, MARKET_SIGNAL_POLICY_VERSION } from "@/lib/picks/marketSignals";
 import { RELIABLE_CLOSE_MAX_MINUTES } from "@/lib/picks/oddsSeries";
+import { PUBLIC_CLUB_LEAGUE_IDS } from "@/lib/data/catalog";
 
 const activePolicyWhere: Prisma.MarketSignalSnapshotWhereInput = {
   OR: [
@@ -52,7 +53,16 @@ export interface MarketClvSummary {
 
 export async function marketClvSummaries(): Promise<MarketClvSummary[]> {
   const rows = await prisma.marketSignalSnapshot.findMany({
-    where: activePolicyWhere,
+    where: {
+      AND: [
+        activePolicyWhere,
+        { OR: [
+          { modelContext: "EURO_CUP" },
+          { modelContext: "NATIONAL" },
+          { leagueId: { in: [...PUBLIC_CLUB_LEAGUE_IDS] } },
+        ] },
+      ],
+    },
     select: {
       market: true,
       modelContext: true,
@@ -67,7 +77,7 @@ export async function marketClvSummaries(): Promise<MarketClvSummary[]> {
   });
   const cohorts: Array<{ market: string; context: string; publishedOnly: boolean }> = [];
   for (const row of rows) {
-    const context = row.modelContext === "EURO_CUP" ? "EURO_CUP" : "LEAGUE";
+    const context = row.modelContext === "EURO_CUP" ? "EURO_CUP" : row.modelContext === "NATIONAL" ? "NATIONAL" : "LEAGUE";
     if (!cohorts.some((x) => x.market === row.market && x.context === context && !x.publishedOnly))
       cohorts.push({ market: row.market, context, publishedOnly: false });
     if (row.market === "1X2" && row.publishedTip && !cohorts.some((x) => x.market === row.market && x.context === context && x.publishedOnly))
@@ -75,7 +85,7 @@ export async function marketClvSummaries(): Promise<MarketClvSummary[]> {
   }
   return cohorts.map((cohort) => {
     const all = rows.filter((row) => row.kickoff <= new Date() && row.market === cohort.market &&
-      (row.modelContext === "EURO_CUP" ? "EURO_CUP" : "LEAGUE") === cohort.context &&
+      (row.modelContext === "EURO_CUP" ? "EURO_CUP" : row.modelContext === "NATIONAL" ? "NATIONAL" : "LEAGUE") === cohort.context &&
       (!cohort.publishedOnly || row.publishedTip));
     const measured = all.map((row) => ({ row, close: effectiveClose(row) })).filter((item) => item.close != null);
     const clv = measured.map(({ row, close }) => close!.probability - row.openMarketProbability);
@@ -105,7 +115,14 @@ export interface MarketSignalHistoryOptions {
 export async function marketSignalHistory(options: MarketSignalHistoryOptions) {
   const rows = await prisma.marketSignalSnapshot.findMany({
     where: {
-      AND: [activePolicyWhere],
+      AND: [
+        activePolicyWhere,
+        { OR: [
+          { modelContext: "EURO_CUP" },
+          { modelContext: "NATIONAL" },
+          { leagueId: { in: [...PUBLIC_CLUB_LEAGUE_IDS] } },
+        ] },
+      ],
       kickoff: { lt: new Date() },
       ...(options.market ? { market: options.market } : {}),
       ...(options.context ? { modelContext: options.context } : {}),

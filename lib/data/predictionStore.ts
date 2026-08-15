@@ -89,6 +89,9 @@ function toRow(p: PredictionRowSource): PredictionRow {
     lambdaCornersAway: p.lambdaCornersAway,
     lambdaCardsHome: p.lambdaCardsHome,
     lambdaCardsAway: p.lambdaCardsAway,
+    lambdaFoulsHome: p.lambdaFoulsHome,
+    lambdaFoulsAway: p.lambdaFoulsAway,
+    foulModelVersion: p.foulModelVersion,
     countModelVersion: p.countModelVersion,
     cornerVarianceRatio: p.cornerVarianceRatio,
     cardVarianceRatio: p.cardVarianceRatio,
@@ -162,6 +165,9 @@ export async function upsertPrediction(row: PredictionUpsert): Promise<void> {
     lambdaCornersAway: row.lambdaCornersAway ?? null,
     lambdaCardsHome: preserveManual ? existing.lambdaCardsHome : row.lambdaCardsHome ?? null,
     lambdaCardsAway: preserveManual ? existing.lambdaCardsAway : row.lambdaCardsAway ?? null,
+    lambdaFoulsHome: row.lambdaFoulsHome ?? null,
+    lambdaFoulsAway: row.lambdaFoulsAway ?? null,
+    foulModelVersion: row.foulModelVersion ?? null,
     countModelVersion:
       row.lambdaCornersHome != null || row.lambdaCardsHome != null ? COUNT_MODEL_VERSION : null,
     cornerVarianceRatio:

@@ -92,6 +92,25 @@ export const CLUB_LEAGUES: League[] = [
  * soutěže `wcQualLeagueId` (WC kvalifikace) v dané sezóně. ID i sezóny ověřeny
  * živě přes /leagues (sezóny patří k cyklu MS 2026; aktualizovat při novém cyklu).
  */
+/** Aktivně podporované klubové ligy v pevném veřejném pořadí. */
+export const PUBLIC_CLUB_LEAGUE_IDS = [
+  345, 39, 140, 135, 78, 61, 40, 94, 88, 144, 203,
+] as const;
+
+const PUBLIC_CLUB_LEAGUE_ID_SET = new Set<number>(PUBLIC_CLUB_LEAGUE_IDS);
+
+/** `CLUB_LEAGUES` zůstává historickým katalogem pro staré URL a uložená data. */
+export const PUBLIC_CLUB_LEAGUES: League[] = PUBLIC_CLUB_LEAGUE_IDS.map((id) => {
+  const league = CLUB_LEAGUES.find((item) => item.id === id);
+  if (!league) throw new Error(`Chybí veřejná liga ${id} v historickém katalogu`);
+  return league;
+});
+
+export function isPublicClubLeague(leagueId: number): boolean {
+  return PUBLIC_CLUB_LEAGUE_ID_SET.has(leagueId);
+}
+
+/** Konfederace používaná jako syntetický výběr reprezentačních týmů. */
 export interface Confederation {
   id: number; // syntetické league id (9001+)
   name: string;
@@ -181,11 +200,12 @@ export function isNationalTournamentLeague(leagueId: number): boolean {
  * ODDĚLENO od `PREDICTION_LEAGUES` (dřív byly jeden zdroj pravdy → buď appka nabízela
  * moc lig denně, nebo model počítal málo lig; potřeby jsou různé).
  */
-export const PROGRAM_CLUB_LEAGUE_IDS = [39, 140, 135, 78, 61, 94, 88, 144, 345, 203];
+/** @deprecated Alias pro starší importy; veřejný rozsah je už jen jeden. */
+export const PROGRAM_CLUB_LEAGUE_IDS: readonly number[] = PUBLIC_CLUB_LEAGUE_IDS;
 
 /** Je klubová liga v užším seznamu pro Zápasy/Tipovačku (ne ve všech 18 `CLUB_LEAGUES`)? */
 export function isProgramClubLeague(leagueId: number): boolean {
-  return PROGRAM_CLUB_LEAGUE_IDS.includes(leagueId);
+  return isPublicClubLeague(leagueId);
 }
 
 /**
@@ -193,10 +213,25 @@ export function isProgramClubLeague(leagueId: number): boolean {
  * (`PROGRAM_CLUB_LEAGUE_IDS`) + reprezentační soutěže. Jeden zdroj pravdy pro filtr
  * `/fixtures?date=`.
  */
+/** Veřejný klubový rozsah je sdílený Programem i modelovou pipeline. */
+export const ACTIVE_PROGRAM_CLUB_LEAGUE_IDS: readonly number[] = PUBLIC_CLUB_LEAGUE_IDS;
+
 export const FIXTURE_LIST_LEAGUE_IDS = [
   ...EURO_LEAGUE_IDS,
-  ...PROGRAM_CLUB_LEAGUE_IDS,
+  ...ACTIVE_PROGRAM_CLUB_LEAGUE_IDS,
   ...ALL_NATIONAL_PREDICTION_LEAGUE_IDS,
+];
+
+/** Kurátorované názvy skutečných reprezentačních soutěží z fixture payloadů. */
+export const NATIONAL_COMPETITION_LEAGUES: League[] = [
+  { id: 1, name: "Mistrovství světa", country: "Mezinárodní", logoUrl: leagueLogo(1), kind: "NATIONAL_COMP" },
+  { id: 4, name: "Mistrovství Evropy", country: "Evropa", logoUrl: leagueLogo(4), kind: "NATIONAL_COMP" },
+  { id: 9, name: "Copa América", country: "Jižní Amerika", logoUrl: leagueLogo(9), kind: "NATIONAL_COMP" },
+  { id: 6, name: "Africký pohár národů", country: "Afrika", logoUrl: leagueLogo(6), kind: "NATIONAL_COMP" },
+  { id: 7, name: "Asijský pohár", country: "Asie", logoUrl: leagueLogo(7), kind: "NATIONAL_COMP" },
+  { id: 22, name: "Gold Cup", country: "Severní Amerika", logoUrl: leagueLogo(22), kind: "NATIONAL_COMP" },
+  { id: 5, name: "Liga národů UEFA", country: "Evropa", logoUrl: leagueLogo(5), kind: "NATIONAL_COMP" },
+  { id: 536, name: "Liga národů CONCACAF", country: "Severní Amerika", logoUrl: leagueLogo(536), kind: "NATIONAL_COMP" },
 ];
 
 /** Má soutěž reálné domácí/venku (Liga národů) → build s venue splitem (ne neutrální)? */
@@ -232,8 +267,31 @@ export function getConfederation(leagueId: number): Confederation | undefined {
 }
 
 const ALL_LEAGUES_BY_ID = new Map<number, League>(
-  [...CLUB_LEAGUES, ...EURO_CUP_LEAGUES, ...NATIONAL_LEAGUES].map((l) => [l.id, l])
+  [...CLUB_LEAGUES, ...EURO_CUP_LEAGUES, ...NATIONAL_LEAGUES, ...NATIONAL_COMPETITION_LEAGUES].map((l) => [l.id, l])
 );
+
+export type CompetitionGroup = "EUROPE" | "CLUB" | "NATIONAL" | "HISTORICAL";
+
+export function competitionGroup(leagueId: number): CompetitionGroup {
+  if (isEuroCupLeague(leagueId)) return "EUROPE";
+  if (isPublicClubLeague(leagueId)) return "CLUB";
+  if (isNationalTournamentLeague(leagueId)) return "NATIONAL";
+  return "HISTORICAL";
+}
+
+export function publicCompetitionOrder(leagueId: number): number {
+  const euro = EURO_LEAGUE_IDS.indexOf(leagueId);
+  if (euro >= 0) return euro;
+  const club = PUBLIC_CLUB_LEAGUE_IDS.indexOf(leagueId as (typeof PUBLIC_CLUB_LEAGUE_IDS)[number]);
+  if (club >= 0) return 100 + club;
+  const national = ALL_NATIONAL_PREDICTION_LEAGUE_IDS.indexOf(leagueId);
+  if (national >= 0) return 200 + national;
+  return 1_000;
+}
+
+export function isPublicCompetition(leagueId: number): boolean {
+  return competitionGroup(leagueId) !== "HISTORICAL";
+}
 
 // Kolikrát se dané jméno v katalogu opakuje (dnes: „Bundesliga" pro Německo i Rakousko).
 const NAME_COUNTS = new Map<string, number>();

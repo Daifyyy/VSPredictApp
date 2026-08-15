@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireCronAuth } from "@/lib/cronAuth";
 import { isRealDataConfigured } from "@/lib/db";
-import { CLUB_LEAGUES } from "@/lib/data/catalog";
+import { PUBLIC_CLUB_LEAGUES } from "@/lib/data/catalog";
 import { getLeagueStyleSnapshot, refreshLeagueStyleSnapshot } from "@/lib/data/realRepository";
 
 export const maxDuration = 60;
@@ -12,7 +12,7 @@ export async function GET(req: Request) {
   if (denied) return denied;
   if (!isRealDataConfigured()) return NextResponse.json({ error: "Reálná data nejsou nakonfigurována" }, { status: 400 });
   const leagueId = Number(new URL(req.url).searchParams.get("league"));
-  if (!CLUB_LEAGUES.some((league) => league.id === leagueId)) {
+  if (!PUBLIC_CLUB_LEAGUES.some((league) => league.id === leagueId)) {
     return NextResponse.json({ error: "Neplatná klubová liga" }, { status: 400 });
   }
   const existing = await getLeagueStyleSnapshot(leagueId);

@@ -145,12 +145,12 @@ describe("normalizeUpcomingFixtures", () => {
     expect(out[0].leagueName).toBe("Premier League");
   });
 
-  it("neznámá liga (mimo katalog) ponechá syrový název z API jako fallback", () => {
+  it("reprezentační soutěž použije kurátorovaný český název", () => {
     const out = normalizeUpcomingFixtures(
       [fx(1, 1, "NS", "2026-06-23T18:00:00+00:00", { leagueName: "FIFA World Cup" })],
       NOW
     );
-    expect(out[0].leagueName).toBe("FIFA World Cup");
+    expect(out[0].leagueName).toBe("Mistrovství světa");
   });
 
   it("reprezentační zápas má NATIONAL mód a konfederace null (dotahuje repo)", () => {

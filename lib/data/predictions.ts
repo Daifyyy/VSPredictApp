@@ -25,7 +25,7 @@ import {
 } from "@/lib/picks/cards";
 import {
   ALL_NATIONAL_PREDICTION_LEAGUE_IDS,
-  CLUB_LEAGUES,
+  PUBLIC_CLUB_LEAGUE_IDS,
   EURO_LEAGUE_IDS,
   dayOfYear,
   isNationalTournamentLeague,
@@ -76,6 +76,7 @@ import {
 import { MODEL_CONTEXT_VERSION, modelContextForLeague } from "./modelContext";
 import { getRefereeProfile, ingestRefereeHistory } from "./refereeStore";
 import { normalizeRefereeName, type RefereeEstimate } from "@/lib/picks/cards";
+import { FOUL_MODEL_VERSION, predictFouls } from "@/lib/picks/fouls";
 
 /**
  * Orchestrace predikční pipeline (běží jen na pozadí / cron, real data).
@@ -114,9 +115,7 @@ export const NO_SKILL_LEAGUES = [106, 207];
  * predikce zpět na `isProgramClubLeague` – jinak by tam vlivem širšího `PREDICTION_
  * LEAGUES` prosakovaly i ligy, které Program vůbec nenabízí (viz `repository.ts`).
  */
-export const PREDICTION_LEAGUES = CLUB_LEAGUES.map((l) => l.id).filter(
-  (id) => !NO_SKILL_LEAGUES.includes(id)
-);
+export const PREDICTION_LEAGUES = [...PUBLIC_CLUB_LEAGUE_IDS];
 
 /**
  * Všechny sledované soutěže pro predikci: klubové ligy + reprezentační soutěže
@@ -243,6 +242,7 @@ function countPredictionsFor(
     lambdaHomeBeforeRef: number;
     lambdaAwayBeforeRef: number;
   } | null;
+  fouls: { lambdaHome: number; lambdaAway: number; version: number } | null;
 } {
   const homeCorners = cornerValues(home.leagueMatches, now);
   const awayCorners = cornerValues(away.leagueMatches, now);
@@ -258,6 +258,11 @@ function countPredictionsFor(
     cards: counts?.cards ?? DEFAULT_CARD_BASELINES.cards,
     fouls: counts?.fouls ?? DEFAULT_FOUL_BASELINE,
   });
+  const foul = predictFouls(
+    homeCards,
+    awayCards,
+    counts?.fouls ?? DEFAULT_FOUL_BASELINE
+  );
 
   return {
     corners: corner.available
@@ -272,6 +277,9 @@ function countPredictionsFor(
           lambdaHomeBeforeRef: card.lambdaHomeBeforeRef,
           lambdaAwayBeforeRef: card.lambdaAwayBeforeRef,
         }
+      : null,
+    fouls: foul.available
+      ? { lambdaHome: foul.lambdaHome, lambdaAway: foul.lambdaAway, version: FOUL_MODEL_VERSION }
       : null,
   };
 }
@@ -411,6 +419,9 @@ export async function runPredictUpcoming(
           lambdaCornersAway: countLambdas?.corners?.lambdaAway ?? null,
           lambdaCardsHome: countLambdas?.cards?.lambdaHome ?? null,
           lambdaCardsAway: countLambdas?.cards?.lambdaAway ?? null,
+          lambdaFoulsHome: countLambdas?.fouls?.lambdaHome ?? null,
+          lambdaFoulsAway: countLambdas?.fouls?.lambdaAway ?? null,
+          foulModelVersion: countLambdas?.fouls?.version ?? null,
           refereeFactor: countLambdas?.cards?.refereeFactor ?? null,
           refereeSample: countLambdas?.cards?.refereeSample ?? null,
           refereeName,

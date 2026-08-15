@@ -11,6 +11,9 @@ import { Empty } from "./Empty";
 import { ConfirmDialog, useConfirm } from "./ConfirmDialog";
 import { ViewTabs } from "./ViewTabs";
 import type { SessionUser } from "./sessionUser";
+import { competitionGroupLabel, groupCompetitionFixtures } from "@/lib/competitionGrouping";
+import type { CompetitionGroup } from "@/lib/data/catalog";
+import { CompetitionDayTabs } from "./CompetitionDayTabs";
 
 type View = "tipovat" | "tipy" | "bilance";
 
@@ -272,7 +275,11 @@ function TipovatView({
 
   return (
     <>
-      <DayTabs days={tippableDays} active={dayIdx} onSelect={selectDay} />
+      <CompetitionDayTabs
+        days={tippableDays.map((day) => ({ date: day.date, count: day.fixtures.length }))}
+        activeDate={active?.date ?? ""}
+        onSelect={(date) => selectDay(tippableDays.findIndex((day) => day.date === date))}
+      />
       {active && active.fixtures.length > 0 ? (
         <LeagueGroups
           fixtures={active.fixtures}
@@ -290,50 +297,11 @@ function TipovatView({
   );
 }
 
-function dayLabel(date: string, idx: number): string {
-  if (idx === 0) return "Dnes";
-  if (idx === 1) return "Zítra";
-  return new Date(`${date}T00:00:00`).toLocaleDateString("cs-CZ", {
-    weekday: "short",
-    day: "numeric",
-    month: "numeric",
-  });
-}
-
-function DayTabs({
-  days,
-  active,
-  onSelect,
-}: {
-  days: FixtureDay[];
-  active: number;
-  onSelect: (i: number) => void;
-}) {
-  return (
-    <div className="mt-4 -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {days.map((d, i) => (
-        <button
-          key={d.date}
-          type="button"
-          onClick={() => onSelect(i)}
-          className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-medium transition ${
-            i === active
-              ? "border-foreground bg-foreground text-background"
-              : "border-border bg-surface text-muted hover:text-foreground"
-          }`}
-        >
-          {dayLabel(d.date, i)}
-          <span className="ml-1.5 text-xs opacity-70">({d.fixtures.length})</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 interface LeagueGroup {
   leagueId: number;
   name: string;
   logoUrl: string;
+  kind: CompetitionGroup;
   fixtures: UpcomingFixture[];
 }
 
@@ -351,30 +319,25 @@ function LeagueGroups({
   // `expanded` je klíčované fixtureId (ne leagueId) → deep-link stačí předat rovnou,
   // nezáleží na tom, do jaké ligové skupiny zápas patří.
   const [expanded, setExpanded] = useState<number | null>(initialFixtureId ?? null);
-  const groups = useMemo<LeagueGroup[]>(() => {
-    const map = new Map<number, LeagueGroup>();
-    for (const f of fixtures) {
-      let g = map.get(f.leagueId);
-      if (!g) {
-        g = { leagueId: f.leagueId, name: f.leagueName, logoUrl: f.leagueLogoUrl, fixtures: [] };
-        map.set(f.leagueId, g);
-      }
-      g.fixtures.push(f);
-    }
-    return [...map.values()].sort((a, b) =>
-      Number(Boolean(b.fixtures[0]?.europeanCup)) - Number(Boolean(a.fixtures[0]?.europeanCup))
-    );
-  }, [fixtures]);
+  const groups = useMemo<LeagueGroup[]>(() => groupCompetitionFixtures(fixtures), [fixtures]);
+  const initialLeague = groups.find((group) => group.fixtures.some((fixture) => fixture.fixtureId === initialFixtureId))?.leagueId;
+  const [expandedLeagues, setExpandedLeagues] = useState<Set<number>>(() => initialLeague ? new Set([initialLeague]) : new Set());
 
   return (
     <div className="mt-4 space-y-5">
-      {groups.map((g) => (
-        <section key={g.leagueId}>
-          <div className="flex items-center gap-2 px-1">
+      {groups.map((g, index) => (
+        <div key={g.leagueId}>
+        {g.kind !== groups[index - 1]?.kind && <p className="mb-2 mt-5 px-1 text-[10px] font-bold uppercase tracking-[0.14em] text-muted">{competitionGroupLabel(g.kind)}</p>}
+        <section className="ui-panel overflow-hidden">
+          <button type="button" aria-expanded={expandedLeagues.has(g.leagueId)} onClick={() => setExpandedLeagues((current) => {
+            const next = new Set(current); if (next.has(g.leagueId)) next.delete(g.leagueId); else next.add(g.leagueId); return next;
+          })} className="flex min-h-14 w-full items-center gap-2 px-3.5 py-2.5 text-left">
             <TeamLogo src={g.logoUrl} alt={g.name} size={18} />
             <h2 className="text-sm font-semibold text-foreground">{g.name}</h2>
-          </div>
-          <ul className="mt-2 space-y-2">
+            <span className="text-xs text-muted">{g.fixtures.length}</span>
+            <span className="ml-auto text-muted" aria-hidden>{expandedLeagues.has(g.leagueId) ? "▲" : "▼"}</span>
+          </button>
+          {expandedLeagues.has(g.leagueId) && <ul className="space-y-2 border-t border-border p-2">
             {g.fixtures.map((f) => (
               <TipFixtureCard
                 key={f.fixtureId}
@@ -388,8 +351,9 @@ function LeagueGroups({
                 onPlaced={onPlaced}
               />
             ))}
-          </ul>
+          </ul>}
         </section>
+        </div>
       ))}
     </div>
   );

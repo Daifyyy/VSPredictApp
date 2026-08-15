@@ -153,7 +153,7 @@ export function MobileBottomNav() {
   return (
     <nav
       aria-label="Hlavní mobilní navigace"
-      className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-surface/96 pb-[env(safe-area-inset-bottom)] text-foreground shadow-[0_-6px_20px_rgb(30_45_34/.08)] backdrop-blur lg:hidden"
+      className="mobile-bottom-nav border-t border-border bg-surface text-foreground shadow-[0_-6px_20px_rgb(30_45_34/.08)] lg:hidden"
     >
       <div className="mx-auto grid max-w-lg grid-cols-4 px-1">
         {PRIMARY_ITEMS.map((item) => {

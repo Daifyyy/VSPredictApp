@@ -672,6 +672,10 @@ function ResultPanel({
     url.searchParams.set("analysis", viewMode);
     window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
   }, [viewMode]);
+  useEffect(() => {
+    if (!result || window.location.hash !== "#vysledek-analyzy") return;
+    requestAnimationFrame(() => document.getElementById("vysledek-analyzy")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, [result]);
   const entityMode: EntityType =
     result?.source === "NATIONAL" || result?.source === "NATIONAL_FB" ? "NATIONAL" : "CLUB";
   // Ligová tabulka jen pro klub vs. klub stejné ligy (FREE, i pro zamčený výsledek).
@@ -773,7 +777,7 @@ function ResultPanel({
           unlocking={unlocking}
         />
       ) : (
-        <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6">
+        <section id="vysledek-analyzy" className="scroll-mt-20 rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6">
           <div className="mb-4 flex items-center justify-between gap-3 border-b border-border pb-3">
             <div>
               <p className="page-kicker">Výsledek analýzy</p>

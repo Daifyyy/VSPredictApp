@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/authUser";
 import { getEntitlement } from "@/lib/entitlements";
 import { getUpcomingPredictionRows } from "@/lib/data/predictionStore";
-import { CLUB_LEAGUES, EURO_CUP_LEAGUES, isEuroCupLeague } from "@/lib/data/catalog";
+import {
+  catalogLeagueName,
+  competitionGroup,
+  isPublicCompetition,
+  publicCompetitionOrder,
+} from "@/lib/data/catalog";
 import { parseBooks, sharpFair, sharpFairTotal, sharpLineFair } from "@/lib/picks/books";
 import { overProbNegBin } from "@/lib/picks/corners";
 import { mainHalfLine } from "@/lib/picks/countDistribution";
@@ -35,16 +40,16 @@ export async function GET(req: Request) {
   const user = await getCurrentUser();
   if (!getEntitlement(user).pro) return NextResponse.json({ locked: true });
   try {
-    const leagueById = new Map([...CLUB_LEAGUES, ...EURO_CUP_LEAGUES].map((league) => [league.id, league]));
     const rows = await getUpcomingPredictionRows();
-    const offers = rows.filter((row) => row.available).map((row) => ({
+    const offers = rows.filter((row) => row.available && isPublicCompetition(row.leagueId)).map((row) => ({
       fixtureId: row.fixtureId,
       kickoff: row.kickoff,
       leagueId: row.leagueId,
-      leagueName: leagueById.get(row.leagueId)?.name ?? `Soutěž ${row.leagueId}`,
+      leagueName: catalogLeagueName(row.leagueId, `Soutěž ${row.leagueId}`),
       home: { id: row.homeTeamId, name: row.homeName, logoUrl: row.homeLogo },
       away: { id: row.awayTeamId, name: row.awayName, logoUrl: row.awayLogo },
-      europeanCup: isEuroCupLeague(row.leagueId),
+      competitionGroup: competitionGroup(row.leagueId),
+      competitionOrder: publicCompetitionOrder(row.leagueId),
       lowConfidence: row.lowConfidence,
       hasOdds: parseBooks(row.oddsBooks).length > 0,
       largestDifference: largestDifference(row),

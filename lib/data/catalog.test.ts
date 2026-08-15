@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   CLUB_LEAGUES,
   PROGRAM_CLUB_LEAGUE_IDS,
+  PUBLIC_CLUB_LEAGUE_IDS,
+  publicCompetitionOrder,
+  competitionGroup,
   dayOfYear,
   rotateLeagues,
 } from "./catalog";
@@ -54,5 +57,20 @@ describe("rozsahy lig", () => {
 
   it("zahrnuje Süper Lig do společného programu", () => {
     expect(PROGRAM_CLUB_LEAGUE_IDS).toContain(203);
+  });
+
+  it("má jediný veřejný rozsah 11 lig v kurátorovaném pořadí", () => {
+    expect(PUBLIC_CLUB_LEAGUE_IDS).toEqual([345, 39, 140, 135, 78, 61, 40, 94, 88, 144, 203]);
+    expect(PROGRAM_CLUB_LEAGUE_IDS).toEqual(PUBLIC_CLUB_LEAGUE_IDS);
+    expect(PUBLIC_CLUB_LEAGUE_IDS).not.toContain(179);
+    expect(PUBLIC_CLUB_LEAGUE_IDS).not.toContain(106);
+  });
+
+  it("řadí Evropu před kluby a reprezentace za nimi", () => {
+    expect(competitionGroup(2)).toBe("EUROPE");
+    expect(competitionGroup(345)).toBe("CLUB");
+    expect(competitionGroup(5)).toBe("NATIONAL");
+    expect(publicCompetitionOrder(2)).toBeLessThan(publicCompetitionOrder(345));
+    expect(publicCompetitionOrder(345)).toBeLessThan(publicCompetitionOrder(5));
   });
 });

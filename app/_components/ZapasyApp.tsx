@@ -23,6 +23,8 @@ import { InstallLink } from "./InstallLink";
 import { preferredProgramDayIndex } from "@/lib/homeDashboard";
 import { FixtureModelCard } from "./FixtureModelCard";
 import { chooseFeaturedFixture } from "@/lib/homeFeaturedFixture";
+import { competitionGroupLabel, groupCompetitionFixtures, localDateKey } from "@/lib/competitionGrouping";
+import type { CompetitionGroup } from "@/lib/data/catalog";
 
 type View = "program" | "results";
 
@@ -1015,6 +1017,7 @@ interface LeagueGroupOf<T> {
   leagueId: number;
   name: string;
   logoUrl: string;
+  kind: CompetitionGroup;
   fixtures: T[];
 }
 
@@ -1026,25 +1029,9 @@ type LeagueGroup = LeagueGroupOf<UpcomingFixture>;
  * nepatří žádné vlastní řazení, které by se s ním rozešlo.
  */
 function groupByLeague<
-  T extends { leagueId: number; leagueName: string; leagueLogoUrl: string; europeanCup?: boolean },
+  T extends { fixtureId: number; kickoff: string; leagueId: number; leagueName: string; leagueLogoUrl: string; europeanCup?: boolean },
 >(fixtures: T[]): LeagueGroupOf<T>[] {
-  const map = new Map<number, LeagueGroupOf<T>>();
-  for (const f of fixtures) {
-    let g = map.get(f.leagueId);
-    if (!g) {
-      g = {
-        leagueId: f.leagueId,
-        name: f.leagueName,
-        logoUrl: f.leagueLogoUrl,
-        fixtures: [],
-      };
-      map.set(f.leagueId, g);
-    }
-    g.fixtures.push(f);
-  }
-  return [...map.values()].sort((a, b) =>
-    Number(Boolean(b.fixtures[0]?.europeanCup)) - Number(Boolean(a.fixtures[0]?.europeanCup))
-  );
+  return groupCompetitionFixtures(fixtures);
 }
 
 function LeagueGroups({
@@ -1065,12 +1052,17 @@ function LeagueGroups({
 
   // Rozbalené ligy (výchozí: vše sbaleno, bez auto-rozbalení).
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    const leagueId = Number(new URLSearchParams(window.location.search).get("league"));
+    if (leagueId > 0) queueMicrotask(() => setExpanded(new Set([leagueId])));
+  }, []);
 
   return (
     <div className="mt-4 space-y-3 stagger-in">
-      {groups.map((g) => (
+      {groups.map((g, index) => (
+        <div key={g.leagueId}>
+        {g.kind !== groups[index - 1]?.kind && <p className="mb-2 mt-5 px-1 text-[10px] font-bold uppercase tracking-[0.14em] text-muted">{competitionGroupLabel(g.kind)}</p>}
         <LeagueContainer
-          key={g.leagueId}
           group={g}
           open={expanded.has(g.leagueId)}
           onToggleOpen={() =>
@@ -1078,6 +1070,10 @@ function LeagueGroups({
               const n = new Set(prev);
               if (n.has(g.leagueId)) n.delete(g.leagueId);
               else n.add(g.leagueId);
+              const url = new URL(window.location.href);
+              if (n.has(g.leagueId)) url.searchParams.set("league", String(g.leagueId));
+              else if (url.searchParams.get("league") === String(g.leagueId)) url.searchParams.delete("league");
+              window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}`);
               return n;
             })
           }
@@ -1086,6 +1082,7 @@ function LeagueGroups({
           favFixtures={favFixtures}
           onToggleFixture={onToggleFixture}
         />
+        </div>
       ))}
     </div>
   );
@@ -1147,6 +1144,12 @@ function LeagueContainer({
           onClick={() => onToggleLeague(!isLeagueFavorite)}
           label={isLeagueFavorite ? "Odebrat ligu z oblíbených" : "Přidat ligu do oblíbených"}
         />
+        <Link
+          href={`/predikce?date=${localDateKey(group.fixtures[0].kickoff)}&league=${group.leagueId}`}
+          className="hidden min-h-11 items-center rounded-lg px-2 text-[11px] font-semibold text-muted hover:bg-background hover:text-foreground sm:flex"
+        >
+          Predikce
+        </Link>
         <button
           type="button"
           onClick={onToggleOpen}

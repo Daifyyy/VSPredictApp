@@ -213,6 +213,10 @@ model FixturePrediction {
   lambdaCornersAway Float?
   lambdaCardsHome   Float?
   lambdaCardsAway   Float?
+  /// Experimentální předzápasový odhad faulů. Bez tržní linie nejde o sázkový signál.
+  lambdaFoulsHome   Float?
+  lambdaFoulsAway   Float?
+  foulModelVersion  Int?
   /// Auditní snapshot počtového modelu. v0 = legacy s disperzí 1,2; v1 = explicitní verze.
   countModelVersion    Int?
   cornerVarianceRatio Float?

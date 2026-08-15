@@ -122,7 +122,8 @@ jobs:
             cold_start=$(( (10#$(date -u +%j) * 3) % 18 ))
             cold_next=$(( (cold_start + 1) % 18 ))
             cold_last=$(( (cold_start + 2) % 18 ))
-            for league in 39 140 135 78 61 94 88 40 144 203 345 179 197 103 119 106 218 207; do
+            # Stejný veřejný katalog jako Program, Predikce a Tabulky.
+            for league in 345 39 140 135 78 61 40 94 88 144 203; do
               cold=0
               if [ "$index" -eq "$cold_start" ] || [ "$index" -eq "$cold_next" ] || [ "$index" -eq "$cold_last" ]; then cold=1; fi
               url="$APP_URL/api/cron/refresh-league-styles?league=$league&cold=$cold"

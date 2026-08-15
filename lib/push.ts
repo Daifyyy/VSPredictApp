@@ -258,7 +258,7 @@ export async function sendKickoffReminders(now = new Date()) {
         }
       }
 
-      for (const event of events) await deliver(preference, fixture, event, url);
+      for (const event of events) await deliver(preference, fixture, event, `${url}#model-${fixture.fixtureId}`);
     }
 
     if (preference.halftimeAndFinal) {
@@ -266,7 +266,7 @@ export async function sendKickoffReminders(now = new Date()) {
         if (!favoriteIds.has(fixture.fixtureId)) continue;
         const url = `/porovnani?homeLeague=${fixture.leagueId}&awayLeague=${fixture.leagueId}&home=${fixture.homeTeamId}&away=${fixture.awayTeamId}&fixture=${fixture.fixtureId}`;
         for (const event of statusEventsByFixture.get(fixture.fixtureId) ?? []) {
-          await deliver(preference, fixture, event, url);
+          await deliver(preference, fixture, event, `${url}#vysledek-analyzy`);
         }
       }
     }

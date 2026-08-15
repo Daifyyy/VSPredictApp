@@ -47,8 +47,10 @@ export async function GET(req: Request) {
     // do ligového track recordu jen proto, že nejsou evropským klubovým pohárem.
     const rows = allRows.filter((row) => row.modelContext === "LEAGUE");
     const europeanRows = allRows.filter((row) => isEuroCupLeague(row.leagueId));
+    const nationalRows = allRows.filter((row) => row.modelContext === "NATIONAL");
     const publishedRows = allPublishedRows.filter((row) => row.modelContext === "LEAGUE");
     const europeanPublishedRows = allPublishedRows.filter((row) => isEuroCupLeague(row.leagueId));
+    const nationalPublishedRows = allPublishedRows.filter((row) => row.modelContext === "NATIONAL");
     // Jen DB cache. Tato diagnostika nikdy nesmí spustit placený lazy fetch statistik.
     const actualCounts = isRealDataConfigured()
       ? await getCachedCountTotals(allRows)
@@ -88,6 +90,14 @@ export async function GET(req: Request) {
             const side = clvSideOf(parsed.data.market, match.side);
             return side ? [{ row, side }] : [];
           })),
+        },
+        national: {
+          trackRecord: computeTrackRecord(nationalRows),
+          publishedTips: computePublishedTipRecord(nationalPublishedRows),
+          countAccuracy: computeCountModelAccuracy(nationalRows, actualCounts),
+          benchmark: computeBenchmarkTrackRecord(nationalRows),
+          market: computeMarketBenchmark(nationalRows),
+          reliability: computeReliability(nationalRows),
         },
       },
       // Odpověď **nezávisí na uživateli** (jen na pravidle v query) a vstupní data se

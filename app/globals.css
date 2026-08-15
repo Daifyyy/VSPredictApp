@@ -214,6 +214,19 @@ body {
 .fade-in { animation: editorial-rise 240ms ease-out both; }
 .reveal-pop { animation: reveal-pop 420ms cubic-bezier(.2,.8,.2,1) both; }
 
+/* Vlastní vrstva bez backdrop-filteru: iOS PWA umí filtrovaný fixed prvek ukotvit
+   k původnímu visual viewportu a při dalším scrollu jej nechat uprostřed stránky. */
+.mobile-bottom-nav {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 50;
+  padding-bottom: env(safe-area-inset-bottom);
+  isolation: isolate;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
 @media (min-width: 1024px) {
   .app-page {
     padding: 1.5rem 2rem 4rem 19rem;
