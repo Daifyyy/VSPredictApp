@@ -2,7 +2,7 @@ import "server-only";
 import webpush, { type PushSubscription as WebPushSubscription } from "web-push";
 import { prisma } from "@/lib/db";
 import { COUNT_MARKET_SIGNAL_POLICY_VERSION, MARKET_SIGNAL_POLICY_VERSION } from "@/lib/picks/marketSignals";
-import { isMeaningfulMarketMove } from "@/lib/pushRules";
+import { isMeaningfulMarketMove, isSmartNotificationTarget } from "@/lib/pushRules";
 
 export function pushConfigured(): boolean {
   return Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT);
@@ -88,17 +88,31 @@ export async function sendKickoffReminders(now = new Date()) {
   for (const preference of preferences) {
     if (!preference.user.pushSubscriptions.length) continue;
     const owner = preference.user.email ?? `user:${preference.user.id}`;
-    const favorites = await prisma.favoriteFixture.findMany({
-      where: { email: owner, fixtureId: { in: fixtures.map((fixture) => fixture.fixtureId) } },
-      select: { fixtureId: true },
-    });
+    const [favorites, favoriteLeagues] = await Promise.all([
+      prisma.favoriteFixture.findMany({
+        where: { email: owner, fixtureId: { in: fixtures.map((fixture) => fixture.fixtureId) } },
+        select: { fixtureId: true },
+      }),
+      preference.smartFavoriteLeagues
+        ? prisma.favoriteLeague.findMany({
+            where: { email: owner },
+            select: { leagueId: true },
+          })
+        : Promise.resolve([]),
+    ]);
     const favoriteIds = new Set(favorites.map((favorite) => favorite.fixtureId));
+    const favoriteLeagueIds = new Set(favoriteLeagues.map((favorite) => favorite.leagueId));
     for (const fixture of fixtures) {
-      if (!favoriteIds.has(fixture.fixtureId)) continue;
+      const explicitFixtureFavorite = favoriteIds.has(fixture.fixtureId);
+      if (!isSmartNotificationTarget({
+        explicitFixtureFavorite,
+        favoriteLeague: favoriteLeagueIds.has(fixture.leagueId),
+        includeFavoriteLeagues: preference.smartFavoriteLeagues,
+      })) continue;
       const url = `/porovnani?homeLeague=${fixture.leagueId}&awayLeague=${fixture.leagueId}&home=${fixture.homeTeamId}&away=${fixture.awayTeamId}&fixture=${fixture.fixtureId}`;
       const minutes = Math.round((fixture.kickoff.getTime() - now.getTime()) / 60_000);
       const events: Array<{ type: string; title: string; body: string; tag: string }> = [];
-      if (preference.favoriteKickoff && Math.abs(minutes - preference.kickoffMinutes) <= 9) {
+      if (explicitFixtureFavorite && preference.favoriteKickoff && Math.abs(minutes - preference.kickoffMinutes) <= 9) {
         events.push({
           type: `KICKOFF_${preference.kickoffMinutes}`,
           title: `${fixture.homeName} – ${fixture.awayName}`,

@@ -546,6 +546,7 @@ model NotificationPreference {
   publishedPrediction Boolean @default(false)
   marketMovement      Boolean @default(false)
   movementThreshold   Int     @default(3)
+  smartFavoriteLeagues Boolean @default(false)
   updatedAt       DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

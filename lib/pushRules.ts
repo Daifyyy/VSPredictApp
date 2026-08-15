@@ -10,3 +10,12 @@ export function isMeaningfulMarketMove(input: {
   return Math.abs(move) >= input.thresholdPoints / 100 &&
     Math.abs(input.model - input.current) < Math.abs(input.model - input.open);
 }
+
+export function isSmartNotificationTarget(input: {
+  explicitFixtureFavorite: boolean;
+  favoriteLeague: boolean;
+  includeFavoriteLeagues: boolean;
+}): boolean {
+  return input.explicitFixtureFavorite ||
+    (input.includeFavoriteLeagues && input.favoriteLeague);
+}
