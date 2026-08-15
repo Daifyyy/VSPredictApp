@@ -3,6 +3,9 @@ import { ZapasyApp } from "./_components/ZapasyApp";
 import { getFixturesByDates, getRecentResults } from "@/lib/data/repository";
 import { pragueDay } from "@/lib/data/fixtures";
 import { mergeTips } from "@/lib/picks/results";
+import { connection } from "next/server";
+import { logError } from "@/lib/logError";
+import type { FixtureDay } from "@/lib/types";
 
 export const metadata: Metadata = {
   title: "Fotbalové zápasy dnes a tento týden",
@@ -20,8 +23,6 @@ export const metadata: Metadata = {
 // Vynuceně statické: datová vrstva při cache-miss volá `fetch(no-store)` (API-Football),
 // což by jinak stránku překlopilo do dynamic. `force-static` to potlačí – čerstvost drží
 // naše vlastní `cachedJson` TTL (Neon) a ISR regenerace každých `revalidate` s.
-export const dynamic = "force-static";
-export const revalidate = 600; // 10 min – rozpis se přes den mění minimálně
 
 /** Kolik dní dopředu načítat do rozpisu (dnes + dalších 6). */
 const LOOKAHEAD_DAYS = 7;
@@ -35,17 +36,26 @@ const LOOKAHEAD_DAYS = 7;
 const RESULT_DAYS = 3;
 
 export default async function Home() {
+  // Neon je runtime závislost; krátký výpadek během buildu nesmí zablokovat deployment.
+  await connection();
   const now = new Date();
   const dates = Array.from(
     { length: RESULT_DAYS + LOOKAHEAD_DAYS },
     (_, i) =>
       pragueDay(new Date(now.getTime() + (i - RESULT_DAYS) * 24 * 60 * 60 * 1000))
   );
-  const [rawDays, results] = await Promise.all([
-    getFixturesByDates(dates),
-    // Okno tipů musí pokrýt celý pásek dozadu (+1 den rezerva na posun půlnoci).
-    getRecentResults(RESULT_DAYS + 1),
-  ]);
+  let rawDays: FixtureDay[] = dates.map((date) => ({ date, fixtures: [], played: [] }));
+  let results: Awaited<ReturnType<typeof getRecentResults>> = [];
+  try {
+    [rawDays, results] = await Promise.all([
+      getFixturesByDates(dates),
+      // Okno tipů musí pokrýt celý pásek dozadu (+1 den rezerva na posun půlnoci).
+      getRecentResults(RESULT_DAYS + 1),
+    ]);
+  } catch (error) {
+    // Bezpečný prázdný stav je lepší než HTTP 500; další request zkusí DB znovu.
+    logError("page.home.data", error);
+  }
   // Náš tip je **překryv** nad odehraným zápasem, ne podmínka jeho zobrazení.
   const days = mergeTips(rawDays, results);
 
