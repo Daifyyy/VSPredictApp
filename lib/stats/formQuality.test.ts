@@ -64,6 +64,13 @@ describe("expectedPointsFromXg", () => {
 });
 
 describe("computeFormQuality – jednotlivé zápasy", () => {
+  it("zachová domácí, venkovní a neutrální perspektivu", () => {
+    const away = computeFormQuality([match(1, 1, 1, 0, undefined, { isHome: false })], "TOTAL").matches[0];
+    const neutral = computeFormQuality([match(2, 1, 1, 0, undefined, { isNeutral: true })], "TOTAL").matches[0];
+    expect(away).toMatchObject({ isHome: false, isNeutral: false });
+    expect(neutral).toMatchObject({ isHome: true, isNeutral: true });
+  });
+
   it("šťastnou výhru označí jako 'lucky'", () => {
     // 1:0 při xG 0.4 : 1.6 – body 3, výkon na podstatně míň.
     const q = computeFormQuality([match(1, 1, 1, 0, { for: 0.4, against: 1.6 })], "TOTAL");

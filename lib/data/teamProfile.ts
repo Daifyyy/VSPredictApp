@@ -1,6 +1,6 @@
 import type { Injury, LeagueGoalsAvg, Scorer, Standing, Transfer } from "@/lib/types";
 import { buildTeamProfileCore, type TeamProfileCore } from "@/lib/teamProfile";
-import { getCompareTeam, getInjuries, getStanding, getTopScorers, getTransfers } from "./repository";
+import { getCompareTeam, getInjuries, getOpponentMatchStats, getStanding, getTopScorers, getTransfers } from "./repository";
 
 export interface TeamProfileData extends TeamProfileCore {
   standing: Standing | null;
@@ -24,19 +24,44 @@ export async function loadTeamProfile(
   const team = await getCompareTeam(teamId, leagueId, false);
   if (!team) return null;
 
-  const [standingResult, scorersResult, injuriesResult, transfersResult] = await Promise.allSettled([
+  const core = buildTeamProfileCore(team);
+  const recentFixtureIds = [...new Set(core.formQuality.flatMap((item) => item.matches.map((match) => match.fixtureId)))];
+
+  const [standingResult, scorersResult, injuriesResult, transfersResult, opponentStatsResult] = await Promise.allSettled([
     getStanding(teamId, leagueId),
     getTopScorers(teamId, leagueId),
     includePro ? getInjuries(teamId, leagueId) : Promise.resolve(null),
     getTransfers([leagueId], 200),
+    getOpponentMatchStats(teamId, recentFixtureIds),
   ]);
   const standing = standingResult.status === "fulfilled" ? standingResult.value : null;
   const transfers = transfersResult.status === "fulfilled"
     ? transfersResult.value.filter((item) => item.inTeamId === teamId || item.outTeamId === teamId)
     : [];
 
+  const opponentStats = opponentStatsResult.status === "fulfilled" ? opponentStatsResult.value : new Map();
+  const formQuality = core.formQuality.map((quality) => ({
+    ...quality,
+    matches: quality.matches.map((match) => {
+      const opponent = opponentStats.get(match.fixtureId);
+      return {
+        ...match,
+        opponentStats: opponent ? {
+          shots: opponent.metrics.SHOTS ?? null,
+          shotsOnTarget: opponent.metrics.SHOTS_ON_TARGET ?? null,
+          possession: opponent.metrics.POSSESSION ?? null,
+          corners: opponent.metrics.CORNERS ?? null,
+          cards: opponent.metrics.YELLOW_CARDS == null
+            ? null
+            : opponent.metrics.YELLOW_CARDS + (opponent.metrics.RED_CARDS ?? 0),
+        } : null,
+      };
+    }),
+  }));
+
   return {
-    ...buildTeamProfileCore(team),
+    ...core,
+    formQuality,
     standing: standing?.standing ?? null,
     leagueAvg: standing?.leagueAvg ?? null,
     scorers: scorersResult.status === "fulfilled" ? scorersResult.value : [],

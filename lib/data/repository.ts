@@ -317,6 +317,23 @@ export async function getUpcomingPredictions(): Promise<PredictionRow[]> {
   return mockUpcomingPredictions();
 }
 
+/** Protější statistiky jen z cache; veřejná stránka tím nikdy nevytvoří API požadavek. */
+export async function getOpponentMatchStats(
+  teamId: number,
+  fixtureIds: number[]
+): Promise<Map<number, import("@/lib/types").MatchStat>> {
+  if (useReal) return real.getOpponentMatchStats(teamId, fixtureIds);
+  const wanted = new Set(fixtureIds);
+  const result = new Map<number, import("@/lib/types").MatchStat>();
+  for (const team of allMockTeams()) {
+    if (team.id === teamId) continue;
+    for (const match of [...team.leagueMatches, ...(team.euroMatches ?? [])]) {
+      if (wanted.has(match.fixtureId) && !result.has(match.fixtureId)) result.set(match.fixtureId, match);
+    }
+  }
+  return result;
+}
+
 /**
  * Reverzní mapa `teamId → konfederace` pro deep-link reprezentačních řádků
  * (Tipy/Výsledky → NATIONAL Porovnání). Real = z cachovaných reprezentačních

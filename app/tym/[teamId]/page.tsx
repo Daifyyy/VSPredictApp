@@ -10,6 +10,8 @@ import { loadTeamProfile } from "@/lib/data/teamProfile";
 import { getEntitlement } from "@/lib/entitlements";
 import { METRIC_HINTS, METRIC_LABELS, type Metric, type Venue } from "@/lib/types";
 import { describeTeamStyle } from "@/lib/teamProfile";
+import { valueOrTotal } from "@/lib/stats/metricLookup";
+import { comparePerformance, signedMetricDelta, type PerformanceTone } from "@/lib/stats/performanceTone";
 import type { SessionUser } from "@/app/_components/sessionUser";
 
 const VENUES: { value: Venue; label: string }[] = [
@@ -62,6 +64,18 @@ export default async function TeamPage(props: Props) {
   const summary = profile.summaries.find((item) => item.venue === venue) ?? null;
   const quality = profile.formQuality.find((item) => item.venue === venue) ?? null;
   const values = new Map(profile.values.filter((item) => item.venue === venue).map((item) => [item.metric, item]));
+  const baselines = {
+    xg: valueOrTotal(profile.values, "XG", venue),
+    shots: valueOrTotal(profile.values, "SHOTS", venue),
+    shotsOnTarget: valueOrTotal(profile.values, "SHOTS_ON_TARGET", venue),
+    possession: valueOrTotal(profile.values, "POSSESSION", venue),
+    corners: valueOrTotal(profile.values, "CORNERS", venue),
+    cards: (() => {
+      const yellow = valueOrTotal(profile.values, "YELLOW_CARDS", venue);
+      const red = valueOrTotal(profile.values, "RED_CARDS", venue);
+      return yellow == null ? null : yellow + (red ?? 0);
+    })(),
+  };
   const user: SessionUser | null = currentUser ? {
     id: currentUser.id,
     name: currentUser.name,
@@ -106,6 +120,7 @@ export default async function TeamPage(props: Props) {
       <RecentPerformances
         matches={quality?.matches ?? []}
         opponents={summary?.formOpponents ?? []}
+        baselines={baselines}
       />
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[.8fr_1.2fr]">
@@ -148,9 +163,11 @@ function FormCard({ form, sample }: { form: ("W" | "D" | "L")[]; sample: number 
 function RecentPerformances({
   matches,
   opponents,
+  baselines,
 }: {
   matches: import("@/lib/types").FormMatchQuality[];
   opponents: ({ id: number; name: string; logoUrl: string | null } | null)[];
+  baselines: PerformanceBaselines;
 }) {
   const resultLabel = { W: "V", D: "R", L: "P" } as const;
   const resultTone = { W: "bg-positive text-white", D: "bg-muted/20 text-foreground", L: "bg-negative text-white" } as const;
@@ -159,7 +176,7 @@ function RecentPerformances({
     <section className="ui-panel mt-4 overflow-hidden" aria-labelledby="recent-performances-title">
       <div className="border-b border-border px-4 py-4 sm:px-5">
         <h2 id="recent-performances-title" className="text-lg font-bold text-foreground">Poslední výkony</h2>
-        <p className="mt-1 text-xs text-muted">Všechny údaje jsou načtené společně s profilem. Řádky nic dalšího nestahují.</p>
+        <p className="mt-1 text-xs text-muted">Barva porovnává tým se soupeřem; menší text ukazuje odchylku od vlastního průměru. Řádky nic dalšího nestahují.</p>
       </div>
       {matches.length ? <div className="divide-y divide-border">
         {matches.map((match, index) => {
@@ -173,14 +190,14 @@ function RecentPerformances({
                 <p className="text-[11px] text-muted">{new Date(match.date).toLocaleDateString("cs-CZ")} · {verdict}</p>
               </div>
             </div>
-            <PerformanceValue label="Skóre" value={`${match.goalsFor}:${match.goalsAgainst}`} />
-            <PerformanceValue label="xG" value={match.xgFor == null || match.xgAgainst == null ? "—" : `${number(match.xgFor, 2)}:${number(match.xgAgainst, 2)}`} />
-            <PerformanceValue label="Střely" value={number(match.shots)} />
-            <PerformanceValue label="Na branku" value={number(match.shotsOnTarget)} />
-            <PerformanceValue label="Držení" value={match.possession == null ? "—" : `${number(match.possession)} %`} />
+            <PerformanceValue label="Skóre" value={`${match.goalsFor}:${match.goalsAgainst}`} tone={match.result === "W" ? "positive" : match.result === "L" ? "negative" : "neutral"} />
+            <ComparedPerformanceValue label="xG" value={match.xgFor} opponent={match.xgAgainst} baseline={baselines.xg} tolerance={0.25} digits={2} />
+            <ComparedPerformanceValue label="Střely" value={match.shots} opponent={match.opponentStats?.shots} baseline={baselines.shots} tolerance={2} />
+            <ComparedPerformanceValue label="Na branku" value={match.shotsOnTarget} opponent={match.opponentStats?.shotsOnTarget} baseline={baselines.shotsOnTarget} tolerance={1} />
+            <ComparedPerformanceValue label="Držení" value={match.possession} opponent={match.opponentStats?.possession} baseline={baselines.possession} tolerance={5} suffix=" %" />
             <div className="col-span-full flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted sm:justify-end">
-              <span>Rohy <b className="text-foreground">{number(match.corners)}</b></span>
-              <span>Karty <b className="text-foreground">{number(match.cards)}</b></span>
+              <CompactComparison label="Rohy" value={match.corners} opponent={match.opponentStats?.corners} baseline={baselines.corners} tolerance={1} />
+              <CompactComparison label="Karty" value={match.cards} opponent={match.opponentStats?.cards} baseline={baselines.cards} tolerance={1} lowerIsBetter />
               {match.expectedPoints != null && <span>xB <b className="text-foreground">{number(match.expectedPoints, 2)}</b></span>}
             </div>
           </article>;
@@ -190,8 +207,59 @@ function RecentPerformances({
   );
 }
 
-function PerformanceValue({ label, value }: { label: string; value: string }) {
-  return <div className="text-left sm:text-right"><p className="text-[10px] uppercase tracking-wide text-muted">{label}</p><p className="mt-0.5 text-sm font-bold tabular-nums text-foreground">{value}</p></div>;
+type PerformanceBaselines = {
+  xg: number | null;
+  shots: number | null;
+  shotsOnTarget: number | null;
+  possession: number | null;
+  corners: number | null;
+  cards: number | null;
+};
+
+const PERFORMANCE_TONE: Record<PerformanceTone, string> = {
+  positive: "text-positive",
+  neutral: "text-warning",
+  negative: "text-negative",
+  unknown: "text-foreground",
+};
+
+function comparisonCaption(opponentDelta: number | null, baselineDelta: number | null, digits: number): string | null {
+  const parts: string[] = [];
+  if (opponentDelta != null) parts.push(`${signedMetricDelta(opponentDelta, digits)} vs soupeř`);
+  if (baselineDelta != null) parts.push(`${signedMetricDelta(baselineDelta, digits)} vs průměr`);
+  return parts.length ? parts.join(" · ") : null;
+}
+
+function ComparedPerformanceValue({ label, value, opponent, baseline, tolerance, digits = 0, suffix = "", lowerIsBetter = false }: {
+  label: string;
+  value: number | null | undefined;
+  opponent: number | null | undefined;
+  baseline: number | null;
+  tolerance: number;
+  digits?: number;
+  suffix?: string;
+  lowerIsBetter?: boolean;
+}) {
+  const comparison = comparePerformance(value, opponent, baseline, tolerance, lowerIsBetter);
+  const rendered = value == null ? "—" : `${value.toFixed(digits)}${suffix}`;
+  return <PerformanceValue label={label} value={rendered} tone={comparison.tone} caption={comparisonCaption(comparison.opponentDelta, comparison.baselineDelta, digits)} />;
+}
+
+function CompactComparison({ label, value, opponent, baseline, tolerance, lowerIsBetter = false }: {
+  label: string;
+  value: number | null | undefined;
+  opponent: number | null | undefined;
+  baseline: number | null;
+  tolerance: number;
+  lowerIsBetter?: boolean;
+}) {
+  const comparison = comparePerformance(value, opponent, baseline, tolerance, lowerIsBetter);
+  const caption = comparisonCaption(comparison.opponentDelta, comparison.baselineDelta, 1);
+  return <span title={caption ?? undefined}>{label} <b className={PERFORMANCE_TONE[comparison.tone]}>{value == null ? "—" : value.toFixed(0)}</b>{caption && <small className="ml-1 text-[9px] text-muted">{caption}</small>}</span>;
+}
+
+function PerformanceValue({ label, value, tone = "unknown", caption }: { label: string; value: string; tone?: PerformanceTone; caption?: string | null }) {
+  return <div className="min-w-0 text-left sm:text-right"><p className="text-[10px] uppercase tracking-wide text-muted">{label}</p><p className={`mt-0.5 text-sm font-bold tabular-nums ${PERFORMANCE_TONE[tone]}`}>{value}</p>{caption && <p className="mt-0.5 truncate text-[9px] tabular-nums text-muted" title={caption}>{caption}</p>}</div>;
 }
 
 function StyleBar({ label, leftLabel, rightLabel, score, available }: { label: string; leftLabel: string; rightLabel: string; score: number; available: boolean }) { return <div><div className="flex items-center justify-between text-xs"><span className="font-semibold text-foreground">{label}</span><span className="font-bold tabular-nums text-positive">{available ? `${score.toFixed(1)}/10` : "—"}</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-border"><div className="bar-fill h-full rounded-full bg-positive" style={{ width: available ? `${score * 10}%` : "0%" }} /></div><div className="mt-1 flex justify-between text-[10px] text-muted"><span>{leftLabel}</span><span>{rightLabel}</span></div></div>; }

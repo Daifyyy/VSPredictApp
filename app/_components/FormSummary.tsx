@@ -14,6 +14,7 @@ import {
   buildContextProfile,
   type ContextBadge,
   type ContextProfile,
+  type FormState,
 } from "@/lib/stats/contextProfile";
 import { TeamLogo } from "./TeamLogo";
 
@@ -103,18 +104,20 @@ export function FormSummary({
       )}
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-3 border-b border-border pb-4">
-          <ProfileHeader team={homeTeam} leagueId={homeLeagueId} badges={homeProfile.badges} accent="home" />
-          <ProfileHeader team={awayTeam} leagueId={awayLeagueId} badges={awayProfile.badges} accent="away" alignRight />
+          <ProfileHeader team={homeTeam} leagueId={homeLeagueId} badges={homeProfile.badges} state={homeProfile.formState} accent="home" />
+          <ProfileHeader team={awayTeam} leagueId={awayLeagueId} badges={awayProfile.badges} state={awayProfile.formState} accent="away" alignRight />
         </div>
         <Row label="Forma">
           <FormBadges
             form={home?.form ?? []}
+            team={homeTeam}
             opponents={home?.formOpponents ?? []}
             quality={homeQuality?.matches ?? []}
             align="left"
           />
           <FormBadges
             form={away?.form ?? []}
+            team={awayTeam}
             opponents={away?.formOpponents ?? []}
             quality={awayQuality?.matches ?? []}
             align="right"
@@ -186,12 +189,14 @@ function ProfileHeader({
   team,
   leagueId,
   badges,
+  state,
   accent,
   alignRight,
 }: {
   team: { id: number; name: string; logoUrl: string };
   leagueId: number | null;
   badges: ContextBadge[];
+  state: FormState;
   accent: "home" | "away";
   alignRight?: boolean;
 }) {
@@ -216,6 +221,7 @@ function ProfileHeader({
           {alignRight && <TeamLogo src={team.logoUrl} alt={team.name} size={24} />}
         </div>
       )}
+      <FormStateView state={state} alignRight={alignRight} />
       {badges.length > 0 ? (
         <div className={`mt-2 flex flex-wrap gap-1.5 ${alignRight ? "justify-end" : "justify-start"}`}>
           {badges.map((badge) => (
@@ -239,6 +245,27 @@ function ProfileHeader({
           Poslední výkony →
         </Link>
       )}
+    </div>
+  );
+}
+
+const FORM_STATE_TONE: Record<FormState["tone"], string> = {
+  positive: "border-positive/25 bg-positive/10 text-positive",
+  info: "border-home/20 bg-home/10 text-home",
+  warning: "border-warning/25 bg-warning/10 text-warning",
+  negative: "border-negative/25 bg-negative/10 text-negative",
+  muted: "border-border bg-background text-muted",
+};
+
+function FormStateView({ state, alignRight }: { state: FormState; alignRight?: boolean }) {
+  return (
+    <div className={`mt-2 rounded-xl border px-3 py-2 ${FORM_STATE_TONE[state.tone]} ${alignRight ? "text-right" : "text-left"}`}>
+      <p className="text-xs font-extrabold">
+        {state.label}{state.score == null ? "" : ` · ${state.score.toFixed(1)}/10`}
+      </p>
+      <p className="mt-0.5 text-[10px] opacity-80">
+        {state.reasons.join(" · ")}{state.sampleSize > 0 ? ` · vzorek ${state.sampleSize}` : ""}
+      </p>
     </div>
   );
 }
@@ -321,13 +348,13 @@ const VERDICT_LABEL: Record<NonNullable<FormMatchQuality["verdict"]>, string> = 
 };
 
 /** Tooltip zápasu: soupeř, skóre a čísla, ze kterých hodnocení vzniklo. */
-function matchTitle(opponent: FormOpponent, q: FormMatchQuality | null): string {
+function matchTitle(teamName: string, opponent: FormOpponent, q: FormMatchQuality | null): string {
   const parts: string[] = [];
   if (opponent) parts.push(opponent.name);
   if (q) {
     parts.push(`${q.goalsFor}:${q.goalsAgainst}`);
     if (q.xgFor != null && q.xgAgainst != null) {
-      parts.push(`xG ${q.xgFor.toFixed(2)} : ${q.xgAgainst.toFixed(2)}`);
+      parts.push(`xG ${teamName} ${q.xgFor.toFixed(2)} : ${opponent?.name ?? "soupeř"} ${q.xgAgainst.toFixed(2)}`);
       parts.push(`xB ${q.expectedPoints!.toFixed(1)} vs ${q.points} b.`);
       parts.push(VERDICT_LABEL[q.verdict!]);
     }
@@ -337,11 +364,13 @@ function matchTitle(opponent: FormOpponent, q: FormMatchQuality | null): string 
 
 function FormBadges({
   form,
+  team,
   opponents,
   quality,
   align,
 }: {
   form: MatchResult[];
+  team: { name: string; logoUrl: string };
   opponents: FormOpponent[];
   quality: FormMatchQuality[];
   align: "left" | "right";
@@ -366,7 +395,7 @@ function FormBadges({
           className="group relative"
         >
           <summary
-            title={matchTitle(opponent, q)}
+            title={matchTitle(team.name, opponent, q)}
             aria-label={`${CZ_RESULT[r]}${opponent ? ` proti ${opponent.name}` : ""}. Zobrazit detail zápasu`}
             className="flex min-h-11 min-w-8 cursor-pointer list-none flex-col items-center justify-center gap-0.5 rounded-md outline-none transition hover:bg-background focus-visible:ring-2 focus-visible:ring-accent-strong [&::-webkit-details-marker]:hidden"
           >
@@ -386,13 +415,26 @@ function FormBadges({
           <div
             className={`absolute top-full z-30 mt-1 w-52 rounded-xl border border-border bg-surface p-3 text-left shadow-lg ${align === "right" ? "right-0" : "left-0"}`}
           >
-            <p className="truncate text-xs font-bold text-foreground">{opponent?.name ?? "Neznámý soupeř"}</p>
             {q ? (
               <div className="mt-2 space-y-1 text-[11px] text-muted">
-                <p>Skóre <strong className="text-foreground">{q.goalsFor}:{q.goalsAgainst}</strong></p>
+                <div className="space-y-1.5">
+                  <TeamPerformanceSide
+                    name={team.name}
+                    logoUrl={team.logoUrl}
+                    role={roleLabel(q, true)}
+                    goals={q.goalsFor}
+                    xg={q.xgFor}
+                  />
+                  <TeamPerformanceSide
+                    name={opponent?.name ?? "Neznámý soupeř"}
+                    logoUrl={opponent?.logoUrl ?? null}
+                    role={roleLabel(q, false)}
+                    goals={q.goalsAgainst}
+                    xg={q.xgAgainst}
+                  />
+                </div>
                 {q.xgFor != null && q.xgAgainst != null ? (
                   <>
-                    <p>xG <strong className="text-foreground">{q.xgFor.toFixed(2)} : {q.xgAgainst.toFixed(2)}</strong></p>
                     <p>xB <strong className="text-foreground">{q.expectedPoints?.toFixed(1) ?? "—"}</strong> · {q.points} b.</p>
                     {q.verdict && <p className="border-t border-border pt-1.5">{VERDICT_LABEL[q.verdict]}</p>}
                   </>
@@ -451,6 +493,41 @@ function XgTrend({
       <div className="text-[10px] tabular-nums text-muted">
         {q.points} b. / xB {q.expectedPoints.toFixed(1)} · {q.xgSampleSize} záp.
         {q.level && <span className={`ml-1 font-medium ${LEVEL_COLOR[q.level]}`}>· {LEVEL_LABEL[q.level]}</span>}
+      </div>
+    </div>
+  );
+}
+
+function roleLabel(q: FormMatchQuality, ownTeam: boolean): string | null {
+  if (q.isNeutral) return "neutrální půda";
+  if (q.isHome == null) return null;
+  const home = ownTeam ? q.isHome : !q.isHome;
+  return home ? "domácí" : "hosté";
+}
+
+function TeamPerformanceSide({
+  name,
+  logoUrl,
+  role,
+  goals,
+  xg,
+}: {
+  name: string;
+  logoUrl: string | null;
+  role: string | null;
+  goals: number;
+  xg: number | null;
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg bg-background px-2 py-1.5">
+      <TeamLogo src={logoUrl ?? undefined} alt={name} size={18} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-bold text-foreground">{name}</p>
+        {role && <p className="text-[9px] uppercase tracking-wide text-muted">{role}</p>}
+      </div>
+      <div className="text-right tabular-nums">
+        <p className="font-bold text-foreground">{goals} gólů</p>
+        <p>xG {xg == null ? "—" : xg.toFixed(2)}</p>
       </div>
     </div>
   );

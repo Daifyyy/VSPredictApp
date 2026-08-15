@@ -505,6 +505,9 @@ export interface TeamSummary {
 export interface FormMatchQuality {
   fixtureId: number;
   date: string; // ISO 8601
+  /** Perspektiva sledovaného týmu. Volitelné kvůli starším uloženým snapshotům. */
+  isHome?: boolean;
+  isNeutral?: boolean;
   result: MatchResult;
   goalsFor: number;
   goalsAgainst: number;
@@ -515,6 +518,14 @@ export interface FormMatchQuality {
   possession?: number | null;
   corners?: number | null;
   cards?: number | null;
+  /** Protější týmový řádek ze stejné trvalé cache; profil jej doplní jedním batch dotazem. */
+  opponentStats?: {
+    shots: number | null;
+    shotsOnTarget: number | null;
+    possession: number | null;
+    corners: number | null;
+    cards: number | null;
+  } | null;
   /** Skutečné body (3/1/0). */
   points: number;
   /** Očekávané body z xG obou stran (0–3). `null` bez xG. */

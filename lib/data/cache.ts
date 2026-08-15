@@ -175,6 +175,30 @@ export async function getCachedFixtureStats(
 }
 
 /**
+ * Protější týmové řádky pro několik utkání jedním DB dotazem. Používá profil posledních
+ * výkonů; nikdy nedotahuje chybějící data z API.
+ */
+export async function getCachedOpponentMatchStats(
+  teamId: number,
+  fixtureIds: number[]
+): Promise<Map<number, MatchStat>> {
+  if (fixtureIds.length === 0) return new Map();
+  const rows = await prisma.matchStatCache.findMany({
+    where: {
+      fixtureId: { in: fixtureIds },
+      teamId: { not: teamId },
+      schemaVersion: { gte: MIN_READABLE_CACHE_VERSION },
+    },
+    orderBy: { schemaVersion: "desc" },
+  });
+  const result = new Map<number, MatchStat>();
+  for (const row of rows) {
+    if (!result.has(row.fixtureId)) result.set(row.fixtureId, rowToMatchStat(row));
+  }
+  return result;
+}
+
+/**
  * Hromadné skutečné počty pro diagnostiku modelů. Výhradně čte trvalou cache;
  * chybějící zápas záměrně nedotahuje z API-Football.
  */

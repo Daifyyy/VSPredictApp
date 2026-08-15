@@ -27,6 +27,7 @@ export interface ContextBadge {
 
 export interface ContextProfile {
   badges: ContextBadge[];
+  formState: FormState;
   recent: {
     points: number;
     maximum: number;
@@ -36,6 +37,16 @@ export interface ContextProfile {
   };
   xgDiffPerMatch: number | null;
   pointsPerGame: number | null;
+}
+
+export type FormStateTone = "positive" | "info" | "warning" | "negative" | "muted";
+
+export interface FormState {
+  score: number | null;
+  label: "Výborná forma" | "Ve formě" | "Nevyrovnané období" | "Hledá formu" | "V krizi" | "Málo dat";
+  tone: FormStateTone;
+  reasons: string[];
+  sampleSize: number;
 }
 
 interface ContextProfileInput {
@@ -51,6 +62,56 @@ interface ContextProfileInput {
 
 const pointsOf = (result: MatchResult): number =>
   result === "W" ? 3 : result === "D" ? 1 : 0;
+
+const clamp = (value: number, min: number, max: number): number =>
+  Math.min(max, Math.max(min, value));
+
+/** Veřejné kvůli přesným testům hranic; skóre je popisný kontext, nikoli vstup predikce. */
+export function buildFormState({
+  points,
+  maximum,
+  sampleSize,
+  xgDiffPerMatch,
+  xgSampleSize,
+  pointsPerGame,
+}: {
+  points: number;
+  maximum: number;
+  sampleSize: number;
+  xgDiffPerMatch: number | null;
+  xgSampleSize: number;
+  pointsPerGame: number | null;
+}): FormState {
+  if (sampleSize < 3 || maximum <= 0) {
+    return { score: null, label: "Málo dat", tone: "muted", reasons: [`${sampleSize} záp.`], sampleSize };
+  }
+
+  const components = [{ value: (points / maximum) * 10, weight: 0.5 }];
+  if (xgDiffPerMatch != null && xgSampleSize >= 3) {
+    components.push({ value: clamp(5 + xgDiffPerMatch * 2.5, 0, 10), weight: 0.3 });
+  }
+  if (pointsPerGame != null) {
+    components.push({ value: clamp((pointsPerGame / 3) * 10, 0, 10), weight: 0.2 });
+  }
+  const weight = components.reduce((sum, item) => sum + item.weight, 0);
+  const score = Math.round((components.reduce((sum, item) => sum + item.value * item.weight, 0) / weight) * 10) / 10;
+  const classification = score >= 8
+    ? { label: "Výborná forma" as const, tone: "positive" as const }
+    : score >= 6.5
+      ? { label: "Ve formě" as const, tone: "positive" as const }
+      : score >= 4.5
+        ? { label: "Nevyrovnané období" as const, tone: "info" as const }
+        : score >= 3
+          ? { label: "Hledá formu" as const, tone: "warning" as const }
+          : { label: "V krizi" as const, tone: "negative" as const };
+  const reasons = [`${points}/${maximum} bodů`];
+  if (xgDiffPerMatch != null && xgSampleSize >= 3) {
+    reasons.push(`xG ${xgDiffPerMatch > 0 ? "+" : ""}${xgDiffPerMatch.toFixed(2)}/záp.`);
+  } else if (pointsPerGame != null) {
+    reasons.push(`${pointsPerGame.toFixed(2)} b./záp.`);
+  }
+  return { score, ...classification, reasons: reasons.slice(0, 2), sampleSize };
+}
 
 function splitFor(standing: Standing | null, venue: Venue): StandingSplit | null {
   if (!standing) return null;
@@ -189,6 +250,14 @@ export function buildContextProfile(input: ContextProfileInput): ContextProfile 
 
   return {
     badges: badges.slice(0, 2),
+    formState: buildFormState({
+      points,
+      maximum: form.length * 3,
+      sampleSize: form.length,
+      xgDiffPerMatch: input.quality?.xgDiffPerMatch ?? null,
+      xgSampleSize: input.quality?.xgSampleSize ?? 0,
+      pointsPerGame: ppg(splitFor(input.standing, input.venue)),
+    }),
     recent: {
       points,
       maximum: form.length * 3,

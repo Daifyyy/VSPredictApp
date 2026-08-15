@@ -47,6 +47,7 @@ import {
   cachedJson,
   cachedJsonMemo,
   getCachedFixtureStats,
+  getCachedOpponentMatchStats,
   getCachedMatchStats,
   saveMatchStats,
   MIN_READABLE_CACHE_VERSION,
@@ -139,6 +140,13 @@ export function getLeagues(): League[] {
   // Evropské poháry jsou první v Porovnání a globálním katalogu, ale zůstávají mimo
   // `CLUB_LEAGUES`, takže se pro ně nikdy nevytváří tabulka ani stylový snapshot.
   return [...EURO_CUP_LEAGUES, ...PUBLIC_CLUB_LEAGUES, ...NATIONAL_LEAGUES];
+}
+
+export async function getOpponentMatchStats(
+  teamId: number,
+  fixtureIds: number[]
+): Promise<Map<number, MatchStat>> {
+  return getCachedOpponentMatchStats(teamId, fixtureIds);
 }
 
 /**

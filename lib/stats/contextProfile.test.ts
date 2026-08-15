@@ -7,7 +7,7 @@ import type {
   Standing,
   TeamSummary,
 } from "@/lib/types";
-import { buildContextProfile } from "./contextProfile";
+import { buildContextProfile, buildFormState } from "./contextProfile";
 
 const summary = (form: TeamSummary["form"] = ["W", "W", "D", "W", "L"]): TeamSummary => ({
   venue: "TOTAL",
@@ -158,5 +158,42 @@ describe("buildContextProfile", () => {
   it("sezonní štítek nevytváří bez celé tabulky", () => {
     expect(profile({ leagueTable: null }).badges.some((badge) => badge.id === "above-standing"))
       .toBe(false);
+  });
+});
+
+describe("buildFormState", () => {
+  const state = (scoreParts: Partial<Parameters<typeof buildFormState>[0]> = {}) => buildFormState({
+    points: 9,
+    maximum: 15,
+    sampleSize: 5,
+    xgDiffPerMatch: null,
+    xgSampleSize: 0,
+    pointsPerGame: null,
+    ...scoreParts,
+  });
+
+  it("pod třemi zápasy nepublikuje skóre", () => {
+    expect(state({ sampleSize: 2, points: 6, maximum: 6 })).toMatchObject({
+      score: null,
+      label: "Málo dat",
+      sampleSize: 2,
+    });
+  });
+
+  it.each([
+    [8, "Výborná forma"],
+    [6.5, "Ve formě"],
+    [4.5, "Nevyrovnané období"],
+    [3, "Hledá formu"],
+    [2.9, "V krizi"],
+  ])("zařadí skóre %s do stavu %s", (score, label) => {
+    const points = score * 1.5;
+    expect(state({ points, maximum: 15 })).toMatchObject({ score, label });
+  });
+
+  it("převáží dostupné složky a uvede nejvýše dva důvody", () => {
+    const result = state({ points: 9, xgDiffPerMatch: 0.4, xgSampleSize: 5, pointsPerGame: 2.1 });
+    expect(result.score).toBe(6.2);
+    expect(result.reasons).toEqual(["9/15 bodů", "xG +0.40/záp."]);
   });
 });

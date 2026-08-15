@@ -104,6 +104,8 @@ function qualityOf(m: MatchStat): FormMatchQuality {
     return {
       fixtureId: m.fixtureId,
       date: m.date,
+      isHome: m.isHome,
+      isNeutral: m.isNeutral,
       result,
       goalsFor,
       goalsAgainst,
@@ -123,6 +125,8 @@ function qualityOf(m: MatchStat): FormMatchQuality {
   return {
     fixtureId: m.fixtureId,
     date: m.date,
+    isHome: m.isHome,
+    isNeutral: m.isNeutral,
     result,
     goalsFor,
     goalsAgainst,
