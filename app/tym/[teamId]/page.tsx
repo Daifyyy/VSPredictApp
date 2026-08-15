@@ -83,7 +83,10 @@ export default async function TeamPage(props: Props) {
               <p className="mt-1 text-sm text-muted">{profile.team.country}{profile.standing ? ` · ${profile.standing.rank}. místo · ${profile.standing.points} bodů` : ""}</p>
             </div>
           </div>
-          <Link href={`/porovnani?homeLeague=${leagueId}&home=${profile.team.id}`} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-positive px-4 text-sm font-semibold text-white">Porovnat tým</Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href="#recent-performances-title" className="inline-flex min-h-11 items-center justify-center rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground transition hover:bg-background">Poslední výkony</Link>
+            <Link href={`/porovnani?homeLeague=${leagueId}&home=${profile.team.id}`} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-positive px-4 text-sm font-semibold text-white">Porovnat tým</Link>
+          </div>
         </div>
       </header>
 

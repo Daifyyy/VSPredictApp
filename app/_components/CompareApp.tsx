@@ -857,6 +857,7 @@ function ResultPanel({
               name={result.home.team.name}
               logo={result.home.team.logoUrl}
               accent="home"
+              href={homeLeagueId == null ? undefined : `/tym/${result.home.team.id}?league=${homeLeagueId}`}
             />
             <span className="shrink-0 rounded-full bg-background px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
               {VENUE_LABELS[venue]}
@@ -865,6 +866,7 @@ function ResultPanel({
               name={result.away.team.name}
               logo={result.away.team.logoUrl}
               accent="away"
+              href={awayLeagueId == null ? undefined : `/tym/${result.away.team.id}?league=${awayLeagueId}`}
               alignRight
             />
           </div>
@@ -924,6 +926,8 @@ function ResultPanel({
             prediction={result.prediction ?? null}
             venue={venue}
             mode={entityMode}
+            homeLeagueId={homeLeagueId}
+            awayLeagueId={awayLeagueId}
             embedded
           />
           {(homeStanding || awayStanding) && (

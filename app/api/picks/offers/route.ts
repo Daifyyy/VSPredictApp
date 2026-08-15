@@ -53,6 +53,14 @@ export async function GET(req: Request) {
       lowConfidence: row.lowConfidence,
       hasOdds: parseBooks(row.oddsBooks).length > 0,
       largestDifference: largestDifference(row),
+      homeWin: row.homeWin,
+      awayWin: row.awayWin,
+      over25: row.over25,
+      bttsYes: row.bttsYes,
+      cardsOver35:
+        row.lambdaCardsHome != null && row.lambdaCardsAway != null
+          ? overProbNegBin(row.lambdaCardsHome + row.lambdaCardsAway, 3.5, row.cardVarianceRatio ?? 1.2)
+          : null,
     }));
     return NextResponse.json({ offers });
   } catch (error) {

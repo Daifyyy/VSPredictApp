@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type {
   EntityType,
   FormMatchQuality,
@@ -41,6 +42,8 @@ export function FormSummary({
   prediction,
   venue,
   mode = "CLUB",
+  homeLeagueId,
+  awayLeagueId,
   embedded = false,
 }: {
   home: TeamSummary | null;
@@ -55,6 +58,8 @@ export function FormSummary({
   prediction: MatchPrediction | null;
   venue: Venue;
   mode?: EntityType;
+  homeLeagueId: number | null;
+  awayLeagueId: number | null;
   embedded?: boolean;
 }) {
   if (!home && !away) return null;
@@ -98,8 +103,8 @@ export function FormSummary({
       )}
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-3 border-b border-border pb-4">
-          <ProfileHeader team={homeTeam} badges={homeProfile.badges} accent="home" />
-          <ProfileHeader team={awayTeam} badges={awayProfile.badges} accent="away" alignRight />
+          <ProfileHeader team={homeTeam} leagueId={homeLeagueId} badges={homeProfile.badges} accent="home" />
+          <ProfileHeader team={awayTeam} leagueId={awayLeagueId} badges={awayProfile.badges} accent="away" alignRight />
         </div>
         <Row label="Forma">
           <FormBadges
@@ -179,23 +184,38 @@ const PROFILE_BADGE_TONE: Record<ContextBadge["tone"], string> = {
 
 function ProfileHeader({
   team,
+  leagueId,
   badges,
   accent,
   alignRight,
 }: {
-  team: { name: string; logoUrl: string };
+  team: { id: number; name: string; logoUrl: string };
+  leagueId: number | null;
   badges: ContextBadge[];
   accent: "home" | "away";
   alignRight?: boolean;
 }) {
   const color = accent === "home" ? "text-home" : "text-away";
+  const href = leagueId == null ? null : `/tym/${team.id}?league=${leagueId}#recent-performances-title`;
   return (
     <div className={alignRight ? "min-w-0 text-right" : "min-w-0 text-left"}>
-      <div className={`flex items-center gap-2 ${alignRight ? "justify-end" : "justify-start"}`}>
-        {!alignRight && <TeamLogo src={team.logoUrl} alt={team.name} size={24} />}
-        <span className={`truncate text-sm font-bold ${color}`}>{team.name}</span>
-        {alignRight && <TeamLogo src={team.logoUrl} alt={team.name} size={24} />}
-      </div>
+      {href ? (
+        <Link
+          href={href}
+          aria-label={`Otevřít poslední výkony týmu ${team.name}`}
+          className={`flex min-h-9 items-center gap-2 rounded-lg outline-none transition hover:bg-background focus-visible:ring-2 focus-visible:ring-accent-strong ${alignRight ? "justify-end" : "justify-start"}`}
+        >
+          {!alignRight && <TeamLogo src={team.logoUrl} alt={team.name} size={24} />}
+          <span className={`truncate text-sm font-bold ${color}`}>{team.name}</span>
+          {alignRight && <TeamLogo src={team.logoUrl} alt={team.name} size={24} />}
+        </Link>
+      ) : (
+        <div className={`flex items-center gap-2 ${alignRight ? "justify-end" : "justify-start"}`}>
+          {!alignRight && <TeamLogo src={team.logoUrl} alt={team.name} size={24} />}
+          <span className={`truncate text-sm font-bold ${color}`}>{team.name}</span>
+          {alignRight && <TeamLogo src={team.logoUrl} alt={team.name} size={24} />}
+        </div>
+      )}
       {badges.length > 0 ? (
         <div className={`mt-2 flex flex-wrap gap-1.5 ${alignRight ? "justify-end" : "justify-start"}`}>
           {badges.map((badge) => (
@@ -210,6 +230,14 @@ function ProfileHeader({
         </div>
       ) : (
         <p className="mt-2 text-[10px] text-muted">Bez výrazného signálu</p>
+      )}
+      {href && (
+        <Link
+          href={href}
+          className={`mt-2 inline-flex min-h-9 items-center rounded-lg px-2 text-[11px] font-semibold text-muted outline-none transition hover:bg-background hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent-strong ${alignRight ? "justify-end" : "justify-start"}`}
+        >
+          Poslední výkony →
+        </Link>
       )}
     </div>
   );
@@ -333,27 +361,50 @@ function FormBadges({
   return (
     <div className="flex gap-1">
       {ordered.map(({ r, opponent, q }, i) => (
-        <span
+        <details
           key={i}
-          title={matchTitle(opponent, q)}
-          className="flex flex-col items-center gap-0.5"
+          className="group relative"
         >
-          {opponent && (
-            <TeamLogo src={opponent.logoUrl ?? undefined} alt={opponent.name} size={12} />
-          )}
-          <span
-            className={`flex h-6 w-6 items-center justify-center rounded text-xs font-bold ${BADGE[r]}`}
+          <summary
+            title={matchTitle(opponent, q)}
+            aria-label={`${CZ_RESULT[r]}${opponent ? ` proti ${opponent.name}` : ""}. Zobrazit detail zápasu`}
+            className="flex min-h-11 min-w-8 cursor-pointer list-none flex-col items-center justify-center gap-0.5 rounded-md outline-none transition hover:bg-background focus-visible:ring-2 focus-visible:ring-accent-strong [&::-webkit-details-marker]:hidden"
           >
-            {CZ_RESULT[r]}
-          </span>
-          {anyMark && (
             <span
-              className={`h-[3px] w-5 rounded-full ${
-                q?.verdict ? MARK[q.verdict] : "bg-transparent"
-              }`}
-            />
-          )}
-        </span>
+              aria-hidden="true"
+              className="flex h-3 items-center justify-center"
+            >
+              {opponent && <TeamLogo src={opponent.logoUrl ?? undefined} alt="" size={12} />}
+            </span>
+            <span className={`flex h-6 w-6 items-center justify-center rounded text-xs font-bold ${BADGE[r]}`}>
+              {CZ_RESULT[r]}
+            </span>
+            {anyMark && (
+              <span className={`h-[3px] w-5 rounded-full ${q?.verdict ? MARK[q.verdict] : "bg-transparent"}`} />
+            )}
+          </summary>
+          <div
+            className={`absolute top-full z-30 mt-1 w-52 rounded-xl border border-border bg-surface p-3 text-left shadow-lg ${align === "right" ? "right-0" : "left-0"}`}
+          >
+            <p className="truncate text-xs font-bold text-foreground">{opponent?.name ?? "Neznámý soupeř"}</p>
+            {q ? (
+              <div className="mt-2 space-y-1 text-[11px] text-muted">
+                <p>Skóre <strong className="text-foreground">{q.goalsFor}:{q.goalsAgainst}</strong></p>
+                {q.xgFor != null && q.xgAgainst != null ? (
+                  <>
+                    <p>xG <strong className="text-foreground">{q.xgFor.toFixed(2)} : {q.xgAgainst.toFixed(2)}</strong></p>
+                    <p>xB <strong className="text-foreground">{q.expectedPoints?.toFixed(1) ?? "—"}</strong> · {q.points} b.</p>
+                    {q.verdict && <p className="border-t border-border pt-1.5">{VERDICT_LABEL[q.verdict]}</p>}
+                  </>
+                ) : (
+                  <p>Bez dostupného xG hodnocení.</p>
+                )}
+              </div>
+            ) : (
+              <p className="mt-2 text-[11px] text-muted">Detail výkonu zatím není v cache dostupný.</p>
+            )}
+          </div>
+        </details>
       ))}
     </div>
   );
