@@ -3,6 +3,8 @@ import webpush, { type PushSubscription as WebPushSubscription } from "web-push"
 import { prisma } from "@/lib/db";
 import { COUNT_MARKET_SIGNAL_POLICY_VERSION, MARKET_SIGNAL_POLICY_VERSION } from "@/lib/picks/marketSignals";
 import { isMeaningfulMarketMove, isSmartNotificationTarget } from "@/lib/pushRules";
+import { fetchFixturesByIds } from "@/lib/data/apiFootball";
+import { chunkFixtureIds, matchStatusEvents } from "@/lib/pushMatchStatus";
 
 export function pushConfigured(): boolean {
   return Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT);
@@ -42,30 +44,90 @@ export async function sendPushSubscription(
 }
 
 export async function sendKickoffReminders(now = new Date()) {
-  if (!pushConfigured()) return { eligible: 0, sent: 0, errors: 0, configured: false };
+  const emptyStats = { eligible: 0, sent: 0, errors: 0, checkedFixtures: 0, apiBatches: 0, halftimeSent: 0, finalSent: 0 };
+  if (!pushConfigured()) return { ...emptyStats, configured: false };
   const preferences = await prisma.notificationPreference.findMany({
     where: { enabled: true },
     include: { user: { select: { id: true, email: true, pushSubscriptions: true } } },
   });
-  if (!preferences.length) return { eligible: 0, sent: 0, errors: 0, configured: true };
+  if (!preferences.length) return { ...emptyStats, configured: true };
 
-  const fixtures = await prisma.fixturePrediction.findMany({
-    where: {
-      kickoff: {
-        gte: new Date(now.getTime() + 5 * 60_000),
-        lte: new Date(now.getTime() + 7 * 24 * 60 * 60_000),
+  const hasResultSubscribers = preferences.some((preference) =>
+    preference.halftimeAndFinal && preference.user.pushSubscriptions.length > 0
+  );
+  const fixtureSelect = {
+    fixtureId: true, kickoff: true, homeName: true, awayName: true, leagueId: true,
+    homeTeamId: true, awayTeamId: true, published1x2Side: true,
+    published1x2Prob: true, publicationPolicyVersion: true, publishedAt: true,
+  } as const;
+  const [fixtures, resultCandidates] = await Promise.all([
+    prisma.fixturePrediction.findMany({
+      where: {
+        kickoff: {
+          gte: new Date(now.getTime() + 5 * 60_000),
+          lte: new Date(now.getTime() + 7 * 24 * 60 * 60_000),
+        },
       },
-    },
-    select: {
-      fixtureId: true, kickoff: true, homeName: true, awayName: true, leagueId: true,
-      homeTeamId: true, awayTeamId: true, published1x2Side: true,
-      published1x2Prob: true, publicationPolicyVersion: true,
-      publishedAt: true,
-    },
-  });
-  if (!fixtures.length) return { eligible: 0, sent: 0, errors: 0, configured: true };
+      select: fixtureSelect,
+    }),
+    hasResultSubscribers
+      ? prisma.fixturePrediction.findMany({
+          where: {
+            kickoff: {
+              gte: new Date(now.getTime() - 4 * 60 * 60_000),
+              lte: new Date(now.getTime() - 35 * 60_000),
+            },
+          },
+          select: fixtureSelect,
+        })
+      : Promise.resolve([]),
+  ]);
 
-  const signals = await prisma.marketSignalSnapshot.findMany({
+  const owners = preferences.map((preference) => preference.user.email ?? `user:${preference.user.id}`);
+  const allFixtureIds = [...new Set([...fixtures, ...resultCandidates].map((fixture) => fixture.fixtureId))];
+  const smartOwners = preferences
+    .filter((preference) => preference.smartFavoriteLeagues)
+    .map((preference) => preference.user.email ?? `user:${preference.user.id}`);
+  const [favorites, favoriteLeagues, existingDeliveries] = await Promise.all([
+    allFixtureIds.length
+      ? prisma.favoriteFixture.findMany({
+          where: { email: { in: owners }, fixtureId: { in: allFixtureIds } },
+          select: { email: true, fixtureId: true },
+        })
+      : Promise.resolve([]),
+    smartOwners.length
+      ? prisma.favoriteLeague.findMany({
+          where: { email: { in: smartOwners } },
+          select: { email: true, leagueId: true },
+        })
+      : Promise.resolve([]),
+    allFixtureIds.length
+      ? prisma.notificationDelivery.findMany({
+          where: {
+            userId: { in: preferences.map((preference) => preference.userId) },
+            fixtureId: { in: allFixtureIds },
+          },
+          select: { userId: true, fixtureId: true, type: true },
+        })
+      : Promise.resolve([]),
+  ]);
+  const favoriteIdsByOwner = new Map<string, Set<number>>();
+  for (const favorite of favorites) {
+    const ids = favoriteIdsByOwner.get(favorite.email) ?? new Set<number>();
+    ids.add(favorite.fixtureId);
+    favoriteIdsByOwner.set(favorite.email, ids);
+  }
+  const favoriteLeaguesByOwner = new Map<string, Set<number>>();
+  for (const favorite of favoriteLeagues) {
+    const ids = favoriteLeaguesByOwner.get(favorite.email) ?? new Set<number>();
+    ids.add(favorite.leagueId);
+    favoriteLeaguesByOwner.set(favorite.email, ids);
+  }
+  const deliveredKeys = new Set(existingDeliveries.map((delivery) =>
+    `${delivery.userId}:${delivery.fixtureId}:${delivery.type}`
+  ));
+
+  const signals = fixtures.length ? await prisma.marketSignalSnapshot.findMany({
     where: {
       fixtureId: { in: fixtures.map((fixture) => fixture.fixtureId) },
       closedAt: null,
@@ -74,7 +136,7 @@ export async function sendKickoffReminders(now = new Date()) {
         { market: { in: ["CORNERS", "CARDS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
       ],
     },
-  });
+  }) : [];
   const signalsByFixture = new Map<number, typeof signals>();
   for (const signal of signals) {
     const rows = signalsByFixture.get(signal.fixtureId) ?? [];
@@ -85,23 +147,68 @@ export async function sendKickoffReminders(now = new Date()) {
   let eligible = 0;
   let sent = 0;
   let errors = 0;
+  let apiBatches = 0;
+  let checkedFixtures = 0;
+  let halftimeSent = 0;
+  let finalSent = 0;
+
+  const relevantResultIds = new Set<number>();
+  for (const preference of preferences) {
+    if (!preference.halftimeAndFinal || !preference.user.pushSubscriptions.length) continue;
+    const owner = preference.user.email ?? `user:${preference.user.id}`;
+    const ids = favoriteIdsByOwner.get(owner) ?? new Set<number>();
+    for (const fixture of resultCandidates) {
+      if (ids.has(fixture.fixtureId)) relevantResultIds.add(fixture.fixtureId);
+    }
+  }
+  const statusEventsByFixture = new Map<number, ReturnType<typeof matchStatusEvents>>();
+  for (const batch of chunkFixtureIds([...relevantResultIds])) {
+    apiBatches++;
+    try {
+      const current = await fetchFixturesByIds(batch);
+      checkedFixtures += current.length;
+      for (const fixture of current) {
+        statusEventsByFixture.set(fixture.fixture.id, matchStatusEvents(fixture));
+      }
+    } catch {
+      errors++;
+    }
+  }
+
+  async function deliver(
+    preference: typeof preferences[number],
+    fixture: typeof fixtures[number],
+    event: { type: string; title: string; body: string; tag: string },
+    url: string
+  ) {
+    eligible++;
+    const key = `${preference.userId}:${fixture.fixtureId}:${event.type}`;
+    if (deliveredKeys.has(key)) return;
+    let delivered = false;
+    for (const subscription of preference.user.pushSubscriptions) {
+      try {
+        delivered = await sendPushSubscription(subscription, {
+          title: event.title, body: event.body, url, tag: event.tag,
+        }) || delivered;
+      } catch {
+        errors++;
+      }
+    }
+    if (!delivered) return;
+    await prisma.notificationDelivery.create({
+      data: { userId: preference.userId, fixtureId: fixture.fixtureId, type: event.type },
+    }).catch(() => {});
+    deliveredKeys.add(key);
+    sent++;
+    if (event.type === "HALFTIME") halftimeSent++;
+    if (event.type === "FINAL") finalSent++;
+  }
+
   for (const preference of preferences) {
     if (!preference.user.pushSubscriptions.length) continue;
     const owner = preference.user.email ?? `user:${preference.user.id}`;
-    const [favorites, favoriteLeagues] = await Promise.all([
-      prisma.favoriteFixture.findMany({
-        where: { email: owner, fixtureId: { in: fixtures.map((fixture) => fixture.fixtureId) } },
-        select: { fixtureId: true },
-      }),
-      preference.smartFavoriteLeagues
-        ? prisma.favoriteLeague.findMany({
-            where: { email: owner },
-            select: { leagueId: true },
-          })
-        : Promise.resolve([]),
-    ]);
-    const favoriteIds = new Set(favorites.map((favorite) => favorite.fixtureId));
-    const favoriteLeagueIds = new Set(favoriteLeagues.map((favorite) => favorite.leagueId));
+    const favoriteIds = favoriteIdsByOwner.get(owner) ?? new Set<number>();
+    const favoriteLeagueIds = favoriteLeaguesByOwner.get(owner) ?? new Set<number>();
     for (const fixture of fixtures) {
       const explicitFixtureFavorite = favoriteIds.has(fixture.fixtureId);
       if (!isSmartNotificationTarget({
@@ -152,34 +259,18 @@ export async function sendKickoffReminders(now = new Date()) {
         }
       }
 
-      for (const event of events) {
-        eligible++;
-        const existing = await prisma.notificationDelivery.findUnique({
-          where: { userId_fixtureId_type: { userId: preference.userId, fixtureId: fixture.fixtureId, type: event.type } },
-          select: { id: true },
-        });
-        if (existing) continue;
-        let delivered = false;
-        for (const subscription of preference.user.pushSubscriptions) {
-          try {
-            delivered = await sendPushSubscription(subscription, {
-              title: event.title,
-              body: event.body,
-              url,
-              tag: event.tag,
-            }) || delivered;
-          } catch {
-            errors++;
-          }
-        }
-        if (delivered) {
-          await prisma.notificationDelivery.create({
-            data: { userId: preference.userId, fixtureId: fixture.fixtureId, type: event.type },
-          }).catch(() => {});
-          sent++;
+      for (const event of events) await deliver(preference, fixture, event, url);
+    }
+
+    if (preference.halftimeAndFinal) {
+      for (const fixture of resultCandidates) {
+        if (!favoriteIds.has(fixture.fixtureId)) continue;
+        const url = `/porovnani?homeLeague=${fixture.leagueId}&awayLeague=${fixture.leagueId}&home=${fixture.homeTeamId}&away=${fixture.awayTeamId}&fixture=${fixture.fixtureId}`;
+        for (const event of statusEventsByFixture.get(fixture.fixtureId) ?? []) {
+          await deliver(preference, fixture, event, url);
         }
       }
     }
   }
-  return { eligible, sent, errors, configured: true };
+  return { eligible, sent, errors, configured: true, checkedFixtures, apiBatches, halftimeSent, finalSent };
 }

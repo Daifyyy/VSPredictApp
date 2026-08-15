@@ -1303,7 +1303,7 @@ function FixtureRow({
       <StarButton
         on={isFavorite}
         onClick={() => onToggleFavorite(!isFavorite)}
-        label={isFavorite ? "Odebrat zápas z oblíbených" : "Přidat zápas do oblíbených"}
+        label={isFavorite ? "Odebrat zápas z oblíbených" : "Přidat zápas do oblíbených; výsledková upozornění lze zapnout v nastavení"}
       />
     </li>
   );

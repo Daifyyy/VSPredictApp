@@ -14,6 +14,7 @@ type State = {
     marketMovement: boolean;
     movementThreshold: 3 | 5 | 8;
     smartFavoriteLeagues: boolean;
+    halftimeAndFinal: boolean;
   };
 };
 
@@ -132,12 +133,13 @@ export function PushSettings({ open, onClose }: { open: boolean; onClose: () => 
   return <div className="fixed inset-0 z-[80] grid place-items-center bg-foreground/25 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
     <section role="dialog" aria-modal="true" aria-labelledby="push-title" className="w-full max-w-md rounded-2xl border border-border bg-surface p-5 shadow-xl">
       <div className="flex items-start justify-between gap-4">
-        <div><h2 id="push-title" className="text-lg font-bold text-foreground">Upozornění na zápasy</h2><p className="mt-1 text-sm leading-5 text-muted">Football Insight upozorní na oblíbený zápas před výkopem.</p></div>
+        <div><h2 id="push-title" className="text-lg font-bold text-foreground">Upozornění na zápasy</h2><p className="mt-1 text-sm leading-5 text-muted">Předzápasové, modelové a výsledkové zprávy na jednom místě.</p></div>
         <button type="button" onClick={onClose} className="grid h-11 w-11 place-items-center rounded-full text-xl text-muted hover:bg-background" aria-label="Zavřít">×</button>
       </div>
       {!supported ? <p className="mt-4 rounded-lg bg-warning/10 p-3 text-sm text-foreground">Tento prohlížeč Web Push nepodporuje. Na iPhonu nejdřív přidej aplikaci na plochu a otevři ji z její ikony.</p> : null}
       {state && !state.configured ? <p className="mt-4 rounded-lg bg-warning/10 p-3 text-sm text-foreground">Server ještě nemá nastavené VAPID klíče.</p> : null}
       {state ? <div className="mt-4 space-y-4">
+        <p className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Před zápasem</p>
         <label className="flex min-h-11 items-center justify-between gap-3 text-sm font-semibold text-foreground"><span>Připomenout oblíbený zápas</span><input type="checkbox" checked={state.preference.favoriteKickoff} onChange={(event) => setState({ ...state, preference: { ...state.preference, favoriteKickoff: event.target.checked } })} className="h-5 w-5 accent-positive" /></label>
         <label className="block text-sm font-semibold text-foreground">Čas připomínky
           <select value={state.preference.kickoffMinutes} onChange={(event) => setState({ ...state, preference: { ...state.preference, kickoffMinutes: Number(event.target.value) as 30 | 60 | 120 } })} className="mt-2 min-h-11 w-full rounded-lg border border-border bg-background px-3 text-sm">
@@ -145,6 +147,11 @@ export function PushSettings({ open, onClose }: { open: boolean; onClose: () => 
           </select>
         </label>
         <div className="space-y-2 border-t border-border pt-3">
+          <p className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Průběh a výsledek</p>
+          <label className="flex min-h-11 items-center justify-between gap-3 text-sm text-foreground"><span><b>Poločas a konečný výsledek</b><small className="block text-muted">Jen konkrétní zápasy označené hvězdičkou</small></span><input type="checkbox" checked={state.preference.halftimeAndFinal} onChange={(event) => setState({ ...state, preference: { ...state.preference, halftimeAndFinal: event.target.checked } })} className="h-5 w-5 accent-positive" /></label>
+        </div>
+        <div className="space-y-2 border-t border-border pt-3">
+          <p className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Model a trh</p>
           <label className="flex min-h-11 items-center justify-between gap-3 text-sm text-foreground"><span><b>Zahrnout oblíbené ligy</b><small className="block text-muted">Jen chytré signály, ne každý výkop</small></span><input type="checkbox" checked={state.preference.smartFavoriteLeagues} onChange={(event) => setState({ ...state, preference: { ...state.preference, smartFavoriteLeagues: event.target.checked } })} className="h-5 w-5 accent-positive" /></label>
           <label className="flex min-h-11 items-center justify-between gap-3 text-sm text-foreground"><span><b>Nový publikovaný tip</b><small className="block text-muted">Pouze když projde pravidlem modelu</small></span><input type="checkbox" checked={state.preference.publishedPrediction} onChange={(event) => setState({ ...state, preference: { ...state.preference, publishedPrediction: event.target.checked } })} className="h-5 w-5 accent-positive" /></label>
           <label className="flex min-h-11 items-center justify-between gap-3 text-sm text-foreground"><span><b>Výrazný pohyb trhu</b><small className="block text-muted">Alespoň 3 použitelné vzorky, směrem k modelu</small></span><input type="checkbox" checked={state.preference.marketMovement} onChange={(event) => setState({ ...state, preference: { ...state.preference, marketMovement: event.target.checked } })} className="h-5 w-5 accent-positive" /></label>
@@ -152,7 +159,7 @@ export function PushSettings({ open, onClose }: { open: boolean; onClose: () => 
             <select value={state.preference.movementThreshold} onChange={(event) => setState({ ...state, preference: { ...state.preference, movementThreshold: Number(event.target.value) as 3 | 5 | 8 } })} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground"><option value={3}>3 procentní body</option><option value={5}>5 procentních bodů</option><option value={8}>8 procentních bodů</option></select>
           </label>}
         </div>
-        <p className="text-xs leading-5 text-muted">Všechna chytrá upozornění platí pouze pro zápasy označené hvězdičkou a každá událost se odešle nejvýše jednou.</p>
+        <p className="text-xs leading-5 text-muted">Oblíbené ligy rozšiřují pouze modelové signály. Poločas a výsledek chodí jen u konkrétního zápasu a každá událost nejvýše jednou.</p>
         {error && <p role="alert" className="text-sm text-negative">{error}</p>}
         {testResult && <p role="status" className="text-sm font-semibold text-positive">{testResult}</p>}
         {state.subscribed ? <div className="grid gap-2 sm:grid-cols-2">
