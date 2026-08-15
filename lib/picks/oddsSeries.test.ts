@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { BookOdds } from "@/lib/data/apiFootball";
 import {
+  closingSampleQuality,
   appendPoint,
   closingPoint,
   lateMove,
@@ -80,11 +81,19 @@ describe("snapshotPlan", () => {
     expect(p).toEqual({ fetch: true, open: false, close: true, series: true });
   });
 
-  it("otevírací a zavírací snímek zůstávají JEDEN za život", () => {
-    const done = state({ oddsFetchedAt: at(48), oddsCloseAt: at(3), oddsSeriesAt: at(0.5) });
+  it("v závěrečném okně posouvá closing na každý nový bod řady", () => {
+    const done = state({ oddsFetchedAt: at(48), oddsCloseAt: at(3), oddsSeriesAt: at(1.5) });
     const p = snapshotPlan(done, at(0.4), 3);
     expect(p.open).toBe(false);
+    expect(p.close).toBe(true);
+    expect(p.series).toBe(true);
+  });
+
+  it("closing nepřepisuje bez nového skutečného vzorku", () => {
+    const done = state({ oddsFetchedAt: at(48), oddsCloseAt: at(2), oddsSeriesAt: at(0.5) });
+    const p = snapshotPlan(done, at(0.45), 3);
     expect(p.close).toBe(false);
+    expect(p.fetch).toBe(false);
   });
 
   it("když není potřeba nic, NEFETCHUJE se", () => {
@@ -101,6 +110,16 @@ describe("snapshotPlan", () => {
     const s = state({ oddsFetchedAt: at(48), oddsSeriesAt: at(5) });
     expect(snapshotPlan(s, at(4), 3).close).toBe(false);
     expect(snapshotPlan(s, at(4), 6).close).toBe(true);
+  });
+});
+
+describe("closingSampleQuality", () => {
+  const kickoff = new Date("2026-08-15T14:00:00Z");
+  it("rozliší průběžný, čerstvý a předčasný vzorek", () => {
+    expect(closingSampleQuality(kickoff, new Date("2026-08-15T13:00:00Z"), new Date("2026-08-15T13:30:00Z"))).toBe("pending");
+    expect(closingSampleQuality(kickoff, new Date("2026-08-15T13:00:00Z"), new Date("2026-08-15T14:01:00Z"))).toBe("fresh");
+    expect(closingSampleQuality(kickoff, new Date("2026-08-15T12:44:00Z"), new Date("2026-08-15T14:01:00Z"))).toBe("early");
+    expect(closingSampleQuality(kickoff, null, new Date("2026-08-15T14:01:00Z"))).toBe("missing");
   });
 });
 

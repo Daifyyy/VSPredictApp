@@ -452,13 +452,14 @@ function ClvMarketCard({ row }: { row: MarketClvSummary }) {
 function ClvHistoryRow({ row }: { row: {
   market: string; side: string; line: number | null; modelProbability: number; openMarketProbability: number;
   closeMarketProbability: number | null; clv: number | null;
+  closingMinutesToKickoff?: number | null;
   series?: unknown;
   prediction: { homeName: string; awayName: string; homeGoals: number | null; awayGoals: number | null } | null;
   actual: { corners: number; cards: number } | null;
 } }) {
   const probability = (value: number | null) => value == null ? "—" : `${Math.round(value * 100)} %`;
   const result = row.market === "CORNERS" ? row.actual?.corners : row.market === "CARDS" ? row.actual?.cards : row.prediction?.homeGoals != null ? `${row.prediction.homeGoals}:${row.prediction.awayGoals}` : null;
-  return <tr className="border-t border-border"><td className="p-2 font-medium text-foreground">{row.prediction ? `${row.prediction.homeName} – ${row.prediction.awayName}` : "Zápas"}</td><td>{row.market}{row.line != null ? ` ${row.line}` : ""} · {row.side}</td><td>{probability(row.modelProbability)}</td><td>{probability(row.openMarketProbability)}</td><td><ClvSparkline value={row.series} /></td><td>{probability(row.closeMarketProbability)}</td><td className={row.clv != null && row.clv > 0 ? "font-bold text-positive" : "text-warning"}>{row.clv == null ? "—" : `${row.clv >= 0 ? "+" : ""}${(row.clv * 100).toFixed(1)} p. b.`}</td><td>{result ?? "—"}</td></tr>;
+  return <tr className="border-t border-border"><td className="p-2 font-medium text-foreground">{row.prediction ? `${row.prediction.homeName} – ${row.prediction.awayName}` : "Zápas"}</td><td>{row.market}{row.line != null ? ` ${row.line}` : ""} · {row.side}</td><td>{probability(row.modelProbability)}</td><td>{probability(row.openMarketProbability)}</td><td><ClvSparkline value={row.series} /></td><td>{probability(row.closeMarketProbability)}{row.closingMinutesToKickoff != null ? <small className="block text-[9px] text-muted">{Math.round(row.closingMinutesToKickoff)} min před výkopem</small> : null}</td><td className={row.clv != null && row.clv > 0 ? "font-bold text-positive" : "text-warning"}>{row.clv == null ? "—" : `${row.clv >= 0 ? "+" : ""}${(row.clv * 100).toFixed(1)} p. b.`}</td><td>{result ?? "—"}</td></tr>;
 }
 
 function ClvSparkline({ value }: { value: unknown }) {

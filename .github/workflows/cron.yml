@@ -13,18 +13,16 @@
 # Pozn.: `schedule` v Actions je **best-effort** – při zátěži se spuštění opozdí
 # i o pár desítek minut, občas se běh nespustí vůbec. Denním úlohám to nevadí.
 # U snímků kurzů je proto okno (`ODDS_CLOSING_HOURS = 3 h`) záměrně **širší než
-# perioda běhu (1 h)**: zápas tak má na zavírací snímek tři pokusy a jeden výpadek
-# ho nepřipraví o CLV. Časy jsou v **UTC**.
+# perioda běhu (1 h)**: každý úspěšný bod v okně posune kandidáta na closing a po výkopu
+# zůstane poslední předvýkopový vzorek. Jeden výpadek tak zápas nepřipraví o CLV. Časy jsou v **UTC**.
 
 name: Cron
 
 on:
   schedule:
     # Snímky kurzů – nejčastější úloha, kvůli zavírací linii u večerních zápasů.
-    # HODINOVĚ (od 28. 7. 2026): `fixturesNeedingOdds` bere první běh uvnitř okna, takže
-    # při běhu po 3 h a 12h okně padal „zavírací" snímek 9–12 h před výkopem a CLV mu
-    # unikal celý poslední den. Viz `ODDS_CLOSING_HOURS` (dnes 3 h) – ta dvě čísla musí
-    # sedět dohromady: kratší okno bez častějšího běhu = zápasy bez zavíracího snímku.
+    # HODINOVĚ (od 28. 7. 2026): `fixturesNeedingOdds` v posledních 3 h průběžně přepisuje
+    # kandidáta na closing. Hodinová kadence dává typicky poslední bod 0–60 min před výkopem.
     # Minuta 20 schválně: denní úlohy jedou na :00, :15 a :30, takže nikdy nenastane
     # okamžik, kdy by seděly dva rozvrhy naráz.
     - cron: "20 * * * *"

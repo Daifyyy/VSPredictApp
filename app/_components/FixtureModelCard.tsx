@@ -109,7 +109,7 @@ function CurrentMarketMovement({ signals }: { signals: FixtureModelForecast["mar
     <div><strong className="text-foreground">Dosavadní pohyb trhu</strong><p className="mt-1 text-[10px] leading-4">Průběžný stav z uložených vzorků. Konečným CLV se stane až poslední srovnatelný vzorek před výkopem.</p></div>
     <div className="mt-2 space-y-2">
       {signals.map((signal) => <div key={signal.market} className="rounded-lg border border-border/70 bg-surface px-3 py-2">
-        <CountRow label={`${labels[signal.market]} · ${sides[signal.side]}${signal.line != null ? ` ${signal.line.toLocaleString("cs-CZ")}` : ""}`} value={`model ${pct(signal.modelProbability)} · otevření ${pct(signal.openMarketProbability)} → ${signal.closed ? "uzavření" : "poslední vzorek"} ${pct(signal.currentMarketProbability)} · ${signal.currentMove >= 0 ? "+" : ""}${(signal.currentMove * 100).toFixed(1)} p. b.`} />
+        <CountRow label={`${labels[signal.market]} · ${sides[signal.side]}${signal.line != null ? ` ${signal.line.toLocaleString("cs-CZ")}` : ""}`} value={`model ${pct(signal.modelProbability)} · otevření ${pct(signal.openMarketProbability)} → ${signal.closed ? signal.closingQuality === "fresh" ? "poslední předvýkopový" : "předčasný referenční" : "poslední vzorek"} ${pct(signal.currentMarketProbability)} · ${signal.currentMove >= 0 ? "+" : ""}${(signal.currentMove * 100).toFixed(1)} p. b.`} />
         {signal.points.length >= 3 ? <MarketMovementChart signal={signal} /> : <p className="mt-1 text-[10px] text-muted">{signal.samples} použitelných vzorků z {signal.sampleAttempts} načtení · graf se zobrazí od 3 použitelných bodů{signal.lastSampleAt ? ` · poslední použitelný ${new Date(signal.lastSampleAt).toLocaleString("cs-CZ", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}</p>}
       </div>)}
     </div>
@@ -144,7 +144,7 @@ function MarketMovementChart({ signal }: { signal: FixtureModelForecast["marketS
     </svg>
     <figcaption className="flex flex-wrap justify-between gap-2 text-[10px] text-muted">
       <span>Otevření {Math.round(signal.openMarketProbability * 100)} % · {signal.samples} použitelných z {signal.sampleAttempts} načtení</span>
-      <span>{signal.closed ? "Uzavřeno" : "Průběžný pohyb"} · {trend}</span>
+      <span>{signal.closed ? signal.closingQuality === "fresh" ? "Closing" : "Předčasný vzorek" : "Průběžný pohyb"} · {trend}</span>
     </figcaption>
   </figure>;
 }

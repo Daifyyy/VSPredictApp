@@ -11,9 +11,8 @@ import { devig } from "./market";
  * (steam), to první většinou jen dorovnání otevírací chyby.
  *
  * K čemu to je konkrétně:
- *  1. **Robustní CLV.** Náš zavírací snímek padne ~3 h před výkopem. Poslední bod řady je
- *     nejlepší dostupná aproximace skutečného zavření a nezávisí na tom, jestli cron
- *     stihl svoje okno.
+ *  1. **Robustní CLV.** Kandidát na closing se v posledních 3 h přepisuje každým bodem.
+ *     Poslední bod řady je zároveň kontrola jeho čerstvosti a záloha při výpadku cronu.
  *  2. **Steam.** Prudký pohyb v posledních hodinách je signál sám o sobě – sledovat
  *     peníze je pro malého hráče historicky úspěšnější než předpovídat zápas.
  *  3. **Kontext k tipu.** „Náš kurz už není k mání, linie se mezitím posunula proti nám."
@@ -53,6 +52,20 @@ export interface OddsSeriesPoint {
  * rozbitý cron (nebo ruční spouštění) nafoukl jeden řádek donekonečna.
  */
 export const MAX_SERIES_POINTS = 40;
+export const RELIABLE_CLOSE_MAX_MINUTES = 75;
+
+export type ClosingSampleQuality = "pending" | "fresh" | "early" | "missing";
+
+export function closingSampleQuality(
+  kickoff: Date,
+  sampledAt: Date | null,
+  now: Date
+): ClosingSampleQuality {
+  if (!sampledAt) return "missing";
+  if (kickoff.getTime() > now.getTime()) return "pending";
+  const minutes = (kickoff.getTime() - sampledAt.getTime()) / 60_000;
+  return minutes >= 0 && minutes <= RELIABLE_CLOSE_MAX_MINUTES ? "fresh" : "early";
+}
 
 /**
  * **Kadence se zužuje směrem k výkopu**, protože tam je informace. Daleko od výkopu se
@@ -101,9 +114,9 @@ export interface SnapshotState {
 /**
  * Rozhodne, co se má pro zápas udělat – **jedním fetchem pro všechny tři účely**.
  *
- * Klíčová vlastnost: otevírací a zavírací snímek se chovají **přesně jako dřív**
- * (guard `oddsFetchedAt`/`oddsCloseAt` je drží na jednom za život), řada je navíc.
- * Když je potřeba jen řada, stejně se šáhne jen jednou – `/odds` vrací všechno naráz.
+ * Otevírací snímek zůstává neměnný. Kandidát na closing se v závěrečném okně naopak
+ * aktualizuje při každém bodu řady, takže po výkopu zůstane poslední skutečně získaný
+ * předvýkopový vzorek, ne první bod tři hodiny předem. Jeden `/odds` fetch dál obslouží vše.
  */
 export function snapshotPlan(
   state: SnapshotState,
@@ -118,8 +131,8 @@ export function snapshotPlan(
     d == null ? null : (now.getTime() - d.getTime()) / 60_000;
 
   const open = state.oddsFetchedAt == null;
-  const close = state.oddsCloseAt == null && hoursToKickoff <= closingHours;
   const series = seriesDue(hoursToKickoff, minutesSince(state.oddsSeriesAt));
+  const close = series && hoursToKickoff <= closingHours;
 
   return { fetch: open || close || series, open, close, series };
 }

@@ -415,6 +415,7 @@ export interface FixtureModelForecast {
     lastSampleAt: string | null;
     points: Array<{ minutesToKickoff: number; probability: number; sampledAt: string }>;
     closed: boolean;
+    closingQuality: "pending" | "fresh" | "early" | "missing";
   }>;
   corners: CountModelForecast | null;
   cards: CountModelForecast | null;

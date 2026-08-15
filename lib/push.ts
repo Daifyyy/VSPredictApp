@@ -130,7 +130,6 @@ export async function sendKickoffReminders(now = new Date()) {
   const signals = fixtures.length ? await prisma.marketSignalSnapshot.findMany({
     where: {
       fixtureId: { in: fixtures.map((fixture) => fixture.fixtureId) },
-      closedAt: null,
       OR: [
         { market: { in: ["1X2", "OVER_25"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
         { market: { in: ["CORNERS", "CARDS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },

@@ -156,17 +156,12 @@ export const ODDS_LOOKAHEAD_HOURS = 72;
  * zavírací snímek dostaly jen zápasy s výkopem dopoledne; večerní zápas ve 21:45 SELČ
  * by další běh zastihl až po výkopu.
  *
- * **3 h, ne 12 (změněno 28. 7. 2026).** `fixturesNeedingOdds` bere **první** běh uvnitř
- * okna, takže při dvanáctihodinovém okně a cronu po 3 h padl „zavírací" snímek
- * **9–12 h před výkopem** – u večerního zápasu odpoledne předchozího dne. CLV pak měřilo
- * pohyb z T−72 h na T−10 h a **celý poslední den, kde je pohyb nejostřejší, chybělo**.
- * Se třemi hodinami a hodinovým cronem padne snímek kolem **T−3 h** a zbývají ještě dva
- * pokusy, kdyby běh vypadl (`schedule` v GitHub Actions je best-effort).
+ * **3 h, ne 12.** V tomto okně se kandidát na closing při každém hodinovém bodu přepisuje.
+ * Po výkopu tak zůstane poslední úspěšný předvýkopový vzorek (typicky T−0 až T−60 min),
+ * zatímco starší bod je pouze záloha při výpadku best-effort GitHub Actions.
  *
- * **Kvótu to nezdraží ani o jedno volání**: guard `oddsFetchedAt`/`oddsCloseAt` drží dva
- * snímky na zápas za život bez ohledu na to, jak často se běží – mění se jen *kdy* se
- * ten druhý vezme. Kratší okno **nejde** kompenzovat řidším během; obojí musí sedět
- * dohromady, jinak zápasy zavírací snímek nedostanou vůbec.
+ * **Kvótu to nezdraží ani o jedno volání**: kandidát na closing se ukládá z téhož fetchu,
+ * který už pořizuje bod časové řady. Plné knihy v DB pouze nahradí předchozího kandidáta.
  */
 export const ODDS_CLOSING_HOURS = 3;
 
@@ -495,9 +490,8 @@ const SNAPSHOT_LIMIT = 120;
  * vychýlené menšině. Tenhle běh je proti tomu levný (jen `/odds`, žádné `compareTeams`)
  * a jezdí **hodinově**.
  *
- * Kvótu to nezdraží: `fixturesNeedingOdds` čte jen DB a každý zápas dostane nejvýš dva
- * snímky za život (guard `oddsFetchedAt`/`oddsCloseAt`). Častější běh mění jen *kdy*
- * se ta dvě volání provedou, ne kolik jich je. Hodinový běh navíc znamená **méně
+ * Kvótu to nezdraží: `fixturesNeedingOdds` čte jen DB a aktualizace kandidáta na closing
+ * využije stejný fetch jako bod časové řady. Hodinový běh navíc znamená **méně
  * zápasů na jeden běh**, takže je dál od `SNAPSHOT_LIMIT` i od časového rozpočtu.
  *
  * **Chyby se počítají a vracejí, nepolykají se.** Fetch kurzů je best-effort a přesně
@@ -573,7 +567,7 @@ export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
         open++;
       }
       if (plan.close) {
-        await saveClosingOdds(item.fixtureId, odds);
+        await saveClosingOdds(item.fixtureId, now, odds);
         await closeMarketSignals(item.fixtureId, odds.books ?? [], now);
         close++;
       }

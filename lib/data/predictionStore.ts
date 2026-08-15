@@ -342,12 +342,14 @@ export async function saveOdds(
 }
 
 /**
- * Uloží **zavírací** snímek kurzu (druhý a poslední). BTTS se sem neukládá – zavírací
+ * Uloží aktuálního kandidáta na **zavírací** kurz. V posledních třech hodinách se přepisuje
+ * ze stejného fetchu jako časová řada; po výkopu tak přirozeně zůstane poslední bod. BTTS se sem neukládá – zavírací
  * linii sledujeme jen u trhů, kde má CLV smysl počítat (1X2 a total), a BTTS je trh,
  * kde model prokazatelně nemá signál.
  */
 export async function saveClosingOdds(
   fixtureId: number,
+  at: Date,
   odds: {
     home: number | null;
     draw: number | null;
@@ -368,7 +370,7 @@ export async function saveClosingOdds(
       // Zavírací snímek všech knih. Teprve s ním jde CLV počítat proti **sharp
       // konsenzu** místo jedné vybrané knihy – tedy proti nejlepšímu odhadu trhu.
       ...(odds.books ? { oddsCloseBooks: odds.books as Prisma.InputJsonValue } : {}),
-      oddsCloseAt: new Date(),
+      oddsCloseAt: at,
     },
   });
 }

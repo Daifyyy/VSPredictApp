@@ -71,7 +71,7 @@ export async function appendMarketSignalPoints(fixtureId: number, books: BookOdd
 }
 
 export async function closeMarketSignals(fixtureId: number, books: BookOdds[], at: Date): Promise<void> {
-  const rows = await prisma.marketSignalSnapshot.findMany({ where: { fixtureId, closedAt: null, OR: [
+  const rows = await prisma.marketSignalSnapshot.findMany({ where: { fixtureId, OR: [
     { market: { in: ["1X2", "OVER_25"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
     { market: { in: ["CORNERS", "CARDS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
   ] } });

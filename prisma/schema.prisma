@@ -269,7 +269,8 @@ model FixturePrediction {
   // (`sharpFair`) – obojí čistou funkcí v `lib/picks/books.ts`.
   oddsBooks      Json?
   oddsCloseBooks Json?
-  // DRUHÝ snímek: zavírací linie (těsně před výkopem). Rozdíl proti prvnímu snímku je CLV
+  // Kandidát na zavírací linii: v posledních 3 h se přepisuje každým bodem řady, takže po
+  // výkopu zůstane poslední úspěšný předvýkopový vzorek. Rozdíl proti prvnímu snímku je CLV
   // = jediný ukazatel hrany viditelný hned po výkopu, ne až po stovkách výsledků. Jeden
   // snímek to změřit neumí – nešlo by odlišit „model měl pravdu" od „chytili jsme starší
   // linii". Chybí u zápasů, které cron mezi prvním snímkem a výkopem už nezastihl.

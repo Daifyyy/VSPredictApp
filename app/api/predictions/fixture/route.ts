@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { closingSampleQuality } from "@/lib/picks/oddsSeries";
 import { getCurrentUser } from "@/lib/authUser";
 import { getEntitlement, isAdminEmail } from "@/lib/entitlements";
 import { getFixturePredictionRow } from "@/lib/data/repository";
@@ -112,7 +113,9 @@ export async function GET(req: Request) {
             typeof (point as { p?: unknown }).p === "number")
         : [];
       const latest = points.at(-1);
-      const current = signal.closeMarketProbability ?? latest?.p ?? signal.openMarketProbability;
+      const current = latest?.p ?? signal.closeMarketProbability ?? signal.openMarketProbability;
+      const sampledAt = latest ? new Date(signal.kickoff.getTime() - latest.t * 60_000) : signal.closedAt;
+      const quality = closingSampleQuality(signal.kickoff, sampledAt, new Date());
       return {
         market: signal.market as FixtureModelForecast["marketSignals"][number]["market"],
         side: signal.side as FixtureModelForecast["marketSignals"][number]["side"],
@@ -130,7 +133,8 @@ export async function GET(req: Request) {
           probability: point.p,
           sampledAt: new Date(signal.kickoff.getTime() - point.t * 60_000).toISOString(),
         })),
-        closed: signal.closedAt != null,
+        closed: signal.kickoff.getTime() <= Date.now(),
+        closingQuality: quality,
       };
     });
     const forecast: FixtureModelForecast = {
