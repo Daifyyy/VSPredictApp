@@ -28,6 +28,7 @@ on:
     - cron: "20 * * * *"
     - cron: "7,22,37,52 * * * *" # Web Push připomínky oblíbených zápasů
     - cron: "50 */3 * * *" # refresh-referees
+    - cron: "30 2 * * *" # refresh-tactics (uložené sestavy, max. 30 zápasů)
     # Denní údržba (časy odpovídají původnímu vercel.json).
     - cron: "0 3 * * *" # refresh-league-styles
     - cron: "0 4 * * *" # warm
@@ -57,6 +58,7 @@ on:
           - warm
           - predict-upcoming
           - refresh-referees
+          - refresh-tactics
           - refresh-transfers
           - settle-results
           - settle-tips
@@ -89,6 +91,7 @@ jobs:
             "20 * * * *")   path="snapshot-odds" ;;
             "7,22,37,52 * * * *") path="send-notifications" ;;
             "50 */3 * * *") path="refresh-referees" ;;
+            "30 2 * * *")   path="refresh-tactics" ;;
             "0 3 * * *")    path="refresh-league-styles" ;;
             "0 4 * * *")    path="warm" ;;
             "30 4 * * *")   path="predict-upcoming" ;;

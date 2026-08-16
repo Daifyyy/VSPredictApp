@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { parseTransferFee, buildClubTransferRows } from "./transfers";
-import { computeBalances, classifyTransfer, type BalanceInput } from "./transferStore";
+import { computeBalances, classifyTransfer, dedupeTransfers, type BalanceInput } from "./transferStore";
+import type { Transfer } from "@/lib/types";
 import { transferWindowStart } from "./catalog";
 import type { ApiTransferPlayer } from "./apiFootball";
 
@@ -78,9 +79,25 @@ describe("classifyTransfer", () => {
   });
 });
 
+describe("dedupeTransfers", () => {
+  const transfer = (date: string): Transfer => ({
+    playerId: 7, playerName: "Hráč", date, type: "Transfer", category: "permanent",
+    feeEur: null, marketValueEur: null, inTeamId: 100, inTeamName: "A", inTeamLogo: null,
+    outTeamId: 200, outTeamName: "B", outTeamLogo: null, leagueId: 39, season: 2026,
+  });
+  it("sloučí tentýž přesun i při posunutém datu zdroje", () => {
+    expect(dedupeTransfers([transfer("2026-08-07"), transfer("2026-08-06")])).toHaveLength(1);
+  });
+  it("ponechá odlišný typ pohybu", () => {
+    const loan = { ...transfer("2026-08-07"), type: "Loan", category: "loan" as const };
+    expect(dedupeTransfers([transfer("2026-08-07"), loan])).toHaveLength(2);
+  });
+});
+
 describe("computeBalances", () => {
   function row(over: Partial<BalanceInput> & Pick<BalanceInput, "type">): BalanceInput {
     return {
+      playerId: 1,
       clubId: 100,
       clubLeagueId: 39,
       feeEur: null,
@@ -122,6 +139,13 @@ describe("computeBalances", () => {
     // kategorie se počítají dál (dead code pro návrat)
     expect(b.inByCategory.permanent).toBe(1);
     expect(b.inByCategory.loan).toBe(1);
+  });
+
+  it("nezapočítá tentýž pohyb z opakovaného API záznamu dvakrát", () => {
+    const duplicate = row({ playerId: 7, type: "Transfer", feeEur: 5_000_000 });
+    const [balance] = computeBalances([duplicate, { ...duplicate }]);
+    expect(balance.inCount).toBe(1);
+    expect(balance.spendEur).toBe(5_000_000);
   });
 });
 

@@ -254,6 +254,8 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
         onSelect={setView}
       />
 
+      <ViewPurpose view={view} />
+
       {view === "picks" || view === "market" ? (
         <PredictionOffers user={user} marketView={view === "market"} />
       ) : (
@@ -276,6 +278,30 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
         />
       )}
     </main>
+  );
+}
+
+function ViewPurpose({ view }: { view: View }) {
+  const content: Record<View, { title: string; text: string }> = {
+    picks: {
+      title: "Co model očekává",
+      text: "Kompletní nabídka uložených prognóz. Rychlé výběry pouze filtrují scénáře; nejsou automatickým sázkovým tipem.",
+    },
+    market: {
+      title: "Kde se model liší od trhu",
+      text: "Stejné zápasy doplněné o odmaržované tržní pravděpodobnosti a jejich pohyb. Rozdíl model–trh sám nepotvrzuje výhodu.",
+    },
+    model: {
+      title: "Jak přesné jsou výstupy",
+      text: "Dlouhodobé vyhodnocení prognóz, publikovaných tipů a pohybu trhu. Tady patří kalibrace, CLV a velikost vzorku.",
+    },
+  };
+  const item = content[view];
+  return (
+    <aside className="mt-3 rounded-xl border border-border bg-background px-4 py-3" aria-label="Účel zvoleného pohledu">
+      <p className="text-xs font-bold text-foreground">{item.title}</p>
+      <p className="mt-1 text-xs leading-5 text-muted">{item.text}</p>
+    </aside>
   );
 }
 

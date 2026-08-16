@@ -1140,6 +1140,11 @@ export interface CompareResult {
     home: { current: number; previous: number };
     away: { current: number; previous: number };
   };
+  /** Uložené oficiální formace a trenéři; čistý DB snapshot bez veřejného API fetchu. */
+  tactics?: {
+    home: import("@/lib/tactics").TacticalProfile;
+    away: import("@/lib/tactics").TacticalProfile;
+  };
   metrics: Metric[];
   home: TeamComparison;
   away: TeamComparison;

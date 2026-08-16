@@ -13,6 +13,7 @@ import { prisma } from "@/lib/db";
 import { getEntitlement, toFreeResult } from "@/lib/entitlements";
 import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
 import { logError } from "@/lib/logError";
+import { getTeamTacticalProfile } from "@/lib/data/tactics";
 
 export async function GET(req: Request) {
   // Anti-spam: velkorysý strop na klienta (porovnání je drahé, stahuje data).
@@ -56,7 +57,7 @@ export async function GET(req: Request) {
       logoUrl: sp.get(`${side}Logo`) ?? "",
       country: "",
     });
-    const [home, away, baseline, ratings] = await Promise.all([
+    const [home, away, baseline, ratings, homeTactics, awayTactics] = await Promise.all([
       europeanCup
         ? getCompareEuroCupTeamFromFixture(homeId, homeLeague, cupMeta("home"))
         : getCompareTeam(homeId, homeLeague, includeEuro),
@@ -71,6 +72,8 @@ export async function GET(req: Request) {
         : homeLeague === awayLeague
           ? getLeagueRatings(homeLeague)
           : null,
+      getTeamTacticalProfile(homeId),
+      getTeamTacticalProfile(awayId),
     ]);
     if (!home || !away) {
       return NextResponse.json({ error: "Tým nenalezen" }, { status: 404 });
@@ -91,6 +94,7 @@ export async function GET(req: Request) {
       // Porovnání reprezentací je venue-neutrální (UI u nich přepínač Doma/Venku skrývá).
       neutral: national,
     });
+    full.tactics = { home: homeTactics, away: awayTactics };
 
     const u = await getCurrentUser();
     const ent = getEntitlement(

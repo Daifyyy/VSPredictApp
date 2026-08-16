@@ -88,7 +88,22 @@ function toTransfer(p: DbTransfer): Transfer {
 
 /** Klíč pro dedup řádků uložených z více perspektiv (přestup mezi dvěma top-5 kluby). */
 function naturalKey(t: Transfer): string {
-  return `${t.playerId}:${t.date}:${t.inTeamId ?? 0}:${t.outTeamId ?? 0}`;
+  // API tentýž potvrzený pohyb několik dní po sobě vrací s posunutým datem. Datum proto
+  // není identita transferu; typ naopak ponechá případný loan/permanent zvlášť.
+  return `${t.playerId}:${t.inTeamId ?? 0}:${t.outTeamId ?? 0}:${t.category}`;
+}
+
+export function dedupeTransfers(transfers: Transfer[], limit = Number.POSITIVE_INFINITY): Transfer[] {
+  const seen = new Set<string>();
+  const out: Transfer[] = [];
+  for (const transfer of transfers) {
+    const key = naturalKey(transfer);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(transfer);
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 /** Aktuální přestupy vybraných lig (řazeno nejnovější první, deduplikováno pro zobrazení). */
@@ -103,17 +118,7 @@ export async function getLeagueTransfers(
     },
     orderBy: { date: "desc" },
   });
-  const seen = new Set<string>();
-  const out: Transfer[] = [];
-  for (const r of rows) {
-    const t = toTransfer(r);
-    const k = naturalKey(t);
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push(t);
-    if (out.length >= limit) break;
-  }
-  return out;
+  return dedupeTransfers(rows.map(toTransfer), limit);
 }
 
 /**
@@ -139,6 +144,7 @@ function emptyCounts(): TransferCategoryCounts {
 /** Minimální tvar řádku pro agregaci bilance (kvůli čisté funkci / testu). */
 export type BalanceInput = Pick<
   DbTransfer,
+  | "playerId"
   | "clubId"
   | "clubLeagueId"
   | "type"
@@ -160,7 +166,11 @@ export type BalanceInput = Pick<
  */
 export function computeBalances(rows: BalanceInput[]): ClubTransferBalance[] {
   const byClub = new Map<number, ClubTransferBalance>();
+  const seen = new Set<string>();
   for (const r of rows) {
+    const dedupeKey = `${r.clubId}:${r.playerId}:${r.inTeamId ?? 0}:${r.outTeamId ?? 0}:${classifyTransfer(r.type)}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
     const isIn = r.inTeamId === r.clubId;
     const name = (isIn ? r.inTeamName : r.outTeamName) ?? `Tým ${r.clubId}`;
     const logo = (isIn ? r.inTeamLogo : r.outTeamLogo) ?? null;
@@ -215,6 +225,7 @@ export async function getClubBalances(
     },
     select: {
       clubId: true,
+      playerId: true,
       clubLeagueId: true,
       type: true,
       feeEur: true,

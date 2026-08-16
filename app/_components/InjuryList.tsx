@@ -1,4 +1,5 @@
 import type { Injury } from "@/lib/types";
+import { dedupeInjuryList } from "@/lib/data/injuries";
 
 /**
  * Seznam zraněných/absentujících hráčů jednoho týmu (jméno — důvod). Líně načítané,
@@ -14,15 +15,16 @@ export function InjuryList({
   accent: "home" | "away";
   injuries: Injury[];
 }) {
+  const uniqueInjuries = dedupeInjuryList(injuries);
   const color = accent === "home" ? "text-home" : "text-away";
   return (
     <div className="ui-panel p-4">
       <p className={`mb-2 flex items-center gap-1.5 text-sm font-semibold ${color}`}>
         {title}
-        <span className="font-normal text-muted">({injuries.length})</span>
+        <span className="font-normal text-muted">({uniqueInjuries.length})</span>
       </p>
       <ul className="space-y-1 text-xs">
-        {injuries.map((inj) => (
+        {uniqueInjuries.map((inj) => (
           <li key={`${inj.playerId}-${inj.name}`} className="flex items-center justify-between gap-2 border-t border-border/70 py-2 first:border-0">
             <span className="font-medium text-foreground">{inj.name}</span>
             <span className="flex shrink-0 items-center gap-2 text-right text-muted">

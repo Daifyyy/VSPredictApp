@@ -13,6 +13,7 @@ import { describeTeamStyle } from "@/lib/teamProfile";
 import { valueOrTotal } from "@/lib/stats/metricLookup";
 import { comparePerformance, signedMetricDelta, type PerformanceTone } from "@/lib/stats/performanceTone";
 import type { SessionUser } from "@/app/_components/sessionUser";
+import type { TacticalProfile } from "@/lib/tactics";
 
 const VENUES: { value: Venue; label: string }[] = [
   { value: "TOTAL", label: "Celkem" },
@@ -121,7 +122,10 @@ export default async function TeamPage(props: Props) {
         matches={quality?.matches ?? []}
         opponents={summary?.formOpponents ?? []}
         baselines={baselines}
+        tactics={profile.tactics}
       />
+
+      <TacticalProfileCard profile={profile.tactics} teamName={profile.team.name} />
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[.8fr_1.2fr]">
         <section className="ui-panel p-5">
@@ -164,10 +168,12 @@ function RecentPerformances({
   matches,
   opponents,
   baselines,
+  tactics,
 }: {
   matches: import("@/lib/types").FormMatchQuality[];
   opponents: ({ id: number; name: string; logoUrl: string | null } | null)[];
   baselines: PerformanceBaselines;
+  tactics: TacticalProfile;
 }) {
   const resultLabel = { W: "V", D: "R", L: "P" } as const;
   const resultTone = { W: "bg-positive text-white", D: "bg-muted/20 text-foreground", L: "bg-negative text-white" } as const;
@@ -181,13 +187,14 @@ function RecentPerformances({
       {matches.length ? <div className="divide-y divide-border">
         {matches.map((match, index) => {
           const opponent = opponents[index];
+          const tacticalMatch = tactics.matches.find((item) => item.fixtureId === match.fixtureId);
           const verdict = match.verdict === "lucky" ? "Výsledek nad výkonem" : match.verdict === "unlucky" ? "Výkon nad výsledkem" : match.verdict === "matched" ? "Výsledek odpovídá výkonu" : "Bez xG hodnocení";
           return <article key={match.fixtureId} className="grid grid-cols-3 gap-3 px-4 py-3 sm:grid-cols-[minmax(190px,1.4fr)_repeat(5,minmax(64px,.55fr))] sm:items-center sm:px-5">
             <div className="col-span-3 flex min-w-0 items-center gap-3 sm:col-span-1">
               <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-md text-xs font-bold ${resultTone[match.result]}`}>{resultLabel[match.result]}</span>
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-foreground">{opponent?.name ?? "Neznámý soupeř"}</p>
-                <p className="text-[11px] text-muted">{new Date(match.date).toLocaleDateString("cs-CZ")} · {verdict}</p>
+                <p className="text-[11px] text-muted">{new Date(match.date).toLocaleDateString("cs-CZ")}{tacticalMatch ? ` · ${tacticalMatch.isHome ? "doma" : "venku"} · ${tacticalMatch.formation}` : ""} · {verdict}</p>
               </div>
             </div>
             <PerformanceValue label="Skóre" value={`${match.goalsFor}:${match.goalsAgainst}`} tone={match.result === "W" ? "positive" : match.result === "L" ? "negative" : "neutral"} />
@@ -205,6 +212,35 @@ function RecentPerformances({
       </div> : <p className="px-5 py-5 text-sm text-muted">Detailní výkony zatím nejsou v cache dostupné.</p>}
     </section>
   );
+}
+
+function TacticalProfileCard({ profile, teamName }: { profile: TacticalProfile; teamName: string }) {
+  const lineLabel = profile.defensiveLine === "BACK_THREE" ? "Převážně tříčlenná obrana" : profile.defensiveLine === "BACK_FOUR" ? "Převážně čtyřčlenná obrana" : profile.defensiveLine === "MIXED" ? "Střídá tří- a čtyřčlennou obranu" : "Obranná linie neurčena";
+  return <section className="ui-panel mt-4 p-5" aria-labelledby="tactical-profile-title">
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-[.1em] text-muted">Taktický kontext</p><h2 id="tactical-profile-title" className="mt-1 text-lg font-bold text-foreground">Rozestavení a trenér</h2></div><p className="text-xs text-muted">vzorek {profile.sampleSize} zápasů</p></div>
+    {profile.sampleSize ? <div className="mt-4 grid gap-4 lg:grid-cols-[1.1fr_.9fr]">
+      <div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <TacticalValue label="Nejčastěji" value={profile.primaryFormation ?? "—"} />
+          <TacticalValue label="Doma" value={profile.homeFormation ?? "—"} />
+          <TacticalValue label="Venku" value={profile.awayFormation ?? "—"} />
+          <TacticalValue label="Stabilita" value={profile.stability == null ? "—" : `${Math.round(profile.stability * 100)} %`} />
+        </div>
+        <p className="mt-3 text-sm text-muted">{lineLabel}{profile.recentChange ? " · v posledních utkáních systém změnil" : ""}.</p>
+        <div className="mt-3 flex flex-wrap gap-2">{profile.formations.slice(0, 4).map((item) => <span key={item.formation} className="rounded-full border border-border bg-background px-3 py-1.5 text-xs text-foreground"><b>{item.formation}</b> · {item.matches}×</span>)}</div>
+      </div>
+      <div className="rounded-xl border border-border bg-background p-4">
+        <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Trenér v poslední sestavě</p>
+        <p className="mt-2 text-base font-bold text-foreground">{profile.coach?.name ?? "Trenér není v uložených sestavách dostupný"}</p>
+        {profile.coach && <p className="mt-1 text-xs text-muted">Vedl {profile.coach.matchesInSample} z {profile.sampleSize} hodnocených utkání.</p>}
+      </div>
+    </div> : <p className="mt-3 text-sm leading-6 text-muted">Pro {teamName} zatím nemáme uložené oficiální sestavy. Profil se doplní při řízeném backfillu; návštěva stránky API nevolá.</p>}
+    <p className="mt-4 text-[11px] leading-5 text-muted">Formace popisuje výchozí rozestavení v oficiální sestavě. Neprokazuje sama o sobě výšku bloku ani chování týmu během celého utkání.</p>
+  </section>;
+}
+
+function TacticalValue({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-xl border border-border bg-surface p-3"><p className="text-[10px] uppercase tracking-wide text-muted">{label}</p><p className="mt-1 text-lg font-bold tabular-nums text-foreground">{value}</p></div>;
 }
 
 type PerformanceBaselines = {

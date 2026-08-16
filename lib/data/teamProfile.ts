@@ -1,6 +1,8 @@
 import type { Injury, LeagueGoalsAvg, Scorer, Standing, Transfer } from "@/lib/types";
 import { buildTeamProfileCore, type TeamProfileCore } from "@/lib/teamProfile";
 import { getCompareTeam, getInjuries, getOpponentMatchStats, getStanding, getTopScorers, getTransfers } from "./repository";
+import { getTeamTacticalProfile } from "./tactics";
+import type { TacticalProfile } from "@/lib/tactics";
 
 export interface TeamProfileData extends TeamProfileCore {
   standing: Standing | null;
@@ -8,6 +10,7 @@ export interface TeamProfileData extends TeamProfileCore {
   scorers: Scorer[];
   injuries: Injury[] | null;
   transfers: Transfer[];
+  tactics: TacticalProfile;
   availability: {
     standing: boolean;
     scorers: boolean;
@@ -27,12 +30,13 @@ export async function loadTeamProfile(
   const core = buildTeamProfileCore(team);
   const recentFixtureIds = [...new Set(core.formQuality.flatMap((item) => item.matches.map((match) => match.fixtureId)))];
 
-  const [standingResult, scorersResult, injuriesResult, transfersResult, opponentStatsResult] = await Promise.allSettled([
+  const [standingResult, scorersResult, injuriesResult, transfersResult, opponentStatsResult, tacticsResult] = await Promise.allSettled([
     getStanding(teamId, leagueId),
     getTopScorers(teamId, leagueId),
     includePro ? getInjuries(teamId, leagueId) : Promise.resolve(null),
     getTransfers([leagueId], 200),
     getOpponentMatchStats(teamId, recentFixtureIds),
+    getTeamTacticalProfile(teamId),
   ]);
   const standing = standingResult.status === "fulfilled" ? standingResult.value : null;
   const transfers = transfersResult.status === "fulfilled"
@@ -67,6 +71,10 @@ export async function loadTeamProfile(
     scorers: scorersResult.status === "fulfilled" ? scorersResult.value : [],
     injuries: injuriesResult.status === "fulfilled" ? injuriesResult.value : null,
     transfers,
+    tactics: tacticsResult.status === "fulfilled" ? tacticsResult.value : {
+      sampleSize: 0, primaryFormation: null, formations: [], homeFormation: null, awayFormation: null,
+      stability: null, defensiveLine: null, recentChange: false, coach: null, matches: [],
+    },
     availability: {
       standing: standingResult.status === "fulfilled",
       scorers: scorersResult.status === "fulfilled",

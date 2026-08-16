@@ -131,6 +131,19 @@ const teamItemSchema = z.object({
     .optional(),
 });
 
+const lineupTeamSchema = z.object({ id: z.number(), name: z.string(), logo: z.string().optional() });
+const lineupCoachSchema = z.object({
+  id: z.number().nullable().optional(),
+  name: z.string().nullable().optional(),
+  photo: z.string().nullable().optional(),
+});
+const lineupItemSchema = z.object({
+  team: lineupTeamSchema,
+  formation: z.string().nullable().optional(),
+  coach: lineupCoachSchema.nullable().optional(),
+  startXI: z.array(z.unknown()).optional(),
+  substitutes: z.array(z.unknown()).optional(),
+});
 const fixtureItemSchema = z.object({
   fixture: z.object({
     id: z.number(),
@@ -201,6 +214,8 @@ const fixtureItemSchema = z.object({
         .optional(),
     })
     .optional(),
+  // `/fixtures?ids=` může podle pokrytí tarifu vrátit obohacený blok bez dalších volání.
+  lineups: z.array(lineupItemSchema).optional(),
 });
 
 const statItemSchema = z.object({
@@ -362,6 +377,7 @@ export const oddsSchema = z.array(oddsItemSchema);
 
 export type ApiTeam = z.infer<typeof teamItemSchema>;
 export type ApiFixture = z.infer<typeof fixtureItemSchema>;
+export type ApiFixtureLineup = z.infer<typeof lineupItemSchema>;
 export type ApiFixtureStats = z.infer<typeof fixtureStatsSchema>;
 export type ApiInjury = z.infer<typeof injuryItemSchema>;
 export type ApiTransferPlayer = z.infer<typeof transferPlayerSchema>;
@@ -704,6 +720,11 @@ export function isCornerBet(bet: { id: number; name?: string }): boolean {
   if (/home|away|team|half|1st|2nd|first|second/i.test(n)) return false;
   if (/handicap|race|odd|even|first|last|time|minute|interval/i.test(n)) return false;
   return /total|over\s*\/\s*under|over.?under/i.test(n);
+}
+
+/** Oficiální sestavy jednoho zápasu; typicky dostupné 20–40 minut před výkopem. */
+export function fetchFixtureLineups(fixture: number) {
+  return apiGet("/fixtures/lineups", { fixture }, z.array(lineupItemSchema));
 }
 
 /**

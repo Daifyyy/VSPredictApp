@@ -45,19 +45,24 @@ export function selectCurrentInjuries(
     // Nejnovější první → první výskyt hráče je ten aktuální.
     .sort((a, b) => b.ts - a.ts);
 
+  return dedupeInjuryList(fresh.map(({ it }) => ({
+    playerId: it.player.id,
+    name: it.player.name,
+    reason: it.reason || it.type || "Zranění",
+  })));
+}
+
+/** Poslední obranná vrstva i pro starší cache/API tvar: ID nebo normalizované jméno. */
+export function dedupeInjuryList(injuries: Injury[]): Injury[] {
   const seenIds = new Set<number>();
   const seenNames = new Set<string>();
   const out: Injury[] = [];
-  for (const { it } of fresh) {
-    const nameKey = normalizePlayerName(it.player.name);
-    if (seenIds.has(it.player.id) || (nameKey && seenNames.has(nameKey))) continue;
-    seenIds.add(it.player.id);
+  for (const injury of injuries) {
+    const nameKey = normalizePlayerName(injury.name);
+    if (seenIds.has(injury.playerId) || (nameKey && seenNames.has(nameKey))) continue;
+    seenIds.add(injury.playerId);
     if (nameKey) seenNames.add(nameKey);
-    out.push({
-      playerId: it.player.id,
-      name: it.player.name,
-      reason: it.reason || it.type || "Zranění",
-    });
+    out.push(injury);
   }
   return out;
 }

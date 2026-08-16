@@ -58,6 +58,13 @@ model MatchStatCache {
   opponentId       Int?
   opponentName     String?
   opponentLogo     String?
+  /// Oficiální předzápasová sestava. Formace a trenér se po zveřejnění nemění, proto jsou
+  /// uložené trvale vedle statistik téhož týmového výkonu. Veřejné stránky je pouze čtou.
+  formation        String?
+  coachId          Int?
+  coachName        String?
+  coachPhoto       String?
+  lineupCheckedAt  DateTime?
   /// Verze sady metrik. Čte se vše od `MIN_READABLE_CACHE_VERSION` výš; řádky pod prahem
   /// se ignorují a dotáhnou znovu (viz cache.ts).
   schemaVersion    Int      @default(1)
