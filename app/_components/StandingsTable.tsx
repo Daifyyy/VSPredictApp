@@ -1,7 +1,14 @@
 import { TeamLogo } from "./TeamLogo";
 import Link from "next/link";
+import { Fragment, useState } from "react";
 import { Hint } from "./Hint";
-import type { LeagueTableRow, LeagueTableZone } from "@/lib/types";
+import type { LeagueStyleKey, LeagueTableRow, LeagueTableZone, RoundFixture } from "@/lib/types";
+
+export interface StandingsTeamInsight {
+  style?: { key: LeagueStyleKey; label: string; score: number };
+  last?: RoundFixture;
+  next?: RoundFixture;
+}
 
 /**
  * Sdílený renderer ligové tabulky (vytknuto z `TabulkyApp`, používá i Porovnání).
@@ -13,11 +20,16 @@ export function StandingsTable({
   rows,
   highlightTeamIds,
   leagueId,
+  insights,
+  expandable = false,
 }: {
   rows: LeagueTableRow[];
   highlightTeamIds?: Set<number>;
   leagueId: number;
+  insights?: Map<number, StandingsTeamInsight>;
+  expandable?: boolean;
 }) {
+  const [expandedTeamId, setExpandedTeamId] = useState<number | null>(null);
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
       <table className="w-full border-collapse text-sm">
@@ -49,13 +61,11 @@ export function StandingsTable({
         <tbody>
           {rows.map((r) => {
             const highlight = highlightTeamIds?.has(r.teamId) ?? false;
+            const expanded = expandable && expandedTeamId === r.teamId;
+            const insight = insights?.get(r.teamId);
             return (
-              <tr
-                key={r.teamId}
-                className={`border-b border-border/60 last:border-0 ${
-                  highlight ? "bg-home/5" : ""
-                }`}
-              >
+              <Fragment key={r.teamId}>
+              <tr className={`border-b border-border/60 ${highlight ? "bg-home/5" : ""} ${expandable ? "cursor-pointer hover:bg-background" : ""}`}>
                 <td className="py-2 pl-3">
                   <span className="flex items-center gap-1.5">
                     <ZoneBar zone={r.zone} />
@@ -65,7 +75,7 @@ export function StandingsTable({
                   </span>
                 </td>
                 <td className="py-2">
-                  <Link href={`/tym/${r.teamId}?league=${leagueId}`} className="flex items-center gap-2 rounded transition hover:text-positive">
+                  {expandable ? <button type="button" onClick={() => setExpandedTeamId(expanded ? null : r.teamId)} aria-expanded={expanded} className="flex w-full items-center gap-2 rounded text-left">
                     <TeamLogo src={r.logoUrl} alt={r.name} size={22} />
                     <span
                       className={`truncate text-foreground ${
@@ -74,7 +84,11 @@ export function StandingsTable({
                     >
                       {r.name}
                     </span>
-                  </Link>
+                    <span aria-hidden className={`ml-auto text-xs text-muted transition-transform ${expanded ? "rotate-180" : ""}`}>⌄</span>
+                  </button> : <Link href={`/tym/${r.teamId}?league=${leagueId}`} className="flex items-center gap-2 rounded transition hover:text-positive">
+                    <TeamLogo src={r.logoUrl} alt={r.name} size={22} />
+                    <span className={`truncate text-foreground ${highlight ? "font-bold" : "font-medium"}`}>{r.name}</span>
+                  </Link>}
                 </td>
                 <Td>{r.played}</Td>
                 <Td className="hidden sm:table-cell">{r.win}</Td>
@@ -101,12 +115,59 @@ export function StandingsTable({
                   <FormBadges form={r.form} />
                 </td>
               </tr>
+              {expanded && (
+                <tr className="border-b border-border/60 bg-background/70">
+                  <td colSpan={10} className="px-4 py-3">
+                    <TeamRowDetail row={r} insight={insight} leagueId={leagueId} />
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             );
           })}
         </tbody>
       </table>
     </div>
   );
+}
+
+function TeamRowDetail({ row, insight, leagueId }: { row: LeagueTableRow; insight?: StandingsTeamInsight; leagueId: number }) {
+  const perMatch = (value: number) => row.played ? (value / row.played).toFixed(2) : "—";
+  return <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <MiniStat label="Body / zápas" value={row.played ? (row.points / row.played).toFixed(2) : "—"} />
+      <MiniStat label="Góly / zápas" value={perMatch(row.goalsFor)} />
+      <MiniStat label="Obdržené / zápas" value={perMatch(row.goalsAgainst)} />
+      <MiniStat label="Trend formy" value={formTrend(row.form).label} tone={formTrend(row.form).tone} />
+    </div>
+    <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+      {insight?.style && <span className="rounded-full bg-accent/25 px-3 py-1.5 text-xs font-semibold text-foreground">{insight.style.label} · {insight.style.score.toFixed(1)}/10</span>}
+      <Link href={`/tym/${row.teamId}?league=${leagueId}`} className="ui-button-secondary min-h-9 px-3 text-xs">Detail týmu</Link>
+    </div>
+    {(insight?.last || insight?.next) && <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted lg:col-span-2">
+      {insight.last && <FixtureBrief label="Naposledy" fixture={insight.last} />}
+      {insight.next && <FixtureBrief label="Příště" fixture={insight.next} />}
+    </div>}
+  </div>;
+}
+
+function MiniStat({ label, value, tone = "text-foreground" }: { label: string; value: string; tone?: string }) {
+  return <div><p className="text-[10px] uppercase tracking-wide text-muted">{label}</p><p className={`mt-0.5 font-bold tabular-nums ${tone}`}>{value}</p></div>;
+}
+
+function FixtureBrief({ label, fixture }: { label: string; fixture: RoundFixture }) {
+  const played = fixture.homeGoals != null && fixture.awayGoals != null;
+  return <span><strong className="text-foreground">{label}:</strong> {fixture.home.name} {played ? `${fixture.homeGoals}:${fixture.awayGoals}` : "–"} {fixture.away.name}</span>;
+}
+
+function formTrend(form: string | null): { label: string; tone: string } {
+  if (!form || form.length < 3) return { label: "Málo dat", tone: "text-muted" };
+  const points = (part: string) => [...part].reduce((sum, result) => sum + (result === "W" ? 3 : result === "D" ? 1 : 0), 0) / part.length;
+  const recent = points(form.slice(-2));
+  const earlier = points(form.slice(-5, -2));
+  if (recent > earlier + 0.45) return { label: "↗ Stoupá", tone: "text-positive" };
+  if (recent < earlier - 0.45) return { label: "↘ Klesá", tone: "text-negative" };
+  return { label: "→ Stabilní", tone: "text-muted" };
 }
 
 function Th({

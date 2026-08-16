@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AppHeader } from "./AppHeader";
 import { TeamLogo } from "./TeamLogo";
-import { StandingsTable, ZoneLegend } from "./StandingsTable";
+import { StandingsTable, ZoneLegend, type StandingsTeamInsight } from "./StandingsTable";
 import { LeagueScorerList } from "./LeagueScorerList";
 import { buildCompareHref } from "./compareHref";
 import { CLUB_LEAGUES, PUBLIC_CLUB_LEAGUES, leagueDisplayName } from "@/lib/data/catalog";
@@ -17,6 +17,7 @@ const DEFAULT_LEAGUE = 39; // Premier League
 const STORAGE_KEY = "tabulky:league";
 
 type Status = "loading" | "ok" | "error";
+type TableView = "all" | "top" | "middle" | "bottom";
 
 // Mimo komponentu (vzor DigestApp/PicksApp): žádné synchronní setState přímo v efektu.
 async function loadTable(
@@ -143,6 +144,7 @@ export function TabulkyApp() {
   const [scorersStatus, setScorersStatus] = useState<Status>("loading");
   const [styleSnapshot, setStyleSnapshot] = useState<LeagueStyleSnapshot | null>(null);
   const [styleStatus, setStyleStatus] = useState<Status>("loading");
+  const [tableView, setTableView] = useState<TableView>("all");
 
   // Po mountu obnov poslední zvolenou ligu (bez SSR hydration mismatchu).
   useEffect(() => {
@@ -199,6 +201,8 @@ export function TabulkyApp() {
   const league = CLUB_LEAGUES.find((l) => l.id === leagueId);
   const totalRows = table?.rows ?? [];
   const rows = leagueRowsForVenue(totalRows, venue);
+  const visibleRows = filterTableRows(rows, tableView);
+  const insights = buildTeamInsights(rows, round, styleSnapshot, venue);
   // Předsezóna: API vrací týmy, ale všechny s 0 odehranými (tabulka samých nul) →
   // ber to jako prázdný stav (informativní hláška místo bezcenné tabulky).
   const hasPlayed = totalRows.some((r) => r.played > 0);
@@ -226,7 +230,9 @@ export function TabulkyApp() {
           </Note>
         ) : (
           <>
-            <StandingsTable rows={rows} leagueId={leagueId} />
+            <LeaguePulse rows={rows} snapshot={styleSnapshot} venue={venue} styleKey={styleKey} scorers={scorers.scorers} />
+            <TableViewSelector value={tableView} onChange={setTableView} rows={rows} />
+            <StandingsTable rows={visibleRows} leagueId={leagueId} insights={insights} expandable />
             {table?.leagueAvg && (
               <p className="mt-2 text-xs text-muted">
                 ⌀ tým v lize vstřelí {table.leagueAvg.goalsFor.toFixed(2)} gólu na zápas
@@ -368,6 +374,77 @@ function RoundList({
       </ul>
     </div>
   );
+}
+
+function filterTableRows(rows: LeagueTable["rows"], view: TableView): LeagueTable["rows"] {
+  if (view === "all" || rows.length < 6) return rows;
+  const topEnd = Math.max(4, Math.ceil(rows.length * 0.3));
+  const bottomStart = Math.max(topEnd, rows.length - Math.max(3, Math.ceil(rows.length * 0.25)));
+  if (view === "top") return rows.slice(0, topEnd);
+  if (view === "bottom") return rows.slice(bottomStart);
+  return rows.slice(topEnd, bottomStart);
+}
+
+function buildTeamInsights(
+  rows: LeagueTable["rows"],
+  round: LeagueRound | null,
+  snapshot: LeagueStyleSnapshot | null,
+  venue: Venue,
+): Map<number, StandingsTeamInsight> {
+  const result = new Map<number, StandingsTeamInsight>();
+  for (const row of rows) {
+    const candidates = snapshot
+      ? LEAGUE_STYLE_KEYS.flatMap((key) => {
+          const entry = snapshot.rankings[venue][key].find((item) => item.teamId === row.teamId);
+          return entry ? [{ key, entry }] : [];
+        })
+      : [];
+    candidates.sort((a, b) => b.entry.score - a.entry.score);
+    const best = candidates[0];
+    result.set(row.teamId, {
+      style: best ? { key: best.key, label: LEAGUE_STYLE_META[best.key].short, score: best.entry.score } : undefined,
+      last: round?.last.find((fixture) => fixture.home.id === row.teamId || fixture.away.id === row.teamId),
+      next: round?.next.find((fixture) => fixture.home.id === row.teamId || fixture.away.id === row.teamId),
+    });
+  }
+  return result;
+}
+
+function TableViewSelector({ value, onChange, rows }: { value: TableView; onChange: (view: TableView) => void; rows: LeagueTable["rows"] }) {
+  const items: Array<{ value: TableView; label: string }> = [
+    { value: "all", label: "Celá tabulka" },
+    { value: "top", label: "Titul a poháry" },
+    { value: "middle", label: "Střed" },
+    { value: "bottom", label: "Boj o záchranu" },
+  ];
+  return <div className="mb-3 mt-4 flex gap-1 overflow-x-auto rounded-xl border border-border bg-surface p-1" aria-label="Část tabulky">
+    {items.map((item) => <button key={item.value} type="button" onClick={() => onChange(item.value)} aria-pressed={value === item.value} disabled={rows.length < 6 && item.value !== "all"} className={`min-h-10 shrink-0 rounded-lg px-3 text-sm font-semibold transition disabled:opacity-40 ${value === item.value ? "bg-accent text-foreground" : "text-muted hover:bg-accent/15 hover:text-foreground"}`}>{item.label}</button>)}
+  </div>;
+}
+
+function LeaguePulse({ rows, snapshot, venue, styleKey, scorers }: { rows: LeagueTable["rows"]; snapshot: LeagueStyleSnapshot | null; venue: Venue; styleKey: LeagueStyleKey; scorers: LeagueScorer[] }) {
+  if (!rows.length) return null;
+  const leader = rows[0];
+  const gap = rows[1] ? leader.points - rows[1].points : 0;
+  const closeTop = rows.filter((row) => leader.points - row.points <= 5).length;
+  const bottom = rows.at(-1)!;
+  const relegationRace = rows.filter((row) => row.points - bottom.points <= 5).length;
+  const styleLeader = snapshot?.rankings[venue][styleKey][0];
+  const scorer = scorers[0];
+  const cards = [
+    { label: "Lídr", value: leader.name, detail: gap > 0 ? `náskok ${gap} b.` : "bez bodového náskoku", logo: leader.logoUrl },
+    { label: "Boj o čelo", value: `${closeTop} ${closeTop === 1 ? "tým" : closeTop < 5 ? "týmy" : "týmů"}`, detail: "v rozmezí 5 bodů" },
+    { label: "Boj o záchranu", value: `${relegationRace} ${relegationRace === 1 ? "tým" : relegationRace < 5 ? "týmy" : "týmů"}`, detail: "od posledního místa" },
+    styleLeader
+      ? { label: LEAGUE_STYLE_META[styleKey].short, value: styleLeader.name, detail: `${styleLeader.score.toFixed(1)}/10`, logo: styleLeader.logoUrl }
+      : scorer
+        ? { label: "Nejlepší střelec", value: scorer.name, detail: `${scorer.value} gólů` }
+        : { label: "Odehráno", value: `${Math.max(...rows.map((row) => row.played))} kol`, detail: "aktuální stav" },
+  ];
+  return <section className="mb-2" aria-labelledby="league-pulse-title">
+    <div className="mb-2 flex items-center justify-between"><h2 id="league-pulse-title" className="text-sm font-bold text-foreground">Ligový puls</h2><span className="text-[11px] text-muted">Rychlý kontext z aktuální tabulky</span></div>
+    <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">{cards.map((card) => <div key={card.label} className="rounded-xl border border-border bg-surface p-3 shadow-sm"><p className="text-[10px] font-semibold uppercase tracking-wide text-muted">{card.label}</p><div className="mt-1 flex min-w-0 items-center gap-2">{"logo" in card && card.logo ? <TeamLogo src={card.logo} alt={card.value} size={24} /> : null}<p className="truncate text-sm font-bold text-foreground">{card.value}</p></div><p className="mt-0.5 text-xs text-muted">{card.detail}</p></div>)}</div>
+  </section>;
 }
 
 function LeagueToolbar({ selected, venue, onSelect, onVenue }: {

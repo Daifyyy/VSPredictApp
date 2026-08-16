@@ -42,6 +42,7 @@ import {
 } from "./FavoritesSection";
 import type { SessionUser } from "./sessionUser";
 import { FixtureModelCard } from "./FixtureModelCard";
+import type { TacticalProfile } from "@/lib/tactics";
 
 interface TeamLite {
   id: number;
@@ -769,13 +770,17 @@ function ResultPanel({
         </div>
       )}
 
+      <ComparisonSectionNav />
+
       {result.locked ? (
-        <ProLock
-          user={user}
-          trialAvailable={trialAvailable}
-          onUnlockTrial={onUnlockTrial}
-          unlocking={unlocking}
-        />
+        <section id="vysledek-analyzy" className="scroll-mt-20">
+          <ProLock
+            user={user}
+            trialAvailable={trialAvailable}
+            onUnlockTrial={onUnlockTrial}
+            unlocking={unlocking}
+          />
+        </section>
       ) : (
         <section id="vysledek-analyzy" className="scroll-mt-20 rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6">
           <div className="mb-4 flex items-center justify-between gap-3 border-b border-border pb-3">
@@ -822,7 +827,7 @@ function ResultPanel({
         </section>
       )}
 
-      <section aria-labelledby="comparison-analysis-heading" className="space-y-3">
+      <section id="analyza-tymu" aria-labelledby="comparison-analysis-heading" className="scroll-mt-20 space-y-3">
         <div>
           <p className="page-kicker">Srovnání týmů</p>
           <h2 id="comparison-analysis-heading" className="mt-1 text-lg font-bold text-foreground">
@@ -907,7 +912,16 @@ function ResultPanel({
       )}
       </section>
 
-      <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6">
+      {result.tactics && (result.tactics.home.sampleSize > 0 || result.tactics.away.sampleSize > 0) && (
+        <TacticalComparison
+          home={result.tactics.home}
+          away={result.tactics.away}
+          homeTeam={result.home.team}
+          awayTeam={result.away.team}
+        />
+      )}
+
+      <section id="forma-tymu" className="scroll-mt-20 rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6">
         <div className="mb-4">
           <p className="page-kicker">Kontext zápasu</p>
           <h2 className="mt-1 text-lg font-bold text-foreground">Forma a postavení</h2>
@@ -938,7 +952,7 @@ function ResultPanel({
         </div>
       </section>
 
-      <section aria-labelledby="comparison-more-heading" className="space-y-2">
+      <section id="dalsi-informace" aria-labelledby="comparison-more-heading" className="scroll-mt-20 space-y-2">
         <div className="mb-3">
           <p className="page-kicker">Podrobnosti</p>
           <h2 id="comparison-more-heading" className="mt-1 text-lg font-bold text-foreground">
@@ -1165,6 +1179,65 @@ function DetailAccordion({
       </button>
       {open && <div className="border-t border-border px-3 py-4 sm:px-4">{children}</div>}
     </section>
+  );
+}
+
+function TacticalComparison({ home, away, homeTeam, awayTeam }: {
+  home: TacticalProfile;
+  away: TacticalProfile;
+  homeTeam: { name: string; logoUrl: string };
+  awayTeam: { name: string; logoUrl: string };
+}) {
+  const line = (profile: TacticalProfile) => profile.defensiveLine === "BACK_THREE"
+    ? "častěji tříčlenná obrana"
+    : profile.defensiveLine === "BACK_FOUR"
+      ? "častěji čtyřčlenná obrana"
+      : profile.defensiveLine === "MIXED" ? "střídá obranné systémy" : "bez určeného systému";
+  return <section className="scroll-mt-20 rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6" aria-labelledby="tactical-comparison-title">
+    <div className="mb-4"><p className="page-kicker">Taktický kontext</p><h2 id="tactical-comparison-title" className="mt-1 text-lg font-bold text-foreground">Rozestavení a trenéři</h2><p className="mt-1 text-xs text-muted">Oficiální výchozí sestavy z posledních zápasů; nejde o odhad pozice týmu během celého utkání.</p></div>
+    <div className="grid gap-3 sm:grid-cols-2">
+      {([[home, homeTeam, "home"], [away, awayTeam, "away"]] as const).map(([profile, team, accent]) => <article key={accent} className="rounded-xl border border-border bg-background p-4">
+        <TeamHeading name={team.name} logo={team.logoUrl} accent={accent} />
+        {profile.sampleSize ? <>
+          <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+            <TacticalMetric label="Nejčastěji" value={profile.primaryFormation ?? "—"} />
+            <TacticalMetric label="Stabilita" value={profile.stability == null ? "—" : `${Math.round(profile.stability * 100)} %`} />
+            <TacticalMetric label="Vzorek" value={`${profile.sampleSize}`} />
+          </div>
+          <p className="mt-3 text-sm text-foreground"><b>{line(profile)}</b>{profile.recentChange ? " · systém se v posledních utkáních změnil" : ""}</p>
+          <p className="mt-1 text-xs text-muted">Doma {profile.homeFormation ?? "—"} · venku {profile.awayFormation ?? "—"}</p>
+          <p className="mt-3 border-t border-border pt-3 text-xs text-muted">Trenér: <b className="text-foreground">{profile.coach?.name ?? "není dostupný"}</b>{profile.coach ? ` · ${profile.coach.matchesInSample}/${profile.sampleSize} zápasů vzorku` : ""}</p>
+        </> : <p className="mt-4 text-sm text-muted">Oficiální sestavy zatím nejsou v cache dostupné.</p>}
+      </article>)}
+    </div>
+  </section>;
+}
+
+function TacticalMetric({ label, value }: { label: string; value: string }) {
+  return <div><p className="text-[10px] uppercase tracking-wide text-muted">{label}</p><p className="mt-1 font-bold tabular-nums text-foreground">{value}</p></div>;
+}
+
+function ComparisonSectionNav() {
+  const items = [
+    { href: "#vysledek-analyzy", label: "Výsledek" },
+    { href: "#analyza-tymu", label: "Analýza" },
+    { href: "#forma-tymu", label: "Forma" },
+    { href: "#dalsi-informace", label: "Podrobnosti" },
+  ];
+  return (
+    <nav aria-label="Obsah porovnání" className="sticky top-2 z-20 -mx-1 overflow-x-auto rounded-xl border border-border bg-background/95 p-1 shadow-sm backdrop-blur">
+      <div className="flex min-w-max gap-1">
+        {items.map((item) => (
+          <a
+            key={item.href}
+            href={item.href}
+            className="inline-flex min-h-10 items-center rounded-lg px-3 text-xs font-semibold text-muted outline-none transition hover:bg-surface hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent-strong"
+          >
+            {item.label}
+          </a>
+        ))}
+      </div>
+    </nav>
   );
 }
 

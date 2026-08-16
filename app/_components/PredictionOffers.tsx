@@ -28,6 +28,7 @@ export function PredictionOffers({ user, marketView }: { user: SessionUser | nul
   const [league, setLeague] = useState("all");
   const [direction, setDirection] = useState<"all" | "positive" | "negative">("all");
   const [preset, setPreset] = useState<PredictionPresetId>("all");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [activeDate, setActiveDate] = useState("");
   const [expandedFixture, setExpandedFixture] = useState<number | null>(null);
   const [expandedLeagues, setExpandedLeagues] = useState<Set<number>>(new Set());
@@ -101,6 +102,7 @@ export function PredictionOffers({ user, marketView }: { user: SessionUser | nul
   const selectDate = (date: string) => { setActiveDate(date); setExpandedFixture(null); writeUrl({ date, fixture: null }); };
   const selectPreset = (value: PredictionPresetId) => { setPreset(value); setExpandedFixture(null); writeUrl({ preset: value === "all" ? null : value, fixture: null }); };
   const reset = () => { setPreset("all"); setScope("all"); setLeague("all"); setOdds("all"); setDirection("all"); setExpandedFixture(null); writeUrl({ preset: null, league: null, fixture: null, date: null }); };
+  const advancedCount = Number(scope !== "all") + Number(league !== "all") + Number(odds !== "all") + Number(marketView && direction !== "all");
   const toggleLeague = (id: number) => setExpandedLeagues((current) => {
     const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id);
     writeUrl({ league: next.has(id) ? String(id) : null }); return next;
@@ -111,16 +113,31 @@ export function PredictionOffers({ user, marketView }: { user: SessionUser | nul
   if (!offers) return <div className="mt-4 h-32 animate-pulse rounded-xl bg-border/60" />;
 
   return <section className="mt-4">
+    <div className="mb-2 flex items-end justify-between gap-3">
+      <div><p className="page-kicker">Co hledám</p><h2 className="mt-1 text-base font-bold text-foreground">Rychlé modelové výběry</h2></div>
+      {preset !== "all" && <button type="button" onClick={() => selectPreset("all")} className="ui-chip min-h-10 px-3 text-xs">Zrušit výběr</button>}
+    </div>
     <div className="mb-3 flex gap-2 overflow-x-auto pb-1" aria-label="Rychlé modelové filtry">
       {PREDICTION_PRESETS.map((item) => <button key={item.id} type="button" aria-pressed={preset === item.id} onClick={() => selectPreset(item.id)} className={`min-h-11 shrink-0 rounded-full border px-3 text-xs font-bold transition ${preset === item.id ? "border-accent bg-accent text-accent-ink" : "border-border bg-surface text-muted hover:bg-accent/15 hover:text-foreground"}`}>{item.label}<span className="ml-1 opacity-70">{presetCounts[item.id] ?? 0}</span></button>)}
     </div>
-    <div className="flex flex-wrap gap-2 rounded-xl border border-border bg-surface p-2">
-      <Select label="Soutěže" value={scope} onChange={(value) => setScope(value as Scope)} options={[["all", "Vše"], ["CLUB", "Ligy"], ["EUROPE", "Evropa"], ["NATIONAL", "Reprezentace"]]} />
-      <Select label="Liga" value={league} onChange={setLeague} options={[["all", "Všechny"], ...leagues.map(([id, name]) => [String(id), name])]} />
-      <Select label="Kurzy" value={odds} onChange={(value) => setOdds(value as typeof odds)} options={[["all", "Vše"], ["with", "S trhem"], ["without", "Bez trhu"]]} />
-      {marketView && <Select label="Rozdíl" value={direction} onChange={(value) => setDirection(value as typeof direction)} options={[["all", "Oba směry"], ["positive", "Model výše"], ["negative", "Trh výše"]]} />}
-      {(preset !== "all" || scope !== "all" || league !== "all" || odds !== "all" || direction !== "all") && <button type="button" onClick={reset} className="ui-chip min-h-11 px-3 text-xs">Resetovat</button>}
-      <span className="ml-auto self-center px-2 text-xs text-muted">{preset === "all" ? visible.length : filtered.length} zápasů</span>
+    <details open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)} className="rounded-xl border border-border bg-surface">
+      <summary className="flex min-h-12 cursor-pointer list-none items-center gap-3 px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-accent-strong [&::-webkit-details-marker]:hidden">
+        <span className="font-semibold text-foreground">Další filtry</span>
+        <span className="text-xs text-muted">Soutěž, liga a dostupnost trhu</span>
+        {advancedCount > 0 && <span className="rounded-full bg-accent/30 px-2 py-0.5 text-[10px] font-bold text-accent-ink">Aktivní {advancedCount}</span>}
+        <span className="ml-auto text-muted" aria-hidden>{advancedOpen ? "▲" : "▼"}</span>
+      </summary>
+      <div className="flex flex-wrap gap-2 border-t border-border p-2">
+        <Select label="Soutěže" value={scope} onChange={(value) => setScope(value as Scope)} options={[["all", "Vše"], ["CLUB", "Ligy"], ["EUROPE", "Evropa"], ["NATIONAL", "Reprezentace"]]} />
+        <Select label="Liga" value={league} onChange={setLeague} options={[["all", "Všechny"], ...leagues.map(([id, name]) => [String(id), name])]} />
+        <Select label="Kurzy" value={odds} onChange={(value) => setOdds(value as typeof odds)} options={[["all", "Vše"], ["with", "S trhem"], ["without", "Bez trhu"]]} />
+        {marketView && <Select label="Rozdíl" value={direction} onChange={(value) => setDirection(value as typeof direction)} options={[["all", "Oba směry"], ["positive", "Model výše"], ["negative", "Trh výše"]]} />}
+        {(advancedCount > 0 || preset !== "all") && <button type="button" onClick={reset} className="ui-chip min-h-11 px-3 text-xs">Resetovat vše</button>}
+      </div>
+    </details>
+    <div className="mt-3 flex items-center justify-between gap-3">
+      <div><p className="page-kicker">Kdy a kde</p><p className="mt-1 text-xs text-muted">Stejné pořadí dnů a soutěží jako v Programu.</p></div>
+      <span className="shrink-0 text-xs text-muted">{preset === "all" ? visible.length : filtered.length} zápasů</span>
     </div>
     {preset === "all" && <CompetitionDayTabs days={days} activeDate={activeDate} onSelect={selectDate} />}
     {preset !== "all" && <p className="mt-3 text-xs text-muted">Výběr pro celý dostupný horizont · modelový filtr, nikoli publikovaný tip.</p>}

@@ -72,6 +72,7 @@ export function toFreeResult(full: CompareResult): CompareResult {
     source: full.source,
     sourceNote: full.sourceNote,
     sourceMix: full.sourceMix,
+    tactics: full.tactics,
     metrics: full.metrics,
     home: full.home,
     away: full.away,
