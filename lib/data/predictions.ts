@@ -66,6 +66,8 @@ import {
   openMarketSignals,
 } from "./marketSignalStore";
 import { logError } from "@/lib/logError";
+import { getHeadToHead } from "./h2h";
+import { H2H_SNAPSHOT_VERSION, toPredictionSnapshot } from "@/lib/h2h";
 import {
   addFixtureCoverage,
   coverageWarnings,
@@ -387,6 +389,12 @@ export async function runPredictUpcoming(
               factor: refereeProfile?.factor ?? 1,
               sample: refereeProfile?.sample ?? 0,
             });
+        const h2hCapturedAt = new Date();
+        const h2hSnapshot = toPredictionSnapshot(
+          await getHeadToHead(f.teams.home.id, f.teams.away.id),
+          f.teams.home.id,
+          h2hCapturedAt
+        );
         await upsertPrediction({
           fixtureId: f.fixture.id,
           leagueId,
@@ -428,6 +436,9 @@ export async function runPredictUpcoming(
           refereeKey: refereeName ? normalizeRefereeName(refereeName) : null,
           lambdaCardsHomeBeforeRef: countLambdas?.cards?.lambdaHomeBeforeRef ?? null,
           lambdaCardsAwayBeforeRef: countLambdas?.cards?.lambdaAwayBeforeRef ?? null,
+          h2hSnapshot,
+          h2hSnapshotVersion: H2H_SNAPSHOT_VERSION,
+          h2hCapturedAt: h2hCapturedAt.toISOString(),
         });
         predicted++;
 

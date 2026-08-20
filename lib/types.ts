@@ -421,6 +421,7 @@ export interface FixtureModelForecast {
   cards: CountModelForecast | null;
   fouls: FoulModelForecast | null;
   refereeProfile: RefereeProfileForecast | null;
+  headToHead: import("@/lib/h2h").HeadToHeadSummary;
 }
 
 export interface FoulModelForecast {
@@ -937,6 +938,10 @@ export interface PredictionRow {
   refereeKey?: string | null;
   lambdaCardsHomeBeforeRef?: number | null;
   lambdaCardsAwayBeforeRef?: number | null;
+  /** Point-in-time H2H audit; nemění tehdejší predikci a nesmí se zpětně přepočítat. */
+  h2hSnapshot?: import("@/lib/h2h").HeadToHeadPredictionSnapshot | null;
+  h2hSnapshotVersion?: number | null;
+  h2hCapturedAt?: string | null;
   status: string; // "NS" | "FT" | "AET" | "PEN" | …
   homeGoals: number | null;
   awayGoals: number | null;
@@ -1145,6 +1150,8 @@ export interface CompareResult {
     home: import("@/lib/tactics").TacticalProfile;
     away: import("@/lib/tactics").TacticalProfile;
   };
+  /** Vzájemné zápasy z trvalé cache; popisný kontext, nikoli vstup predikce. */
+  headToHead?: import("@/lib/h2h").HeadToHeadSummary;
   metrics: Metric[];
   home: TeamComparison;
   away: TeamComparison;

@@ -1,4 +1,4 @@
-import type { FixturePrediction, Prisma } from "@prisma/client";
+import { Prisma, type FixturePrediction } from "@prisma/client";
 import type { PredictionRow } from "@/lib/types";
 import { prisma } from "@/lib/db";
 import { PREDICT_PARAMS } from "@/lib/stats/predict";
@@ -101,6 +101,9 @@ function toRow(p: PredictionRowSource): PredictionRow {
     refereeKey: p.refereeKey,
     lambdaCardsHomeBeforeRef: p.lambdaCardsHomeBeforeRef,
     lambdaCardsAwayBeforeRef: p.lambdaCardsAwayBeforeRef,
+    h2hSnapshot: p.h2hSnapshot as PredictionRow["h2hSnapshot"],
+    h2hSnapshotVersion: p.h2hSnapshotVersion,
+    h2hCapturedAt: p.h2hCapturedAt?.toISOString() ?? null,
     status: p.status,
     homeGoals: p.homeGoals,
     awayGoals: p.awayGoals,
@@ -195,6 +198,9 @@ export async function upsertPrediction(row: PredictionUpsert): Promise<void> {
     create: {
       fixtureId: row.fixtureId,
       ...predictionData,
+      h2hSnapshot: row.h2hSnapshot == null ? Prisma.DbNull : row.h2hSnapshot as unknown as Prisma.InputJsonValue,
+      h2hSnapshotVersion: row.h2hSnapshotVersion ?? null,
+      h2hCapturedAt: row.h2hCapturedAt ? new Date(row.h2hCapturedAt) : null,
       published1x2Side: published?.side ?? null,
       published1x2Prob: published?.prob ?? null,
       publicationPolicyVersion: published?.policyVersion ?? null,
@@ -204,6 +210,18 @@ export async function upsertPrediction(row: PredictionUpsert): Promise<void> {
     // prognózy ho nesmí změnit ani odstranit.
     update: predictionData,
   });
+  // Starší nadcházející řádek může být ještě bez snapshotu. Doplníme jej jednou;
+  // existující point-in-time hodnotu už žádný další cron nepřepíše.
+  if (row.h2hSnapshot) {
+    await prisma.fixturePrediction.updateMany({
+      where: { fixtureId: row.fixtureId, h2hSnapshot: { equals: Prisma.DbNull } },
+      data: {
+        h2hSnapshot: row.h2hSnapshot as unknown as Prisma.InputJsonValue,
+        h2hSnapshotVersion: row.h2hSnapshotVersion ?? null,
+        h2hCapturedAt: row.h2hCapturedAt ? new Date(row.h2hCapturedAt) : now,
+      },
+    });
+  }
   if (published) {
     await prisma.fixturePrediction.updateMany({
       where: { fixtureId: row.fixtureId, published1x2Side: null },

@@ -15,6 +15,7 @@ import { unstable_cache } from "next/cache";
 import { isRealDataConfigured, prisma } from "@/lib/db";
 import { COUNT_MARKET_SIGNAL_POLICY_VERSION, MARKET_SIGNAL_POLICY_VERSION } from "@/lib/picks/marketSignals";
 import { getRefereeProfile } from "@/lib/data/refereeStore";
+import { getHeadToHead } from "@/lib/data/h2h";
 
 const countSamples = unstable_cache(async () => {
   if (!isRealDataConfigured()) return {};
@@ -66,13 +67,19 @@ export async function GET(req: Request) {
   const entitlement = getEntitlement(
     user ? { tier: user.tier, proTrialUsed: user.proTrialUsed } : null
   );
-  if (!entitlement.pro && !isAdminEmail(user?.email)) return NextResponse.json({ locked: true });
+  const locked = !entitlement.pro && !isAdminEmail(user?.email);
   try {
     const row = await getFixturePredictionRow(fixtureId);
     if (!row || !row.available) return NextResponse.json({ forecast: null });
+    if (locked) {
+      const headToHead = await getHeadToHead(row.homeTeamId, row.awayTeamId);
+      return NextResponse.json({ locked: true, headToHead });
+    }
     const books = parseBooks(row.oddsBooks);
     const closeBooks = parseBooks(row.oddsCloseBooks);
-    const [samples, foulStats] = await Promise.all([countSamples(), foulSamples()]);
+    const [samples, foulStats, headToHead] = await Promise.all([
+      countSamples(), foulSamples(), getHeadToHead(row.homeTeamId, row.awayTeamId),
+    ]);
     const context = row.modelContext ?? "LEAGUE";
     const version = row.countModelVersion ?? 0;
     const countOptions = {
@@ -188,6 +195,7 @@ export async function GET(req: Request) {
       cards: withClose(cards, "cards"),
       fouls,
       refereeProfile,
+      headToHead,
     };
     return NextResponse.json({ forecast });
   } catch (error) {

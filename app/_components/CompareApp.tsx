@@ -42,6 +42,7 @@ import {
 } from "./FavoritesSection";
 import type { SessionUser } from "./sessionUser";
 import { FixtureModelCard } from "./FixtureModelCard";
+import { HeadToHeadCard } from "./HeadToHeadCard";
 import type { TacticalProfile } from "@/lib/tactics";
 
 interface TeamLite {
@@ -911,6 +912,14 @@ function ResultPanel({
         />
       )}
       </section>
+
+      {result.headToHead && (
+        <HeadToHeadCard
+          summary={result.headToHead}
+          teamAName={result.home.team.name}
+          teamBName={result.away.team.name}
+        />
+      )}
 
       {result.tactics && (result.tactics.home.sampleSize > 0 || result.tactics.away.sampleSize > 0) && (
         <TacticalComparison
