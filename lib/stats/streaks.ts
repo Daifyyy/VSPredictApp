@@ -62,14 +62,54 @@ export function pointsPerGame(
 }
 
 /** PPG ve formovém okně vs baseline (pro detekci stoupající/klesající formy). */
+function pointsPerGameFromMatches(matches: MatchStat[]): number | null {
+  let weight = 0;
+  let total = 0;
+  for (const match of matches) {
+    const gf = match.metrics.GOALS_FOR;
+    const ga = match.metrics.GOALS_AGAINST;
+    if (gf == null || ga == null) continue;
+    const result: MatchResult = gf > ga ? "W" : gf < ga ? "L" : "D";
+    const currentWeight = matchWeight(match);
+    weight += currentWeight;
+    total += currentWeight * points(result);
+  }
+  return weight > 0 ? total / weight : null;
+}
+
+/** U klubů poslední 4 zápasy vs předchozí 4 v aktuální sezoně. */
 export function formTrend(
   matches: MatchStat[],
   entityType: EntityType,
   now: Date
-): { form: number | null; base: number | null } {
+): { form: number | null; base: number | null; formSampleSize: number; baseSampleSize: number } {
+  if (entityType === "CLUB") {
+    const currentSeason = [...matches]
+      .filter((match) => !match.isBaseline && match.metrics.GOALS_FOR != null && match.metrics.GOALS_AGAINST != null)
+      .sort((a, b) => b.date.localeCompare(a.date));
+    if (currentSeason.length < 8) {
+      return {
+        form: null,
+        base: null,
+        formSampleSize: Math.min(4, currentSeason.length),
+        baseSampleSize: Math.max(0, currentSeason.length - 4),
+      };
+    }
+    const recent = currentSeason.slice(0, 4);
+    const previous = currentSeason.slice(4, 8);
+    return {
+      form: pointsPerGameFromMatches(recent),
+      base: pointsPerGameFromMatches(previous),
+      formSampleSize: recent.length,
+      baseSampleSize: previous.length,
+    };
+  }
+
   const windows = windowsFor(entityType);
   return {
     base: pointsPerGame(matches, windows[0], now),
     form: pointsPerGame(matches, windows[windows.length - 1], now),
+    formSampleSize: selectWindowMatches(matches, windows[windows.length - 1], now).length,
+    baseSampleSize: selectWindowMatches(matches, windows[0], now).length,
   };
 }

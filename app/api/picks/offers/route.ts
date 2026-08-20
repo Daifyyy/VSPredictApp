@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/authUser";
 import { getEntitlement } from "@/lib/entitlements";
-import { getUpcomingPredictionRows } from "@/lib/data/predictionStore";
+import { getUpcomingPredictions } from "@/lib/data/repository";
 import {
   catalogLeagueName,
   competitionGroup,
@@ -14,7 +14,7 @@ import { mainHalfLine } from "@/lib/picks/countDistribution";
 import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
 import { logError } from "@/lib/logError";
 
-function largestDifference(row: Awaited<ReturnType<typeof getUpcomingPredictionRows>>[number]) {
+function largestDifference(row: Awaited<ReturnType<typeof getUpcomingPredictions>>[number]) {
   const books = parseBooks(row.oddsBooks);
   const values: number[] = [];
   const one = sharpFair(books);
@@ -40,7 +40,7 @@ export async function GET(req: Request) {
   const user = await getCurrentUser();
   if (!getEntitlement(user).pro) return NextResponse.json({ locked: true });
   try {
-    const rows = await getUpcomingPredictionRows();
+    const rows = await getUpcomingPredictions();
     const offers = rows.filter((row) => row.available && isPublicCompetition(row.leagueId)).map((row) => ({
       fixtureId: row.fixtureId,
       kickoff: row.kickoff,

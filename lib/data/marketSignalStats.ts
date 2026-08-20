@@ -3,11 +3,22 @@ import type { Prisma } from "@prisma/client";
 import { COUNT_MARKET_SIGNAL_POLICY_VERSION, MARKET_SIGNAL_POLICY_VERSION } from "@/lib/picks/marketSignals";
 import { RELIABLE_CLOSE_MAX_MINUTES } from "@/lib/picks/oddsSeries";
 import { PUBLIC_CLUB_LEAGUE_IDS } from "@/lib/data/catalog";
+import { MODEL_VERSION } from "@/lib/data/modelVersion";
+import { MODEL_CONTEXT_VERSION } from "@/lib/data/modelContext";
+import { COUNT_MODEL_VERSION } from "@/lib/data/predictionStore";
 
 const activePolicyWhere: Prisma.MarketSignalSnapshotWhereInput = {
-  OR: [
-    { market: { in: ["1X2", "OVER_25"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
-    { market: { in: ["CORNERS", "CARDS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
+  AND: [
+    { modelVersion: MODEL_VERSION },
+    { OR: [
+      { modelContext: "LEAGUE", contextVersion: MODEL_CONTEXT_VERSION.LEAGUE },
+      { modelContext: "EURO_CUP", contextVersion: MODEL_CONTEXT_VERSION.EURO_CUP },
+      { modelContext: "NATIONAL", contextVersion: MODEL_CONTEXT_VERSION.NATIONAL },
+    ] },
+    { OR: [
+      { market: { in: ["1X2", "OVER_25"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
+      { market: { in: ["CORNERS", "CARDS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION, countModelVersion: COUNT_MODEL_VERSION },
+    ] },
   ],
 };
 

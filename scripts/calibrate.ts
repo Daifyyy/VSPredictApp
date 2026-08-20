@@ -24,6 +24,7 @@ import {
   modelContextForLeague,
   type ModelContext,
 } from "../lib/data/modelContext.ts";
+import { isPublicCompetition } from "../lib/data/catalog.ts";
 
 // Fit ρ/zostření i skórování 1X2 jsou sdílené čisté funkce (`lib/picks/fit.ts`,
 // `trackRecord.ts`) → tentýž kód žene kalibraci z DB i offline `npm run backtest`.
@@ -36,7 +37,7 @@ async function main() {
   }
   const context = requested as ModelContext;
   const current = stored.filter(isCurrentContextVersion);
-  const rows = current.filter((row) => modelContextForLeague(row.leagueId) === context);
+  const rows = current.filter((row) => isPublicCompetition(row.leagueId) && modelContextForLeague(row.leagueId) === context);
   const legacy = stored.filter((row) =>
     modelContextForLeague(row.leagueId) === context && !isCurrentContextVersion(row)
   ).length;

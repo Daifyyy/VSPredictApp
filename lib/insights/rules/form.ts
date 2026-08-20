@@ -36,14 +36,14 @@ export const FORM_RULES: TeamRule[] = [
 
   // Směr formy podle bodů na zápas (form okno vs baseline).
   rule("form_trend", "form", (t) => {
-    const { form, base } = formTrend(perspectiveMatches(t), t.entityType, t.now);
-    if (form == null || base == null || base <= 0) return null;
-    const ratio = form / base;
-    if (ratio < 0.7) {
-      return cand("warning", clamp01((0.7 - ratio) / 0.5), `Klesající forma (${fmt(form)} b/zápas vs ${fmt(base)})`, false);
+    const { form, base, formSampleSize, baseSampleSize } = formTrend(perspectiveMatches(t), t.entityType, t.now);
+    if (form == null || base == null || formSampleSize < 4 || baseSampleSize < 4) return null;
+    const difference = form - base;
+    if (difference <= -0.75) {
+      return cand("warning", clamp01(Math.abs(difference) / 2), `Klesající forma (${fmt(form)} b/zápas v posledních 4 vs ${fmt(base)} v předchozích 4)`, false);
     }
-    if (ratio > 1.3) {
-      return cand("positive", clamp01((ratio - 1.3) / 0.5), `Stoupající forma (${fmt(form)} b/zápas vs ${fmt(base)})`, false);
+    if (difference >= 0.75) {
+      return cand("positive", clamp01(difference / 2), `Stoupající forma (${fmt(form)} b/zápas v posledních 4 vs ${fmt(base)} v předchozích 4)`, false);
     }
     return null;
   }),

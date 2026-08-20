@@ -5,6 +5,7 @@ import type { FixtureModelForecast } from "@/lib/types";
 import { COUNT_MARKET_PRESENTATION } from "@/lib/picks/countPresentation";
 import { useCurrentUser } from "./useCurrentUser";
 import { HeadToHeadCard } from "./HeadToHeadCard";
+import { buildDecisionChecklist, type DecisionStatus } from "@/lib/picks/decisionChecklist";
 
 type State =
   | { state: "loading" }
@@ -102,6 +103,7 @@ export function FixtureModelCard({
       <TempoDiscipline fouls={f.fouls} cards={f.cards} referee={f.refereeProfile} />
       <RefereeProfile profile={f.refereeProfile} expanded={countsOnly} fixtureId={fixtureId} canEdit={user?.isAdmin === true} onAssigned={() => setRevision((value) => value + 1)} />
       {!countsOnly && f.headToHead && <HeadToHeadCard summary={f.headToHead} teamAName={teamName(f.headToHead, f.headToHead.teamAId, "Domácí")} teamBName={teamName(f.headToHead, f.headToHead.teamBId, "Hosté")} compact />}
+      {!countsOnly && <DecisionChecklist forecast={f} />}
       {(f.corners || f.cards || f.fouls) && (
         <p className="text-[10px] leading-relaxed text-muted">
           Jde o experimentální porovnání, nikoli publikovaný tip ani potvrzenou výhodu proti trhu.
@@ -109,6 +111,26 @@ export function FixtureModelCard({
       )}
     </div>
   );
+}
+
+function DecisionChecklist({ forecast }: { forecast: FixtureModelForecast }) {
+  const rows = buildDecisionChecklist(forecast);
+  const statusLabel: Record<DecisionStatus, string> = { candidate: "Kandidát", watch: "Sledovat", reject: "Nevyhovuje" };
+  const statusClass: Record<DecisionStatus, string> = {
+    candidate: "bg-positive/10 text-positive", watch: "bg-warning/10 text-warning", reject: "bg-negative/10 text-negative",
+  };
+  return <details className="group rounded-xl border border-border bg-surface">
+    <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+      <span>Rozhodovací checklist</span><span className="text-muted transition-transform group-open:rotate-180" aria-hidden>⌄</span>
+    </summary>
+    <div className="space-y-2 border-t border-border p-3">
+      {rows.map((row) => <div key={row.market} className="rounded-lg border border-border bg-background px-3 py-2.5">
+        <div className="flex items-center justify-between gap-2"><strong>{row.label}</strong><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${statusClass[row.status]}`}>{statusLabel[row.status]}</span></div>
+        <p className="mt-1 text-[11px] leading-4 text-muted">{row.reason}</p>
+      </div>)}
+      <p className="text-[10px] leading-4 text-muted">Checklist je konzistentní analytický filtr, nikoli pokyn k sázce ani záruka výsledku.</p>
+    </div>
+  </details>;
 }
 
 function teamName(summary: FixtureModelForecast["headToHead"], teamId: number, fallback: string) {
