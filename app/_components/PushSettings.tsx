@@ -15,6 +15,7 @@ type State = {
     movementThreshold: 3 | 5 | 8;
     smartFavoriteLeagues: boolean;
     halftimeAndFinal: boolean;
+    checklistCandidate: boolean;
   };
 };
 
@@ -154,6 +155,7 @@ export function PushSettings({ open, onClose }: { open: boolean; onClose: () => 
           <p className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Model a trh</p>
           <label className="flex min-h-11 items-center justify-between gap-3 text-sm text-foreground"><span><b>Zahrnout oblíbené ligy</b><small className="block text-muted">Jen chytré signály, ne každý výkop</small></span><input type="checkbox" checked={state.preference.smartFavoriteLeagues} onChange={(event) => setState({ ...state, preference: { ...state.preference, smartFavoriteLeagues: event.target.checked } })} className="h-5 w-5 accent-positive" /></label>
           <label className="flex min-h-11 items-center justify-between gap-3 text-sm text-foreground"><span><b>Nový publikovaný tip</b><small className="block text-muted">Pouze když projde pravidlem modelu</small></span><input type="checkbox" checked={state.preference.publishedPrediction} onChange={(event) => setState({ ...state, preference: { ...state.preference, publishedPrediction: event.target.checked } })} className="h-5 w-5 accent-positive" /></label>
+          <label className="flex min-h-11 items-center justify-between gap-3 text-sm text-foreground"><span><b>Nový kandidát checklistu</b><small className="block text-muted">1X2 nebo góly, až po nejméně 3 kurzových vzorcích</small></span><input type="checkbox" checked={state.preference.checklistCandidate} onChange={(event) => setState({ ...state, preference: { ...state.preference, checklistCandidate: event.target.checked } })} className="h-5 w-5 accent-positive" /></label>
           <label className="flex min-h-11 items-center justify-between gap-3 text-sm text-foreground"><span><b>Výrazný pohyb trhu</b><small className="block text-muted">Alespoň 3 použitelné vzorky, směrem k modelu</small></span><input type="checkbox" checked={state.preference.marketMovement} onChange={(event) => setState({ ...state, preference: { ...state.preference, marketMovement: event.target.checked } })} className="h-5 w-5 accent-positive" /></label>
           {state.preference.marketMovement && <label className="block text-xs font-semibold text-muted">Minimální posun
             <select value={state.preference.movementThreshold} onChange={(event) => setState({ ...state, preference: { ...state.preference, movementThreshold: Number(event.target.value) as 3 | 5 | 8 } })} className="mt-1 min-h-11 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground"><option value={3}>3 procentní body</option><option value={5}>5 procentních bodů</option><option value={8}>8 procentních bodů</option></select>

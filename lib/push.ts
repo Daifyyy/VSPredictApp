@@ -5,6 +5,8 @@ import { COUNT_MARKET_SIGNAL_POLICY_VERSION, MARKET_SIGNAL_POLICY_VERSION } from
 import { isMeaningfulMarketMove, isSmartNotificationTarget } from "@/lib/pushRules";
 import { fetchFixturesByIds } from "@/lib/data/apiFootball";
 import { chunkFixtureIds, matchStatusEvents } from "@/lib/pushMatchStatus";
+import type { NewChecklistCandidate } from "@/lib/data/checklistStore";
+import { DECISION_CHECKLIST_VERSION } from "@/lib/picks/decisionChecklist";
 
 export function pushConfigured(): boolean {
   return Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT);
@@ -41,6 +43,48 @@ export async function sendPushSubscription(
     }
     throw error;
   }
+}
+
+export async function sendChecklistCandidateNotifications(candidates: NewChecklistCandidate[]) {
+  const stats = { candidates: candidates.length, eligible: 0, sent: 0, errors: 0 };
+  if (!candidates.length || !pushConfigured()) return stats;
+  const preferences = await prisma.notificationPreference.findMany({
+    where: { enabled: true, checklistCandidate: true },
+    include: { user: { select: { id: true, pushSubscriptions: true } } },
+  });
+  for (const candidate of candidates) {
+    const marketLabel = candidate.market === "OVER_25" ? "Góly 2,5" : candidate.market === "CORNERS" ? "Rohy" : candidate.market === "CARDS" ? "Karty" : "Výsledek 1X2";
+    const sideLabel = candidate.side === "HOME" ? candidate.homeName : candidate.side === "AWAY" ? candidate.awayName : candidate.side === "OVER" ? `Over ${candidate.line ?? 2.5}` : candidate.side === "UNDER" ? `Under ${candidate.line ?? 2.5}` : "Remíza";
+    const type = `CHECKLIST_${candidate.market}_V${DECISION_CHECKLIST_VERSION}`;
+    const url = `/porovnani?homeLeague=${candidate.leagueId}&awayLeague=${candidate.leagueId}&home=${candidate.homeTeamId}&away=${candidate.awayTeamId}&fixture=${candidate.fixtureId}#model-${candidate.fixtureId}`;
+    for (const preference of preferences) {
+      if (!preference.user.pushSubscriptions.length) continue;
+      stats.eligible++;
+      const exists = await prisma.notificationDelivery.findUnique({
+        where: { userId_fixtureId_type: { userId: preference.userId, fixtureId: candidate.fixtureId, type } },
+      });
+      if (exists) continue;
+      let delivered = false;
+      for (const subscription of preference.user.pushSubscriptions) {
+        try {
+          delivered = await sendPushSubscription(subscription, {
+            title: `Kandidát checklistu · ${marketLabel}`,
+            body: `${candidate.homeName} – ${candidate.awayName} · ${sideLabel} · model ${Math.round(candidate.modelProbability * 100)} % · trh ${Math.round(candidate.marketProbability * 100)} % · +${(candidate.edge * 100).toFixed(1)} p. b.`,
+            url,
+            tag: `checklist-${candidate.fixtureId}-${candidate.market}`,
+          }) || delivered;
+        } catch {
+          stats.errors++;
+        }
+      }
+      if (!delivered) continue;
+      await prisma.notificationDelivery.create({
+        data: { userId: preference.userId, fixtureId: candidate.fixtureId, type },
+      }).catch(() => {});
+      stats.sent++;
+    }
+  }
+  return stats;
 }
 
 export async function sendKickoffReminders(now = new Date()) {

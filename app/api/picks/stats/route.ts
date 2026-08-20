@@ -17,6 +17,7 @@ import { computeCountModelAccuracy, computePublishedTipRecord } from "@/lib/pick
 import { getCachedCountTotals } from "@/lib/data/cache";
 import { isRealDataConfigured } from "@/lib/db";
 import { marketClvSummaries } from "@/lib/data/marketSignalStats";
+import { checklistPerformance } from "@/lib/data/checklistStats";
 
 // Track-record modelu + benchmark + backtest strategie z odehraných predikcí.
 // **FREE** (agregátní/historické metriky nic konkrétního neprozrazují a budují
@@ -38,10 +39,11 @@ export async function GET(req: Request) {
   }
 
   try {
-    const [allRows, allPublishedRows, clvByMarket] = await Promise.all([
+    const [allRows, allPublishedRows, clvByMarket, checklist] = await Promise.all([
       getSettledPredictionRows(),
       getPublishedPredictionRows(),
       isRealDataConfigured() ? marketClvSummaries() : Promise.resolve([]),
+      isRealDataConfigured() ? checklistPerformance() : Promise.resolve(null),
     ]);
     // Každá populační větev se měří samostatně. Reprezentace se nesmí přimíchat
     // do ligového track recordu jen proto, že nejsou evropským klubovým pohárem.
@@ -69,6 +71,7 @@ export async function GET(req: Request) {
         publishedTips: computePublishedTipRecord(publishedRows),
         countAccuracy: computeCountModelAccuracy(rows, actualCounts),
         clvByMarket,
+        checklist,
         benchmark: computeBenchmarkTrackRecord(rows),
         market: computeMarketBenchmark(rows),
         backtest: backtestRule(rows, parsed.data),

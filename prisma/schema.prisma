@@ -350,6 +350,36 @@ model MarketSignalSnapshot {
   @@index([leagueId, kickoff])
 }
 
+/// Stav rozhodovacího checklistu zmrazený před výkopem. Řádek se průběžně aktualizuje,
+/// dokud poprvé nevznikne kandidát; ten už se nikdy zpětně nepřepočítává.
+model ChecklistDecisionSnapshot {
+  id                    String   @id @default(cuid())
+  fixtureId             Int
+  leagueId              Int
+  kickoff               DateTime
+  market                String
+  side                  String
+  line                  Float?
+  status                String
+  reason                String
+  modelProbability      Float
+  marketProbability     Float
+  edge                   Float
+  decimalOdds           Float?
+  bookmaker             String?
+  sampleCount           Int
+  modelContext          String
+  modelVersion          Int
+  contextVersion        Int
+  checklistVersion      Int
+  capturedAt            DateTime
+  candidateAt           DateTime?
+
+  @@unique([fixtureId, market, checklistVersion])
+  @@index([status, kickoff])
+  @@index([modelContext, market, candidateAt])
+}
+
 /// Audit změn delegace. Uchovává i automatické nahrazení ruční volby údajem z API.
 model RefereeAssignmentAudit {
   id             String   @id @default(cuid())
@@ -565,6 +595,7 @@ model NotificationPreference {
   movementThreshold   Int     @default(3)
   smartFavoriteLeagues Boolean @default(false)
   halftimeAndFinal    Boolean @default(false)
+  checklistCandidate Boolean @default(false)
   updatedAt       DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDecisionChecklist } from "./decisionChecklist";
+import { buildDecisionChecklist, evaluateDecisionSignal } from "./decisionChecklist";
 import type { FixtureModelForecast } from "@/lib/types";
 
 const forecast = (over: Partial<FixtureModelForecast> = {}): FixtureModelForecast => ({
@@ -20,5 +20,32 @@ describe("buildDecisionChecklist", () => {
     f.corners = { home: 5, away: 4, total: 9, line: 8.5, overProbability: .68, underProbability: .32, marketOverProbability: .54, marketUnderProbability: .46, overDifference: .14, version: 2, varianceRatio: 1.2, evaluatedSample: 50, smallSample: false, nextReviewSample: 100 };
     f.marketSignals.push({ ...f.marketSignals[0], market: "CORNERS", side: "OVER", line: 8.5, modelProbability: .68, currentMarketProbability: .54 });
     expect(buildDecisionChecklist(f)[2].status).toBe("watch");
+  });
+});
+
+describe("evaluateDecisionSignal", () => {
+  const input = {
+    market: "1X2" as const,
+    modelContext: "LEAGUE",
+    lowConfidence: false,
+    readinessSample: 6,
+    modelProbability: 0.6,
+    marketProbability: 0.55,
+    samples: 3,
+    currentMove: 0,
+  };
+
+  it("vytvoří kandidáta přesně od rozdílu pěti procentních bodů", () => {
+    expect(evaluateDecisionSignal(input).status).toBe("candidate");
+    expect(evaluateDecisionSignal({ ...input, marketProbability: 0.5501 }).status).toBe("watch");
+  });
+
+  it("nepustí kandidáta před třetím kurzovým vzorkem", () => {
+    expect(evaluateDecisionSignal({ ...input, samples: 2 }).status).toBe("watch");
+  });
+
+  it("evropské a počtové modely ponechá ke sledování", () => {
+    expect(evaluateDecisionSignal({ ...input, modelContext: "EURO_CUP" }).status).toBe("watch");
+    expect(evaluateDecisionSignal({ ...input, market: "CARDS" }).status).toBe("watch");
   });
 });

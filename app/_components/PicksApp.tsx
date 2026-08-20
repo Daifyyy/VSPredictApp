@@ -72,6 +72,7 @@ interface StatsSetters {
   setPublishedTips: (v: PublishedTipRecord | null) => void;
   setCountAccuracy: (v: CountModelAccuracy | null) => void;
   setClvByMarket: (v: MarketClvSummary[]) => void;
+  setChecklist: (v: ChecklistPerformance | null) => void;
   setStatsState: (v: "loading" | "ok" | "error") => void;
 }
 
@@ -86,6 +87,20 @@ interface MarketClvSummary {
   beatRate: number;
   averageModelVsOpen: number;
   averageModelVsClose: number;
+}
+
+interface ChecklistPerformance {
+  version: number;
+  candidates: number;
+  settled: number;
+  won: number;
+  hitRate: number | null;
+  pending: number;
+  measuredClv: number;
+  averageClv: number | null;
+  positiveClvRate: number | null;
+  priced: number;
+  hypotheticalRoi: number | null;
 }
 
 interface EuropeanStats {
@@ -134,6 +149,7 @@ async function loadStats(
     s.setPublishedTips(d.publishedTips ?? null);
     s.setCountAccuracy(d.countAccuracy ?? null);
     s.setClvByMarket(d.clvByMarket ?? []);
+    s.setChecklist(d.checklist ?? null);
     s.setStatsState("ok");
   } catch {
     if (isActive()) s.setStatsState("error");
@@ -165,6 +181,7 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
   const [publishedTips, setPublishedTips] = useState<PublishedTipRecord | null>(null);
   const [countAccuracy, setCountAccuracy] = useState<CountModelAccuracy | null>(null);
   const [clvByMarket, setClvByMarket] = useState<MarketClvSummary[]>([]);
+  const [checklist, setChecklist] = useState<ChecklistPerformance | null>(null);
   const [statsState, setStatsState] = useState<"loading" | "ok" | "error">("loading");
 
   useEffect(() => {
@@ -216,6 +233,7 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
     setPublishedTips,
     setCountAccuracy,
     setClvByMarket,
+    setChecklist,
     setStatsState,
   });
 
@@ -270,6 +288,7 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
           publishedTips={publishedTips}
           countAccuracy={countAccuracy}
           clvByMarket={clvByMarket}
+          checklist={checklist}
           backtest={backtest}
           market={market}
           venue={venue}
@@ -322,6 +341,7 @@ function ModelView({
   publishedTips,
   countAccuracy,
   clvByMarket,
+  checklist,
   backtest,
   market,
   venue,
@@ -338,6 +358,7 @@ function ModelView({
   publishedTips: PublishedTipRecord | null;
   countAccuracy: CountModelAccuracy | null;
   clvByMarket: MarketClvSummary[];
+  checklist: ChecklistPerformance | null;
   backtest: BacktestResult | null;
   market: PickMarket;
   venue: Venue;
@@ -376,6 +397,7 @@ function ModelView({
   return (
     <div className="mt-4 space-y-3">
       <MarketClvDashboard rows={clvByMarket} />
+      <ChecklistPerformancePanel value={checklist} />
       {backtest && <StrategyPanel backtest={backtest} market={market} venue={venue} minProb={minProb} settled={track?.n ?? 0} />}
       <PublishedTipsPanel league={publishedTips} european={european?.publishedTips ?? null} />
       <ForecastOverview track={track} counts={countAccuracy} />
@@ -503,6 +525,33 @@ function formatRecordDate(value: string | null): string {
   return value
     ? new Date(value).toLocaleDateString("cs-CZ", { day: "numeric", month: "numeric", year: "numeric" })
     : "—";
+}
+
+function ChecklistPerformancePanel({ value }: { value: ChecklistPerformance | null }) {
+  if (!value) return null;
+  const pct = (number: number | null) => number == null ? "—" : `${Math.round(number * 100)} %`;
+  return (
+    <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="page-kicker">Rozhodovací checklist · v{value.version}</p>
+          <h3 className="mt-1 font-bold text-foreground">Skutečně zachycení kandidáti</h3>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted">Pouze stavy zmrazené před výkopem při kurzovém cronu. Úspěšnost výsledku, CLV a hypotetické ROI jsou různé ukazatele a navzájem se nezaměňují.</p>
+        </div>
+        <span className="rounded-full bg-accent-soft px-3 py-1 text-xs font-bold text-foreground">{value.candidates} kandidátů</span>
+      </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-4">
+        <Metric label="Úspěšnost" value={pct(value.hitRate)} detail={`${value.won}/${value.settled} vyhodnoceno`} />
+        <Metric label="Průměrné CLV" value={value.averageClv == null ? "—" : `${value.averageClv >= 0 ? "+" : ""}${(value.averageClv * 100).toFixed(1)} p. b.`} detail={`${value.measuredClv} se zavírací cenou`} />
+        <Metric label="Kladné CLV" value={pct(value.positiveClvRate)} detail="trh se posunul naším směrem" />
+        <Metric label="Hypotetické ROI" value={pct(value.hypotheticalRoi)} detail={`${value.priced} kandidátů s cenou · ${value.pending} čeká`} />
+      </div>
+    </section>
+  );
+}
+
+function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return <div className="rounded-xl border border-border bg-background p-3"><p className="text-[10px] font-bold uppercase tracking-wide text-muted">{label}</p><strong className="mt-1 block text-lg text-foreground">{value}</strong><small className="mt-1 block text-muted">{detail}</small></div>;
 }
 
 function PublishedTipsPanel({

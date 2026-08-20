@@ -19,6 +19,7 @@ const preferenceSchema = z.object({
   movementThreshold: z.union([z.literal(3), z.literal(5), z.literal(8)]),
   smartFavoriteLeagues: z.boolean(),
   halftimeAndFinal: z.boolean(),
+  checklistCandidate: z.boolean(),
 });
 
 export async function GET() {
@@ -32,7 +33,7 @@ export async function GET() {
     configured: pushConfigured(),
     publicKey: pushConfigured() ? process.env.VAPID_PUBLIC_KEY : null,
     subscribed: subscriptionCount > 0,
-    preference: preference ?? { enabled: true, favoriteKickoff: true, kickoffMinutes: 60, publishedPrediction: false, marketMovement: false, movementThreshold: 3, smartFavoriteLeagues: false, halftimeAndFinal: false },
+    preference: preference ?? { enabled: true, favoriteKickoff: true, kickoffMinutes: 60, publishedPrediction: false, marketMovement: false, movementThreshold: 3, smartFavoriteLeagues: false, halftimeAndFinal: false, checklistCandidate: false },
   }, { headers: { "Cache-Control": "private, no-store" } });
 }
 

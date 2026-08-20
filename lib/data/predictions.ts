@@ -79,6 +79,8 @@ import { MODEL_CONTEXT_VERSION, modelContextForLeague } from "./modelContext";
 import { getRefereeProfile, ingestRefereeHistory } from "./refereeStore";
 import { normalizeRefereeName, type RefereeEstimate } from "@/lib/picks/cards";
 import { FOUL_MODEL_VERSION, predictFouls } from "@/lib/picks/fouls";
+import { captureChecklistDecisions } from "./checklistStore";
+import { sendChecklistCandidateNotifications } from "@/lib/push";
 
 /**
  * Orchestrace predikční pipeline (běží jen na pozadí / cron, real data).
@@ -539,6 +541,8 @@ export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
    * v mezisezóně, nikdy neověřené proti živému API) selhalo tiše celý podzim.
    */
   missingMarkets: CoveredMarket[];
+  checklistCandidates: number;
+  checklistNotifications: number;
 }> {
   const now = new Date();
   const candidates = await fixturesNeedingOdds({
@@ -557,6 +561,8 @@ export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
   let errors = 0;
   let due = 0;
   let withBooks = 0;
+  let checklistCandidates = 0;
+  let checklistNotifications = 0;
   const coverage = emptyCoverage();
 
   for (const item of candidates) {
@@ -606,6 +612,13 @@ export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
         }
         await appendMarketSignalPoints(item.fixtureId, odds.books ?? [], now);
       }
+      const candidates = await captureChecklistDecisions(item.fixtureId, odds.books ?? [], now);
+      checklistCandidates += candidates.length;
+      if (candidates.length) {
+        const notification = await sendChecklistCandidateNotifications(candidates);
+        checklistNotifications += notification.sent;
+        errors += notification.errors;
+      }
     } catch (e) {
       errors++;
       logError("snapshot-odds", e, { fixtureId: item.fixtureId, plan });
@@ -622,7 +635,7 @@ export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
       { withBooks, coverage }
     );
   }
-  return { due, open, close, series, empty, errors, withBooks, coverage, missingMarkets };
+  return { due, open, close, series, empty, errors, withBooks, coverage, missingMarkets, checklistCandidates, checklistNotifications };
 }
 
 /** Dotáhne výsledky u predikcí, jejichž zápas už proběhl (batch po 20 ID). */
