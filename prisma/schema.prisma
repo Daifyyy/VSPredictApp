@@ -242,6 +242,11 @@ model FixturePrediction {
   refereeAssignedBy          String?
   lambdaCardsHomeBeforeRef   Float?
   lambdaCardsAwayBeforeRef   Float?
+  /// Neměnný point-in-time H2H kontext zachycený před výkopem. Slouží pro budoucí
+  /// backtest; do aktuální verze predikčního modelu nevstupuje.
+  h2hSnapshot       Json?
+  h2hSnapshotVersion Int?
+  h2hCapturedAt     DateTime?
   predictedAt   DateTime  @default(now())
   // Výsledek (doplní settle cron po odehrání)
   status        String    @default("NS")

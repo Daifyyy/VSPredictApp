@@ -4,10 +4,11 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { FixtureModelForecast } from "@/lib/types";
 import { COUNT_MARKET_PRESENTATION } from "@/lib/picks/countPresentation";
 import { useCurrentUser } from "./useCurrentUser";
+import { HeadToHeadCard } from "./HeadToHeadCard";
 
 type State =
   | { state: "loading" }
-  | { state: "locked" }
+  | { state: "locked"; headToHead?: FixtureModelForecast["headToHead"] }
   | { state: "empty" }
   | { state: "error" }
   | { state: "ready"; forecast: FixtureModelForecast };
@@ -29,6 +30,7 @@ export function FixtureModelCard({
         if (!response.ok) throw new Error(String(response.status));
         return response.json() as Promise<{
           locked?: boolean;
+          headToHead?: FixtureModelForecast["headToHead"];
           forecast?: FixtureModelForecast | null;
         }>;
       })
@@ -36,7 +38,7 @@ export function FixtureModelCard({
         if (!active) return;
         setData(
           result.locked
-            ? { state: "locked" }
+            ? { state: "locked", headToHead: result.headToHead }
             : result.forecast
               ? { state: "ready", forecast: result.forecast }
               : { state: "empty" }
@@ -53,7 +55,10 @@ export function FixtureModelCard({
   }, [data.state, fixtureId]);
 
   if (data.state === "loading") return <Message text="Načítám model…" />;
-  if (data.state === "locked") return <Message text="Kompletní model zápasu je součástí PRO." />;
+  if (data.state === "locked") return <div className="space-y-3">
+    <Message text="Kompletní model zápasu je součástí PRO." />
+    {data.headToHead && <HeadToHeadCard summary={data.headToHead} teamAName={teamName(data.headToHead, data.headToHead.teamAId, "Domácí")} teamBName={teamName(data.headToHead, data.headToHead.teamBId, "Hosté")} compact />}
+  </div>;
   if (data.state === "empty") return <Message text="Pro tento zápas zatím není uložená predikce." />;
   if (data.state === "error") return <Message text="Model se teď nepodařilo načíst." />;
 
@@ -96,6 +101,7 @@ export function FixtureModelCard({
       </div>
       <TempoDiscipline fouls={f.fouls} cards={f.cards} referee={f.refereeProfile} />
       <RefereeProfile profile={f.refereeProfile} expanded={countsOnly} fixtureId={fixtureId} canEdit={user?.isAdmin === true} onAssigned={() => setRevision((value) => value + 1)} />
+      {!countsOnly && f.headToHead && <HeadToHeadCard summary={f.headToHead} teamAName={teamName(f.headToHead, f.headToHead.teamAId, "Domácí")} teamBName={teamName(f.headToHead, f.headToHead.teamBId, "Hosté")} compact />}
       {(f.corners || f.cards || f.fouls) && (
         <p className="text-[10px] leading-relaxed text-muted">
           Jde o experimentální porovnání, nikoli publikovaný tip ani potvrzenou výhodu proti trhu.
@@ -103,6 +109,12 @@ export function FixtureModelCard({
       )}
     </div>
   );
+}
+
+function teamName(summary: FixtureModelForecast["headToHead"], teamId: number, fallback: string) {
+  const meeting = summary.meetings[0];
+  if (!meeting) return fallback;
+  return meeting.home.id === teamId ? meeting.home.name : meeting.away.id === teamId ? meeting.away.name : fallback;
 }
 
 function TempoDiscipline({
