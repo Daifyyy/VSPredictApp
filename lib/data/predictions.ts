@@ -80,7 +80,6 @@ import { getRefereeProfile, ingestRefereeHistory } from "./refereeStore";
 import { normalizeRefereeName, type RefereeEstimate } from "@/lib/picks/cards";
 import { FOUL_MODEL_VERSION, predictFouls } from "@/lib/picks/fouls";
 import { captureChecklistDecisions } from "./checklistStore";
-import { sendChecklistCandidateNotifications } from "@/lib/push";
 
 /**
  * Orchestrace predikční pipeline (běží jen na pozadí / cron, real data).
@@ -615,6 +614,9 @@ export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
       const candidates = await captureChecklistDecisions(item.fixtureId, odds.books ?? [], now);
       checklistCandidates += candidates.length;
       if (candidates.length) {
+        // Dynamický import drží offline kalibrační/backtest skripty nezávislé na Next-only
+        // Web Push vrstvě (`server-only`). Načte se pouze v kurzovém cronu, když kandidát vznikne.
+        const { sendChecklistCandidateNotifications } = await import("@/lib/push");
         const notification = await sendChecklistCandidateNotifications(candidates);
         checklistNotifications += notification.sent;
         errors += notification.errors;
