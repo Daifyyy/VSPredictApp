@@ -80,6 +80,7 @@ import { getRefereeProfile, ingestRefereeHistory } from "./refereeStore";
 import { normalizeRefereeName, type RefereeEstimate } from "@/lib/picks/cards";
 import { FOUL_MODEL_VERSION, predictFouls } from "@/lib/picks/fouls";
 import { captureChecklistDecisions } from "./checklistStore";
+import { captureAutonomousPortfolio, closeAutonomousPortfolio } from "./autonomousPortfolioStore";
 
 /**
  * Orchestrace predikční pipeline (běží jen na pozadí / cron, real data).
@@ -542,6 +543,7 @@ export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
   missingMarkets: CoveredMarket[];
   checklistCandidates: number;
   checklistNotifications: number;
+  autonomousCandidates: number;
 }> {
   const now = new Date();
   const candidates = await fixturesNeedingOdds({
@@ -562,6 +564,7 @@ export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
   let withBooks = 0;
   let checklistCandidates = 0;
   let checklistNotifications = 0;
+  let autonomousCandidates = 0;
   const coverage = emptyCoverage();
 
   for (const item of candidates) {
@@ -612,6 +615,10 @@ export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
         await appendMarketSignalPoints(item.fixtureId, odds.books ?? [], now);
       }
       const candidates = await captureChecklistDecisions(item.fixtureId, odds.books ?? [], now);
+      autonomousCandidates += await captureAutonomousPortfolio(item.fixtureId, odds.books ?? [], now);
+      // Kandidat muze poprve vzniknout prave v zaviracim bode; nejdriv jej zmrazime a az
+      // potom k nemu pripojime srovnatelne uzavreni stejne strany/linie.
+      if (plan.close) await closeAutonomousPortfolio(item.fixtureId, odds.books ?? [], now);
       checklistCandidates += candidates.length;
       if (candidates.length) {
         // Dynamický import drží offline kalibrační/backtest skripty nezávislé na Next-only
@@ -637,7 +644,7 @@ export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
       { withBooks, coverage }
     );
   }
-  return { due, open, close, series, empty, errors, withBooks, coverage, missingMarkets, checklistCandidates, checklistNotifications };
+  return { due, open, close, series, empty, errors, withBooks, coverage, missingMarkets, checklistCandidates, checklistNotifications, autonomousCandidates };
 }
 
 /** Dotáhne výsledky u predikcí, jejichž zápas už proběhl (batch po 20 ID). */

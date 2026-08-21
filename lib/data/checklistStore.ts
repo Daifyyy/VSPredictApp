@@ -23,6 +23,7 @@ export interface NewChecklistCandidate {
 function priceFor(books: BookOdds[], market: SignalMarket, side: SignalSide, line: number | null) {
   if (market === "1X2") return bestPrice(books, side === "HOME" ? "home" : side === "DRAW" ? "draw" : "away");
   if (market === "OVER_25") return bestPrice(books, side === "OVER" ? "over25" : "under25");
+  if (market === "BTTS") return bestPrice(books, side === "OVER" ? "btts" : "bttsNo");
   if (line == null) return null;
   return bestLinePrice(books, market === "CORNERS" ? "corners" : "cards", line, side === "OVER" ? "over" : "under");
 }
@@ -44,6 +45,8 @@ export async function captureChecklistDecisions(
   const created: NewChecklistCandidate[] = [];
   for (const signal of signals) {
     const market = signal.market as SignalMarket;
+    // BTTS ma vlastni autonomni strategii; checklist v1 je zamerne jen 1X2/Over/rohy/karty.
+    if (market === "BTTS") continue;
     const side = signal.side as SignalSide;
     const current = marketProbabilityAt(books, market, side, signal.line);
     if (current == null) continue;

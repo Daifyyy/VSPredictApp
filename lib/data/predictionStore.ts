@@ -3,7 +3,6 @@ import type { PredictionRow } from "@/lib/types";
 import { prisma } from "@/lib/db";
 import { PREDICT_PARAMS } from "@/lib/stats/predict";
 import { FINISHED_STATUSES } from "./apiFootball";
-import { publishedOutcomeTip } from "@/lib/picks/publication";
 import { DEFAULT_CORNER_TUNING } from "@/lib/picks/corners";
 import { DEFAULT_CARD_TUNING } from "@/lib/picks/cards";
 
@@ -135,12 +134,8 @@ export async function upsertPrediction(row: PredictionUpsert): Promise<void> {
   const existing = await prisma.fixturePrediction.findUnique({ where: { fixtureId: row.fixtureId } });
   // Prázdný fixture payload nesmí smazat ruční delegaci. Neprázdný údaj API je autoritativní.
   const preserveManual = existing?.refereeSource === "MANUAL" && !row.refereeName;
-  // Obrana do hloubky: i kdyby volající omylem poslal již rozehraný zápas,
-  // publikační snapshot se po výkopu nesmí vytvořit.
-  const published = new Date(row.kickoff).getTime() > now.getTime()
-    ? publishedOutcomeTip(row)
-    : null;
-  const publishedAt = published ? now : null;
+  // Politika 1X2 v1 je ukoncena. Nove vybery vznikaji az po porovnani s trhem
+  // v AutonomousTipSnapshot; tyto sloupce zustavaji jen jako historicky audit v1.
   const predictionData = {
     leagueId: row.leagueId,
     season: row.season,
@@ -201,10 +196,10 @@ export async function upsertPrediction(row: PredictionUpsert): Promise<void> {
       h2hSnapshot: row.h2hSnapshot == null ? Prisma.DbNull : row.h2hSnapshot as unknown as Prisma.InputJsonValue,
       h2hSnapshotVersion: row.h2hSnapshotVersion ?? null,
       h2hCapturedAt: row.h2hCapturedAt ? new Date(row.h2hCapturedAt) : null,
-      published1x2Side: published?.side ?? null,
-      published1x2Prob: published?.prob ?? null,
-      publicationPolicyVersion: published?.policyVersion ?? null,
-      publishedAt,
+      published1x2Side: null,
+      published1x2Prob: null,
+      publicationPolicyVersion: null,
+      publishedAt: null,
     },
     // Již publikovaný tip je neměnný auditní snapshot. Pozdější přepočet
     // prognózy ho nesmí změnit ani odstranit.
@@ -219,17 +214,6 @@ export async function upsertPrediction(row: PredictionUpsert): Promise<void> {
         h2hSnapshot: row.h2hSnapshot as unknown as Prisma.InputJsonValue,
         h2hSnapshotVersion: row.h2hSnapshotVersion ?? null,
         h2hCapturedAt: row.h2hCapturedAt ? new Date(row.h2hCapturedAt) : now,
-      },
-    });
-  }
-  if (published) {
-    await prisma.fixturePrediction.updateMany({
-      where: { fixtureId: row.fixtureId, published1x2Side: null },
-      data: {
-        published1x2Side: published.side,
-        published1x2Prob: published.prob,
-        publicationPolicyVersion: published.policyVersion,
-        publishedAt,
       },
     });
   }

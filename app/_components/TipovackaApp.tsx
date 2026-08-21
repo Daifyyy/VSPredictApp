@@ -14,8 +14,9 @@ import type { SessionUser } from "./sessionUser";
 import { competitionGroupLabel, groupCompetitionFixtures } from "@/lib/competitionGrouping";
 import type { CompetitionGroup } from "@/lib/data/catalog";
 import { CompetitionDayTabs } from "./CompetitionDayTabs";
+import { ModelPortfolio } from "./ModelPortfolio";
 
-type View = "tipovat" | "tipy" | "bilance";
+type View = "tipovat" | "tipy" | "bilance" | "portfolio";
 
 /**
  * Od kolika vyhodnocených tipů má smysl číst úspěšnost a ROI jako výkon, ne jako šum.
@@ -116,7 +117,7 @@ export function TipovackaApp({
   useEffect(() => {
     const value = new URLSearchParams(window.location.search).get("view");
     queueMicrotask(() => {
-      if (value === "tipovat" || value === "tipy" || value === "bilance") setView(value);
+      if (value === "tipovat" || value === "tipy" || value === "bilance" || value === "portfolio") setView(value);
       setRestored(true);
     });
   }, []);
@@ -173,6 +174,7 @@ export function TipovackaApp({
             label: pending > 0 ? `Moje tipy (${pending})` : "Moje tipy",
           },
           { value: "bilance" as View, label: "Bilance" },
+          { value: "portfolio" as View, label: "Modelové portfolio" },
         ]}
         active={view}
         onSelect={setView}
@@ -203,6 +205,7 @@ export function TipovackaApp({
         <TipyView tips={tips} loading={loading} onDeleted={refresh} />
       )}
       {view === "bilance" && <BilanceView stats={stats} loading={loading} />}
+      {view === "portfolio" && <ModelPortfolio isPro={user.tier === "PRO"} />}
     </main>
   );
 }

@@ -6,7 +6,7 @@ import { mainHalfLine } from "./countDistribution";
 
 export const MARKET_SIGNAL_POLICY_VERSION = 1;
 export const COUNT_MARKET_SIGNAL_POLICY_VERSION = 2;
-export type SignalMarket = "1X2" | "OVER_25" | "CORNERS" | "CARDS";
+export type SignalMarket = "1X2" | "OVER_25" | "BTTS" | "CORNERS" | "CARDS";
 export type SignalSide = "HOME" | "DRAW" | "AWAY" | "OVER" | "UNDER";
 
 export interface FrozenMarketSignal {
@@ -61,6 +61,25 @@ export function freezeMarketSignals(row: PredictionRow, books: BookOdds[]): Froz
     });
   }
 
+  let bttsBook: { yes: number; no: number; overround: number } | null = null;
+  for (const book of books) {
+    if (book.btts == null || book.bttsNo == null) continue;
+    const sum = 1 / book.btts + 1 / book.bttsNo;
+    const candidate = { yes: 1 / book.btts / sum, no: 1 / book.bttsNo / sum, overround: sum - 1 };
+    if (!bttsBook || candidate.overround < bttsBook.overround) bttsBook = candidate;
+  }
+  if (bttsBook) {
+    const yes = row.bttsYes >= 0.5;
+    out.push({
+      market: "BTTS",
+      side: yes ? "OVER" : "UNDER",
+      line: null,
+      modelProbability: yes ? row.bttsYes : 1 - row.bttsYes,
+      marketProbability: yes ? bttsBook.yes : bttsBook.no,
+      publishedTip: false,
+    });
+  }
+
   for (const market of ["CORNERS", "CARDS"] as const) {
     const lineMarket = market === "CORNERS" ? "corners" : "cards";
     const line = mainHalfLine(books, lineMarket);
@@ -99,6 +118,17 @@ export function marketProbabilityAt(
     const fair = sharpFairTotal(books);
     if (!fair) return null;
     return side === "OVER" ? fair.over25 : fair.under25;
+  }
+  if (market === "BTTS") {
+    let best: { yes: number; no: number; overround: number } | null = null;
+    for (const book of books) {
+      if (book.btts == null || book.bttsNo == null) continue;
+      const sum = 1 / book.btts + 1 / book.bttsNo;
+      const candidate = { yes: 1 / book.btts / sum, no: 1 / book.bttsNo / sum, overround: sum - 1 };
+      if (!best || candidate.overround < best.overround) best = candidate;
+    }
+    if (!best) return null;
+    return side === "OVER" ? best.yes : best.no;
   }
   if (line == null) return null;
   const fair = sharpLineFair(books, market === "CORNERS" ? "corners" : "cards", line);

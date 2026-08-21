@@ -380,6 +380,48 @@ model ChecklistDecisionSnapshot {
   @@index([modelContext, market, candidateAt])
 }
 
+/// Nemenny ucetni zaznam automaticke modelove strategie. Jeden radek = simulovana sazka 1u
+/// podle konkretni verzovane politiky; po prvnim splneni bran se uz nikdy neprepisuje.
+model AutonomousTipSnapshot {
+  id                    String   @id @default(cuid())
+  fixtureId             Int
+  leagueId              Int
+  kickoff               DateTime
+  homeTeamId            Int
+  awayTeamId            Int
+  homeName               String
+  awayName               String
+  homeLogo               String?
+  awayLogo               String?
+  strategy               String
+  policyVersion          Int
+  market                 String
+  side                   String
+  line                   Float?
+  modelProbability       Float
+  marketProbability      Float
+  edge                    Float
+  expectedValue          Float?
+  decimalOdds            Float?
+  bookmaker              String?
+  sampleCount            Int
+  reason                  String
+  stake                   Float    @default(1)
+  modelContext            String
+  modelVersion            Int
+  contextVersion          Int
+  status                  String
+  capturedAt              DateTime
+  qualifiedAt             DateTime?
+  closingMarketProbability Float?
+  closedAt                DateTime?
+
+  @@unique([fixtureId, strategy, policyVersion])
+  @@index([strategy, modelContext, qualifiedAt])
+  @@index([status, kickoff])
+  @@index([kickoff])
+}
+
 /// Audit změn delegace. Uchovává i automatické nahrazení ruční volby údajem z API.
 model RefereeAssignmentAudit {
   id             String   @id @default(cuid())
