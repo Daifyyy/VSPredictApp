@@ -650,6 +650,21 @@ model DirectorCareer {
   competingBids     DirectorCompetingBid[]
   transferPayments  DirectorTransferPayment[]
   transferClauses   DirectorTransferClause[]
+  stadiumZones      DirectorStadiumZone[]
+  capitalProjects   DirectorCapitalProject[]
+  projectApprovals  DirectorProjectApproval[]
+  projectFinancing  DirectorProjectFinance[]
+  supporterSegments DirectorSupporterSegment[]
+  ticketPolicies    DirectorTicketPolicy[]
+  attendanceRecords DirectorAttendanceSnapshot[]
+  academyTeams      DirectorAcademyTeam[]
+  academyMatches    DirectorAcademyMatch[]
+  academyIntakes    DirectorAcademyIntake[]
+  academyPlans      DirectorAcademyPlan[]
+  identitySnapshots DirectorIdentitySnapshot[]
+  sponsors          DirectorSponsor[]
+  sponsorOffers     DirectorSponsorOffer[]
+  sponsorContracts  DirectorSponsorContract[]
 
   @@index([userId, status])
   @@index([ownerEmail, createdAt])
@@ -758,6 +773,10 @@ model DirectorPlayer {
   returnWindowMax     Int?
   minutesLimit        Int?
   recurrenceRisk      Float    @default(0)
+  squadLevel          String   @default("SENIOR")
+  homegrownClubId     String?
+  academyJoinedDay    Int?
+  developmentFocus    String?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -769,7 +788,300 @@ model DirectorPlayer {
   matchAppearances DirectorPlayerAppearance[]
 
   @@index([clubId, position])
+  @@index([clubId, squadLevel])
   @@index([marketValue])
+}
+
+model DirectorStadiumZone {
+  id                String         @id @default(cuid())
+  careerId          String
+  clubId            String
+  kind              String
+  name              String
+  level             Int            @default(1)
+  capacity          Int            @default(0)
+  condition         Float          @default(65)
+  quality           Float          @default(50)
+  operatingCost     Int            @default(0)
+  revenuePotential  Int            @default(0)
+  temporaryCapacity Int?
+  metadata          Json           @default("{}")
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  career            DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@unique([careerId, clubId, kind])
+  @@index([careerId, clubId])
+}
+
+model DirectorCapitalProject {
+  id                String                    @id @default(cuid())
+  careerId          String
+  clubId            String
+  kind              String
+  title             String
+  phase             String                    @default("INTENT")
+  status            String                    @default("ACTIVE")
+  startedDay        Int
+  targetDay         Int?
+  completedDay      Int?
+  costMin           Int
+  costMax           Int
+  approvedCost      Int?
+  spent             Int                       @default(0)
+  contingency       Int                       @default(0)
+  operatingCost     Int                       @default(0)
+  capacityDelta     Int                       @default(0)
+  temporaryCapacity Int?
+  benefit           Json                      @default("{}")
+  riskProfile       Json                      @default("{}")
+  history           Json                      @default("[]")
+  version           Int                       @default(1)
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  career            DirectorCareer            @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  approvals         DirectorProjectApproval[]
+  financing         DirectorProjectFinance[]
+
+  @@index([careerId, clubId, status])
+}
+
+model DirectorProjectApproval {
+  id              String                 @id @default(cuid())
+  careerId        String
+  projectId       String
+  stakeholder     String
+  status          String                 @default("PENDING")
+  trustAtDecision Float?
+  condition       Json                   @default("{}")
+  decidedDay      Int?
+  explanation     String?
+  createdAt       DateTime               @default(now())
+  career          DirectorCareer         @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  project         DirectorCapitalProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, stakeholder])
+}
+
+model DirectorProjectFinance {
+  id           String                 @id @default(cuid())
+  careerId     String
+  projectId    String
+  source       String
+  amount       Int
+  interestRate Float                  @default(0)
+  termDays     Int?
+  installment  Int?
+  nextDueDay   Int?
+  remaining    Int
+  condition    Json                   @default("{}")
+  status       String                 @default("PROPOSED")
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  career       DirectorCareer         @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  project      DirectorCapitalProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, status, nextDueDay])
+}
+
+model DirectorSupporterSegment {
+  id                  String         @id @default(cuid())
+  careerId            String
+  clubId              String
+  kind                String
+  size                Int
+  trust               Float          @default(60)
+  priceSensitivity    Float
+  sportingSensitivity Float
+  identitySensitivity Float
+  preferences         Json           @default("{}")
+  conflict            Float          @default(0)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  career              DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@unique([careerId, clubId, kind])
+}
+
+model DirectorTicketPolicy {
+  id            String         @id @default(cuid())
+  careerId      String
+  clubId        String
+  seasonId      String?
+  standardPrice Int
+  familyPrice   Int
+  premiumPrice  Int
+  seasonTicket  Int
+  status        String         @default("ACTIVE")
+  effectiveDay  Int
+  createdAt     DateTime       @default(now())
+  career        DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, clubId, status])
+}
+
+model DirectorAttendanceSnapshot {
+  id                String         @id @default(cuid())
+  careerId          String
+  clubId            String
+  matchId           String         @unique
+  dayIndex          Int
+  capacity          Int
+  attendance        Int
+  ticketRevenue     Int
+  commercialRevenue Int
+  segmentDemand     Json           @default("{}")
+  explanation       Json           @default("[]")
+  createdAt         DateTime       @default(now())
+  career            DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, clubId, dayIndex])
+}
+
+model DirectorAcademyTeam {
+  id              String         @id @default(cuid())
+  careerId        String
+  clubId          String
+  level           String         @default("U19")
+  seasonNumber    Int
+  reputation      Float          @default(50)
+  coachingQuality Float          @default(50)
+  status          String         @default("ACTIVE")
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  career          DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@unique([careerId, clubId, level, seasonNumber])
+}
+
+model DirectorAcademyMatch {
+  id           String         @id @default(cuid())
+  careerId     String
+  teamId       String
+  seasonNumber Int
+  round        Int
+  scheduledDay Int
+  opponent     String
+  status       String         @default("SCHEDULED")
+  goalsFor     Int?
+  goalsAgainst Int?
+  performance  Float?
+  minutes      Json           @default("{}")
+  createdAt    DateTime       @default(now())
+  career       DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, seasonNumber, round])
+  @@index([careerId, scheduledDay, status])
+}
+
+model DirectorAcademyIntake {
+  id           String         @id @default(cuid())
+  careerId     String
+  clubId       String
+  seasonNumber Int
+  dayIndex     Int
+  playerIds    Json           @default("[]")
+  quality      Float
+  explanation  Json           @default("[]")
+  createdAt    DateTime       @default(now())
+  career       DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@unique([careerId, clubId, seasonNumber])
+}
+
+model DirectorAcademyPlan {
+  id            String         @id @default(cuid())
+  careerId      String
+  playerId      String         @unique
+  focus         String
+  pathway       String         @default("U19")
+  status        String         @default("ACTIVE")
+  readiness     Float          @default(30)
+  lastReviewDay Int
+  explanation   Json           @default("[]")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  career        DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, status])
+}
+
+model DirectorIdentitySnapshot {
+  id          String         @id @default(cuid())
+  careerId    String
+  clubId      String
+  dayIndex    Int
+  declared    Json           @default("[]")
+  observed    Json           @default("{}")
+  alignment   Float
+  credibility Float
+  drivers     Json           @default("[]")
+  createdAt   DateTime       @default(now())
+  career      DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@unique([careerId, clubId, dayIndex])
+}
+
+model DirectorSponsor {
+  id           String                    @id @default(cuid())
+  careerId     String
+  name         String
+  sector       String
+  reputation   Float
+  ethics       Float
+  budget       Int
+  audience     String
+  requirements Json                      @default("{}")
+  createdAt    DateTime                  @default(now())
+  career       DirectorCareer            @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  offers       DirectorSponsorOffer[]
+  contracts    DirectorSponsorContract[]
+
+  @@index([careerId, sector])
+}
+
+model DirectorSponsorOffer {
+  id           String          @id @default(cuid())
+  careerId     String
+  sponsorId    String
+  clubId       String
+  category     String
+  guaranteed   Int
+  bonus        Int
+  durationDays Int
+  namingRights Boolean         @default(false)
+  exclusivity  String?
+  conditions   Json            @default("{}")
+  expiresDay   Int
+  status       String          @default("OPEN")
+  createdAt    DateTime        @default(now())
+  career       DirectorCareer  @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  sponsor      DirectorSponsor @relation(fields: [sponsorId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, clubId, status, expiresDay])
+}
+
+model DirectorSponsorContract {
+  id           String          @id @default(cuid())
+  careerId     String
+  sponsorId    String
+  clubId       String
+  offerId      String?         @unique
+  category     String
+  guaranteed   Int
+  bonus        Int
+  startDay     Int
+  endDay       Int
+  namingRights Boolean         @default(false)
+  exclusivity  String?
+  conditions   Json            @default("{}")
+  status       String          @default("ACTIVE")
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  career       DirectorCareer  @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  sponsor      DirectorSponsor @relation(fields: [sponsorId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, clubId, status, endDay])
 }
 
 model DirectorCoach {

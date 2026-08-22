@@ -17,6 +17,7 @@ import { boardReview, coachEvaluation, informationQuality, playerExpectation, ST
 import { defaultSportingPolicy, meetingDecision, normalizePolicy, PHASES, roleScores, trainingUpdate, type SportingStyle } from "./sporting";
 import { chooseMicrocycle, defaultCoachMemory, evolveRoleFamiliarity, medicalState, systemCosts, updateCoachMemory, type CoachMemoryState, type MatchEvidence } from "./adaptation";
 import { cashFlowProjection, contractOfferUtility, dynamicMarketValue, FOREIGN_MARKET_CLUBS, scoutingSnapshot } from "./market";
+import { academyDevelopment, attendanceDemand, identityProfile, PROJECTS, projectShock, projectStudy, sponsorOfferValue, type CapitalProjectKind } from "./infrastructure";
 
 const CAREER_INCLUDE = {
   clubs: { include: { players: true, coaches: true }, orderBy: { name: "asc" as const } },
@@ -59,6 +60,21 @@ const CAREER_INCLUDE = {
   competingBids: { orderBy: { createdAt: "desc" as const }, take: 80 },
   transferPayments: { orderBy: { dueDay: "asc" as const }, take: 160 },
   transferClauses: true,
+  stadiumZones: true,
+  capitalProjects: { include: { approvals: true, financing: true }, orderBy: { createdAt: "desc" as const }, take: 20 },
+  projectApprovals: true,
+  projectFinancing: true,
+  supporterSegments: true,
+  ticketPolicies: { orderBy: { createdAt: "desc" as const }, take: 10 },
+  attendanceRecords: { orderBy: { dayIndex: "desc" as const }, take: 40 },
+  academyTeams: { orderBy: { seasonNumber: "desc" as const }, take: 5 },
+  academyMatches: { orderBy: { scheduledDay: "desc" as const }, take: 80 },
+  academyIntakes: { orderBy: { seasonNumber: "desc" as const }, take: 5 },
+  academyPlans: true,
+  identitySnapshots: { orderBy: { dayIndex: "desc" as const }, take: 20 },
+  sponsors: true,
+  sponsorOffers: { orderBy: { createdAt: "desc" as const }, take: 30 },
+  sponsorContracts: { orderBy: { createdAt: "desc" as const }, take: 20 },
 } satisfies Prisma.DirectorCareerInclude;
 
 type LoadedCareer = Prisma.DirectorCareerGetPayload<{ include: typeof CAREER_INCLUDE }>;
@@ -225,6 +241,98 @@ async function upgradeTransferWorld(tx: Prisma.TransactionClient, career: Loaded
   await tx.directorCareer.update({ where: { id: career.id }, data: { version: 6 } });
 }
 
+const SUPPORTER_SEGMENTS = [
+  { kind: "CORE", share: .12, price: .35, sport: .65, identity: .95, preference: "Aktivní sektor a klubová identita" },
+  { kind: "SEASON", share: .25, price: .55, sport: .7, identity: .7, preference: "Stabilita, výhled a permanentky" },
+  { kind: "FAMILY", share: .2, price: .9, sport: .35, identity: .55, preference: "Cena, bezpečnost a komfort" },
+  { kind: "CASUAL", share: .28, price: .7, sport: .9, identity: .3, preference: "Atraktivita soupeře a výsledky" },
+  { kind: "ONLINE", share: .15, price: .2, sport: .8, identity: .65, preference: "Obsah, transparentnost a ambice" },
+] as const;
+const SPONSOR_TEMPLATES = [
+  { name: "Morava Energy", sector: "ENERGY", reputation: 64, ethics: 58, audience: "REGIONAL" },
+  { name: "North Data Systems", sector: "TECH", reputation: 76, ethics: 78, audience: "DIGITAL" },
+  { name: "Crown Bet", sector: "BETTING", reputation: 72, ethics: 32, audience: "MASS" },
+  { name: "FamilyFood", sector: "RETAIL", reputation: 61, ethics: 72, audience: "FAMILY" },
+] as const;
+
+async function upgradeInfrastructureWorld(tx: Prisma.TransactionClient, career: LoadedCareer) {
+  if (career.version >= 7) return;
+  const club = career.clubs.find((item) => item.isManaged)!; const season = career.seasons[0]; const rand = seeded(hashSeed(career.worldSeed, "infrastructure-v7"));
+  const zones = [
+    { kind: "PITCH", name: "Trávník", capacity: 0, quality: club.stadiumCondition, operatingCost: 18_000, revenuePotential: 0 },
+    { kind: "STANDS", name: "Tribuny", capacity: Math.round(club.stadiumCapacity * .72), quality: 55, operatingCost: 42_000, revenuePotential: 45_000 },
+    { kind: "ACTIVE_END", name: "Aktivní sektor", capacity: Math.round(club.stadiumCapacity * .16), quality: club.stadiumAtmosphere, operatingCost: 12_000, revenuePotential: 8_000 },
+    { kind: "HOSPITALITY", name: "Hospitality", capacity: Math.round(club.stadiumCapacity * .04), quality: club.stadiumCommercial, operatingCost: 25_000, revenuePotential: 90_000 },
+    { kind: "COMMERCIAL", name: "Komerční prostory", capacity: 0, quality: club.stadiumCommercial, operatingCost: 15_000, revenuePotential: 65_000 },
+    { kind: "SAFETY", name: "Bezpečnost", capacity: 0, quality: 62, operatingCost: 17_000, revenuePotential: 0 },
+    { kind: "ACCESS", name: "Dostupnost", capacity: 0, quality: 58, operatingCost: 8_000, revenuePotential: 0 },
+  ];
+  await tx.directorStadiumZone.createMany({ data: zones.map((zone) => ({ careerId: career.id, clubId: club.id, condition: zone.quality, ...zone })), skipDuplicates: true });
+  await tx.directorSupporterSegment.createMany({ data: SUPPORTER_SEGMENTS.map((segment, index) => ({ careerId: career.id, clubId: club.id, kind: segment.kind, size: Math.round(club.stadiumCapacity * 1.5 * segment.share), trust: clamp(club.fanTrust + (index - 2) * 2), priceSensitivity: segment.price, sportingSensitivity: segment.sport, identitySensitivity: segment.identity, preferences: { headline: segment.preference } })), skipDuplicates: true });
+  await tx.directorTicketPolicy.create({ data: { careerId: career.id, clubId: club.id, seasonId: season?.id, standardPrice: 22, familyPrice: 14, premiumPrice: 75, seasonTicket: 320, effectiveDay: career.dayIndex } });
+  const academy = await tx.directorAcademyTeam.create({ data: { careerId: career.id, clubId: club.id, seasonNumber: season?.number ?? 1, reputation: 38 + club.academyLevel * 8, coachingQuality: 42 + club.academyLevel * 9 } });
+  const team: GameTeam = { id: club.externalTeamId - 700_000, name: `${club.name} U19`, short: `${club.shortName}U19`, color: club.primaryColor, attack: club.baseAttack * .8, defense: club.baseDefense * 1.12, homeBoost: 1.05 };
+  const youth = generatePlayers(team, clamp((club.baseAttack + 2.5 - club.baseDefense) * 18 + club.academyLevel * 4, 38, 67), career.gameDate).slice(0, 18).map((player, index) => ({ ...player, age: 16 + index % 4, squadLevel: "U19", homegrownClubId: club.id, academyJoinedDay: career.dayIndex, developmentFocus: ["TECHNIQUE", "PHYSICAL", "MENTAL", "TACTICAL"][index % 4], weeklyWage: Math.min(400, player.weeklyWage), marketValue: Math.round(player.marketValue * .18), owningClubId: club.id, promisedRole: "ACADEMY" }));
+  for (const player of youth) { const created = await tx.directorPlayer.create({ data: { ...player, clubId: club.id } }); await tx.directorAcademyPlan.create({ data: { careerId: career.id, playerId: created.id, focus: player.developmentFocus!, pathway: "U19", readiness: clamp((player.ability - 35) * 1.3), lastReviewDay: career.dayIndex, explanation: ["Výchozí plán vychází z věku, schopností a zázemí akademie."] } }); }
+  await tx.directorAcademyMatch.createMany({ data: Array.from({ length: 16 }, (_, index) => ({ careerId: career.id, teamId: academy.id, seasonNumber: season?.number ?? 1, round: index + 1, scheduledDay: career.dayIndex + 4 + index * 5, opponent: `Akademie ${index + 1}` })) });
+  await tx.directorAcademyIntake.create({ data: { careerId: career.id, clubId: club.id, seasonNumber: season?.number ?? 1, dayIndex: career.dayIndex, playerIds: [], quality: 40 + club.academyLevel * 8, explanation: ["První kádr U19 byl vytvořen z aktuální úrovně klubové akademie."] } });
+  const sponsors = [];
+  for (const template of SPONSOR_TEMPLATES) sponsors.push(await tx.directorSponsor.create({ data: { careerId: career.id, ...template, budget: Math.round((450_000 + club.reputation * 18_000) * (.75 + rand() * .6)), requirements: { identity: template.audience } } }));
+  for (const [index, sponsor] of sponsors.entries()) { const value = sponsorOfferValue({ reputation: club.reputation, attendance: club.stadiumCapacity * club.stadiumAttendance, onlineReach: 12_000, stability: career.boardTrust, sponsorBudget: sponsor.budget, ethics: sponsor.ethics }); await tx.directorSponsorOffer.create({ data: { careerId: career.id, sponsorId: sponsor.id, clubId: club.id, category: index === 0 ? "MAIN" : index === 1 ? "DIGITAL" : index === 2 ? "STADIUM" : "COMMUNITY", guaranteed: value.guaranteed, bonus: value.bonus, durationDays: 120, namingRights: index === 2, exclusivity: sponsor.sector, conditions: { topHalfBonus: true, reputationalRisk: value.reputationalRisk }, expiresDay: career.dayIndex + 12 } }); }
+  const declared = asStringArray(career.identityTags).filter((item) => ["ACADEMY", "LOCAL", "DATA", "SUSTAINABLE", "ATTRACTIVE", "WIN_NOW", "COMMERCIAL"].includes(item)).slice(0, 3);
+  await tx.directorIdentitySnapshot.create({ data: { careerId: career.id, clubId: club.id, dayIndex: career.dayIndex, declared, observed: {}, alignment: 50, credibility: 60, drivers: ["Identita se začne odvozovat z rozhodnutí ve světě v7."] } });
+  await tx.directorCausalLog.create({ data: { careerId: career.id, dayIndex: career.dayIndex, sourceType: "MIGRATION", category: "CLUB", headline: "Klub získal dlouhodobou infrastrukturu a akademii", explanation: "Stadion, U19, fanoušci, partneři a identita se od tohoto dne vyvíjejí z konkrétních rozhodnutí a účetních návazností.", importance: 4 } });
+  await tx.directorCareer.update({ where: { id: career.id }, data: { version: 7 } });
+}
+
+async function processInfrastructureDay(tx: Prisma.TransactionClient, career: LoadedCareer, day: number, clubs: LoadedCareer["clubs"]) {
+  const club = clubs.find((item) => item.isManaged)!;
+  for (const finance of career.projectFinancing.filter((item) => item.status === "ACTIVE" && item.nextDueDay !== null && item.nextDueDay <= day && item.remaining > 0)) {
+    const payment = Math.min(finance.remaining, finance.installment ?? finance.remaining); const project = career.capitalProjects.find((item) => item.id === finance.projectId);
+    if (club.cashBalance < payment) { if (project) await tx.directorCapitalProject.update({ where: { id: project.id }, data: { status: "PAUSED" } }); continue; }
+    await tx.directorClub.update({ where: { id: club.id }, data: { cashBalance: { decrement: payment } } });
+    await tx.directorProjectFinance.update({ where: { id: finance.id }, data: { remaining: { decrement: payment }, nextDueDay: payment >= finance.remaining ? null : day + 30, status: payment >= finance.remaining ? "PAID" : "ACTIVE" } });
+    await tx.directorLedgerEntry.create({ data: { careerId: career.id, clubId: club.id, dayIndex: day, category: "PROJECT_FINANCE", direction: "OUT", amount: payment, sourceType: "CAPITAL_PROJECT", sourceId: finance.projectId, description: `Splátka financování: ${project?.title ?? "klubový projekt"}` } });
+  }
+  if (day % 30 === 0) for (const project of career.capitalProjects.filter((item) => item.status === "COMPLETED" && item.operatingCost > 0)) { const cost = Math.round(project.operatingCost / 4); if (club.cashBalance >= cost) { await tx.directorClub.update({ where: { id: club.id }, data: { cashBalance: { decrement: cost } } }); await tx.directorLedgerEntry.create({ data: { careerId: career.id, clubId: club.id, dayIndex: day, category: "FACILITY_OPERATIONS", direction: "OUT", amount: cost, sourceType: "CAPITAL_PROJECT", sourceId: project.id, description: `Provozní náklady: ${project.title}` } }); } }
+  for (const project of career.capitalProjects.filter((item) => item.status === "ACTIVE" && item.targetDay !== null && item.targetDay <= day)) {
+    if (project.phase === "STUDY") {
+      const trust = { BOARD: career.boardTrust, OWNER: career.boardTrust + 5, CITY: career.publicTrust, SUPPORTERS: club.fanTrust };
+      await tx.directorProjectApproval.createMany({ data: Object.entries(trust).map(([stakeholder, value]) => ({ careerId: career.id, projectId: project.id, stakeholder, status: value >= (project.kind === "NEW_STADIUM" ? 52 : 42) ? "APPROVED" : "CONDITIONAL", trustAtDecision: value, condition: value >= 52 ? {} : { consultation: true }, decidedDay: day, explanation: value >= 52 ? "Projekt odpovídá dlouhodobému směru klubu." : "Stakeholder požaduje omezení rizika a veřejnou konzultaci." })), skipDuplicates: true });
+      await tx.directorCapitalProject.update({ where: { id: project.id }, data: { phase: "APPROVALS", targetDay: day + 1 } });
+    } else if (project.phase === "APPROVALS") {
+      const approvals = await tx.directorProjectApproval.findMany({ where: { projectId: project.id } }); const denied = approvals.some((item) => item.status === "DENIED"); await tx.directorCapitalProject.update({ where: { id: project.id }, data: { phase: denied ? "CLOSED" : "FINANCING", status: denied ? "REJECTED" : "ACTIVE", targetDay: null } });
+    } else if (project.phase === "CONSTRUCTION") {
+      const risk = projectShock({ seed: career.worldSeed, projectId: project.id, day, confidence: Number((project.riskProfile as { confidence?: number }).confidence ?? .6), spent: project.spent, approvedCost: project.approvedCost ?? project.costMax });
+      if (risk && project.spent + risk.overrun <= (project.approvedCost ?? project.costMax) + project.contingency) { await tx.directorCapitalProject.update({ where: { id: project.id }, data: { spent: { increment: risk.overrun }, targetDay: day + risk.delay, history: [...(Array.isArray(project.history) ? project.history : []), { day, ...risk }] } }); }
+      else if (risk) {
+        await tx.directorCapitalProject.update({ where: { id: project.id }, data: { phase: "PAUSED", status: "PAUSED", targetDay: null, history: [...(Array.isArray(project.history) ? project.history : []), { day, ...risk, note: "Riziko překročilo schválenou rezervu; projekt vyžaduje nové financování nebo změnu rozsahu." }] } });
+      } else {
+        const benefit = project.benefit as { zone?: string; quality?: number; atmosphere?: number; commercial?: number };
+        if (benefit.zone === "ALL") await tx.directorStadiumZone.updateMany({ where: { careerId: career.id, clubId: club.id }, data: { quality: { increment: benefit.quality ?? 0 }, temporaryCapacity: null } });
+        else if (benefit.zone && benefit.zone !== "ACADEMY") await tx.directorStadiumZone.updateMany({ where: { careerId: career.id, clubId: club.id, kind: benefit.zone }, data: { quality: { increment: benefit.quality ?? 0 }, temporaryCapacity: null } });
+        await tx.directorClub.update({ where: { id: club.id }, data: { stadiumCapacity: { increment: project.capacityDelta }, stadiumAtmosphere: { increment: benefit.atmosphere ?? 0 }, stadiumCommercial: { increment: benefit.commercial ?? 0 }, academyLevel: benefit.zone === "ACADEMY" ? { increment: 1 } : undefined } });
+        await tx.directorCapitalProject.update({ where: { id: project.id }, data: { phase: "OPERATING", status: "COMPLETED", completedDay: day, targetDay: null } });
+      }
+    }
+  }
+  for (const match of career.academyMatches.filter((item) => item.status === "SCHEDULED" && item.scheduledDay === day)) {
+    const youth = club.players.filter((item) => item.squadLevel === "U19" && item.age <= 19); const rand = seeded(hashSeed(career.worldSeed, match.id, day)); const strength = youth.slice().sort((a, b) => b.ability - a.ability).slice(0, 11).reduce((sum, item) => sum + item.ability, 0) / 11;
+    const performance = clamp((strength - 50) / 18 + (rand() - .5) * 1.4, -2, 2); const goalsFor = Math.max(0, Math.floor(1.25 + performance * .5 + rand() * 2)); const goalsAgainst = Math.max(0, Math.floor(1.4 - performance * .35 + rand() * 2)); const minutes: Record<string, number> = {};
+    youth.slice().sort((a, b) => b.matchReadiness - a.matchReadiness).slice(0, 14).forEach((player, index) => { minutes[player.id] = index < 11 ? 90 : 30; });
+    await tx.directorAcademyMatch.update({ where: { id: match.id }, data: { status: "PLAYED", goalsFor, goalsAgainst, performance, minutes } });
+    const team = career.academyTeams.find((item) => item.id === match.teamId); for (const player of youth) { const played = minutes[player.id] ?? 0; const plan = career.academyPlans.find((item) => item.playerId === player.id); const growth = academyDevelopment({ ability: player.ability, potential: player.potential, age: player.age, minutes: played, coaching: team?.coachingQuality ?? 50, facilities: club.academyLevel, focusFit: player.developmentFocus === plan?.focus ? 75 : 45, seed: career.worldSeed, playerId: player.id, day }); await tx.directorPlayer.update({ where: { id: player.id }, data: { ability: { increment: growth.abilityDelta }, minutes: { increment: played }, appearances: played ? { increment: 1 } : undefined } }); if (plan) await tx.directorAcademyPlan.update({ where: { id: plan.id }, data: { readiness: { increment: growth.readinessDelta }, lastReviewDay: day } }); }
+  }
+  await tx.directorSponsorOffer.updateMany({ where: { careerId: career.id, status: "OPEN", expiresDay: { lt: day } }, data: { status: "EXPIRED" } });
+  await tx.directorSponsorContract.updateMany({ where: { careerId: career.id, status: "ACTIVE", endDay: { lt: day } }, data: { status: "EXPIRED" } });
+  if (day % 30 === 0 && !career.sponsorOffers.some((item) => item.status === "OPEN" && item.expiresDay >= day)) for (const [index, sponsor] of career.sponsors.slice(0, 3).entries()) { const value = sponsorOfferValue({ reputation: club.reputation, attendance: club.stadiumCapacity * club.stadiumAttendance, onlineReach: 12_000 + career.pulsePosts.reduce((sum, item) => sum + item.reach, 0), stability: career.boardTrust, sponsorBudget: sponsor.budget, ethics: sponsor.ethics }); await tx.directorSponsorOffer.create({ data: { careerId: career.id, sponsorId: sponsor.id, clubId: club.id, category: index === 0 ? "MAIN" : index === 1 ? "DIGITAL" : "COMMUNITY", guaranteed: value.guaranteed, bonus: value.bonus, durationDays: 120, namingRights: false, exclusivity: sponsor.sector, conditions: { topHalfBonus: true, reputationalRisk: value.reputationalRisk }, expiresDay: day + 10 } }); }
+  if (day % 7 === 0) {
+    const latest = career.identitySnapshots[0]; const declared = latest ? asStringArray(latest.declared) : []; const seniorMinutes = Math.max(1, club.players.filter((item) => item.squadLevel === "SENIOR").reduce((sum, item) => sum + item.minutes, 0)); const youthMinutes = club.players.filter((item) => item.homegrownClubId === club.id).reduce((sum, item) => sum + item.minutes, 0); const standings = career.seasons[0]?.standings.slice().sort((a, b) => b.points - a.points); const position = Math.max(1, (standings?.findIndex((item) => item.clubId === club.id) ?? 0) + 1);
+    const profile = identityProfile({ declared, youthShare: youthMinutes / seniorMinutes, localShare: club.players.filter((item) => item.languageGroup === "LOCAL").length / Math.max(1, club.players.length), dataTransfers: career.transferCases.filter((item) => item.status === "COMPLETED").length, balanceTrend: club.cashBalance - 1_000_000, attackingStyle: club.baseAttack, leaguePosition: position, commercialRevenue: career.sponsorContracts.filter((item) => item.status === "ACTIVE").reduce((sum, item) => sum + item.guaranteed, 0), previousChanges: Math.max(0, career.identitySnapshots.length - 1) });
+    await tx.directorIdentitySnapshot.upsert({ where: { careerId_clubId_dayIndex: { careerId: career.id, clubId: club.id, dayIndex: day } }, create: { careerId: career.id, clubId: club.id, dayIndex: day, declared, ...profile }, update: { observed: profile.observed, alignment: profile.alignment, credibility: profile.credibility, drivers: profile.drivers } });
+  }
+}
+
 async function runAiTransferActivity(tx: Prisma.TransactionClient, career: LoadedCareer, day: number) {
   const buyers = career.clubs.filter((item) => !item.isManaged && item.players.length < 27 && item.cashBalance > item.weeklyWages * 10).sort((a, b) => b.transferBudget - a.transferBudget);
   const buyer = buyers.length ? buyers[day % buyers.length] : null;
@@ -278,13 +386,18 @@ export async function getDirectorWorld(user: CurrentUser): Promise<DirectorDTO |
     career = await loadActive(user);
     if (!career) return null;
   }
-  if (career.version < DIRECTOR_WORLD_VERSION) {
+  if (career.version < 5) {
     await prisma.$transaction((tx) => upgradeAdaptiveWorld(tx, career!), { timeout: 30_000 });
     career = await loadActive(user);
     if (!career) return null;
   }
-  if (career.version < DIRECTOR_WORLD_VERSION) {
+  if (career.version < 6) {
     await prisma.$transaction((tx) => upgradeTransferWorld(tx, career!), { timeout: 60_000 });
+    career = await loadActive(user);
+    if (!career) return null;
+  }
+  if (career.version < 7) {
+    await prisma.$transaction((tx) => upgradeInfrastructureWorld(tx, career!), { timeout: 60_000 });
     career = await loadActive(user);
     if (!career) return null;
   }
@@ -452,6 +565,7 @@ export async function advanceDirectorDay(user: CurrentUser): Promise<DirectorDTO
     const clubs = await tx.directorClub.findMany({ where: { careerId: active.id }, include: { players: true, coaches: true } });
     const club = clubs.find((item) => item.isManaged)!;
     const coach = club.coaches[0];
+    await processInfrastructureDay(tx, active, nextDay, clubs);
     const player = club.players[(nextDay * 7) % club.players.length];
     const sportPolicies = await tx.directorSportPolicy.findMany({ where: { careerId: active.id } });
     const coachMemories = await tx.directorCoachMemory.findMany({ where: { careerId: active.id } });
@@ -674,10 +788,13 @@ export async function advanceDirectorDay(user: CurrentUser): Promise<DirectorDTO
             }
           }
         }
-        const attendance = Math.round(home.stadiumCapacity * clamp(home.stadiumAttendance + home.fanTrust / 500 + (away.baseAttack + away.baseDefense) / 30, .35, .99));
-        const matchIncome = Math.round(attendance * (13 + home.stadiumCommercial * .16));
+        const policy = active.ticketPolicies.find((item) => item.clubId === home.id && item.status === "ACTIVE"); const segments = active.supporterSegments.filter((item) => item.clubId === home.id); const zones = active.stadiumZones.filter((item) => item.clubId === home.id); const effectiveCapacity = Math.min(home.stadiumCapacity, ...zones.map((item) => item.temporaryCapacity ?? home.stadiumCapacity));
+        const demand = segments.length ? attendanceDemand({ capacity: effectiveCapacity, standardPrice: policy?.standardPrice ?? 22, opponentAppeal: away.reputation, form: home.currentForm, comfort: zones.find((item) => item.kind === "STANDS")?.quality ?? 55, safety: zones.find((item) => item.kind === "SAFETY")?.quality ?? 60, access: zones.find((item) => item.kind === "ACCESS")?.quality ?? 55, segments }) : null;
+        const attendance = demand?.attendance ?? Math.round(home.stadiumCapacity * clamp(home.stadiumAttendance + home.fanTrust / 500 + (away.baseAttack + away.baseDefense) / 30, .35, .99));
+        const matchIncome = demand ? demand.ticketRevenue + Math.round(attendance * home.stadiumCommercial * .12) : Math.round(attendance * (13 + home.stadiumCommercial * .16));
         await tx.directorClub.update({ where: { id: home.id }, data: { cashBalance: { increment: matchIncome }, stadiumAttendance: attendance / home.stadiumCapacity } });
         await tx.directorLedgerEntry.create({ data: { careerId: active.id, clubId: home.id, dayIndex: nextDay, category: "MATCHDAY", direction: "IN", amount: matchIncome, sourceType: "MATCH", sourceId: dueMatch.id, description: `Vstupné a provoz utkání proti ${away.name}` } });
+        if (demand) await tx.directorAttendanceSnapshot.upsert({ where: { matchId: dueMatch.id }, create: { careerId: active.id, clubId: home.id, matchId: dueMatch.id, dayIndex: nextDay, capacity: effectiveCapacity, attendance, ticketRevenue: demand.ticketRevenue, commercialRevenue: matchIncome - demand.ticketRevenue, segmentDemand: demand.bySegment, explanation: [`Zaplněnost ${Math.round(demand.fill * 100)} %, cena ${policy?.standardPrice ?? 22} EUR.`] }, update: {} });
         if (home.isManaged || away.isManaged) {
           await tx.directorPulsePost.create({ data: { careerId: active.id, dayIndex: nextDay, authorType: "CLUB", authorName: club.name, tone: "OFFICIAL", body: `${home.name} ${played.homeGoals}:${played.awayGoals} ${away.name}. ${played.coachReport.headline}.`, topic: "MATCH", trust: 100, reach: 9000, relatedType: "MATCH", relatedId: dueMatch.id } });
           await tx.directorCausalLog.create({ data: { careerId: active.id, dayIndex: nextDay, sourceType: "MATCH", sourceId: dueMatch.id, category: "SPORT", headline: played.coachReport.headline, explanation: played.coachReport.summary, targetType: "CLUB", targetId: club.id, importance: 3 } });
@@ -854,6 +971,44 @@ export async function startDirectorProject(user: CurrentUser, kind: "ATMOSPHERE"
     prisma.directorCausalLog.create({ data: { careerId: active.id, dayIndex: active.dayIndex, sourceType: "PROJECT", category: "INFRASTRUCTURE", headline: `Projekt zahájen: ${definition.title}`, explanation: `Přínos se projeví až po dokončení v herním dni ${active.dayIndex + definition.days + 1}.`, targetType: "CLUB", targetId: club.id, importance: 2 } }),
   ]);
   return (await getDirectorWorld(user))!;
+}
+
+export async function startDirectorCapitalProject(user: CurrentUser, kind: CapitalProjectKind): Promise<DirectorDTO> {
+  const active = await loadActive(user); if (!active) throw new Error("Aktivní kariéra nebyla nalezena."); const club = active.clubs.find((item) => item.isManaged)!;
+  if (active.capitalProjects.some((item) => item.status === "ACTIVE" && !["OPERATING"].includes(item.phase))) throw new Error("Klub už připravuje nebo staví jiný kapitálový projekt.");
+  const study = projectStudy(kind, active.worldSeed, active.dayIndex, club.scoutingLevel / 5); const studyCost = Math.max(25_000, Math.round(study.estimate * .012));
+  if (club.cashBalance - club.reservedCash < studyCost) throw new Error("Klub nemá hotovost ani na studii proveditelnosti.");
+  await prisma.$transaction(async (tx) => { const project = await tx.directorCapitalProject.create({ data: { careerId: active.id, clubId: club.id, kind, title: study.title, phase: "STUDY", startedDay: active.dayIndex, targetDay: active.dayIndex + 3, costMin: study.costMin, costMax: study.costMax, approvedCost: study.estimate, contingency: study.contingency, operatingCost: study.operatingCost, capacityDelta: study.capacityDelta, temporaryCapacity: Math.round(club.stadiumCapacity * study.temporaryCapacityRatio), benefit: study.benefit, riskProfile: { confidence: study.confidence }, history: [{ day: active.dayIndex, phase: "STUDY", note: "Objednána studie proveditelnosti." }] } }); await tx.directorClub.update({ where: { id: club.id }, data: { cashBalance: { decrement: studyCost } } }); await tx.directorLedgerEntry.create({ data: { careerId: active.id, clubId: club.id, dayIndex: active.dayIndex, category: "PROJECT_STUDY", direction: "OUT", amount: studyCost, sourceType: "CAPITAL_PROJECT", sourceId: project.id, description: `Studie: ${study.title}` } }); });
+  return (await getDirectorWorld(user))!;
+}
+
+export async function financeDirectorProject(user: CurrentUser, projectId: string, sources: { cash: number; loan: number; owner: number; partner: number }): Promise<DirectorDTO> {
+  const active = await loadActive(user); if (!active) throw new Error("Aktivní kariéra nebyla nalezena."); const club = active.clubs.find((item) => item.isManaged)!; const project = active.capitalProjects.find((item) => item.id === projectId && item.status === "ACTIVE" && item.phase === "FINANCING"); if (!project) throw new Error("Projekt není ve fázi financování.");
+  const total = sources.cash + sources.loan + sources.owner + sources.partner; const required = project.approvedCost ?? project.costMax; if (Object.values(sources).some((item) => item < 0) || total < required + project.contingency) throw new Error("Financování nepokrývá schválenou cenu a rizikovou rezervu."); if (sources.cash > club.cashBalance - club.reservedCash) throw new Error("Hotovostní podíl převyšuje volné prostředky klubu."); if (sources.loan > Math.max(2_000_000, club.cashBalance * 4)) throw new Error("Banka odmítla neudržitelnou úvěrovou expozici.");
+  await prisma.$transaction(async (tx) => { if (sources.cash) { await tx.directorClub.update({ where: { id: club.id }, data: { cashBalance: { decrement: sources.cash } } }); await tx.directorLedgerEntry.create({ data: { careerId: active.id, clubId: club.id, dayIndex: active.dayIndex, category: "CAPITAL_PROJECT", direction: "OUT", amount: sources.cash, sourceType: "CAPITAL_PROJECT", sourceId: project.id, description: `Vlastní zdroje: ${project.title}` } }); }
+    const financing = [{ source: "LOAN", amount: sources.loan, interestRate: .065, termDays: 240 }, { source: "OWNER", amount: sources.owner, interestRate: 0, termDays: null }, { source: "PARTNER", amount: sources.partner, interestRate: 0, termDays: null }].filter((item) => item.amount > 0); for (const item of financing) await tx.directorProjectFinance.create({ data: { careerId: active.id, projectId: project.id, source: item.source, amount: item.amount, remaining: item.source === "LOAN" ? Math.round(item.amount * (1 + item.interestRate)) : 0, interestRate: item.interestRate, termDays: item.termDays, installment: item.source === "LOAN" ? Math.ceil(item.amount * (1 + item.interestRate) / 8) : null, nextDueDay: item.source === "LOAN" ? active.dayIndex + 30 : null, status: item.source === "LOAN" ? "ACTIVE" : "COMMITTED", condition: item.source === "OWNER" ? { influence: true } : item.source === "PARTNER" ? { namingRightsOption: true } : { minimumCash: 0 } } });
+    await tx.directorStadiumZone.updateMany({ where: { careerId: active.id, clubId: club.id, kind: { in: project.kind === "NEW_STADIUM" ? ["STANDS", "ACTIVE_END", "HOSPITALITY"] : project.kind === "EXPANSION" ? ["STANDS"] : project.kind === "ACTIVE_END" ? ["ACTIVE_END"] : [] } }, data: { temporaryCapacity: project.temporaryCapacity } }); await tx.directorCapitalProject.update({ where: { id: project.id }, data: { phase: "CONSTRUCTION", targetDay: active.dayIndex + PROJECTS[project.kind as CapitalProjectKind].days, spent: required, history: [...(Array.isArray(project.history) ? project.history : []), { day: active.dayIndex, phase: "CONSTRUCTION", note: "Financování uzavřeno a stavba zahájena." }] } }); });
+  return (await getDirectorWorld(user))!;
+}
+
+export async function updateDirectorTicketPolicy(user: CurrentUser, input: { standardPrice: number; familyPrice: number; premiumPrice: number; seasonTicket: number }): Promise<DirectorDTO> {
+  const active = await loadActive(user); if (!active) throw new Error("Aktivní kariéra nebyla nalezena."); const club = active.clubs.find((item) => item.isManaged)!; if (Object.values(input).some((item) => item < 5 || item > 5_000)) throw new Error("Cenová politika je mimo povolený rámec.");
+  await prisma.$transaction(async (tx) => { await tx.directorTicketPolicy.updateMany({ where: { careerId: active.id, clubId: club.id, status: "ACTIVE" }, data: { status: "REPLACED" } }); await tx.directorTicketPolicy.create({ data: { careerId: active.id, clubId: club.id, seasonId: active.seasons[0]?.id, effectiveDay: active.dayIndex, ...input } }); const previous = active.ticketPolicies[0]?.standardPrice ?? 22; const delta = (input.standardPrice - previous) / Math.max(1, previous); for (const segment of active.supporterSegments.filter((item) => item.clubId === club.id)) await tx.directorSupporterSegment.update({ where: { id: segment.id }, data: { trust: clamp(segment.trust - Math.max(0, delta) * segment.priceSensitivity * 14), conflict: { increment: Math.max(0, delta) * segment.priceSensitivity * 8 } } }); }); return (await getDirectorWorld(user))!;
+}
+
+export async function manageDirectorAcademyPlayer(user: CurrentUser, playerId: string, command: "U19" | "FIRST_TEAM_TRAINING" | "PROMOTE" | "RELEASE", focus?: string): Promise<DirectorDTO> {
+  const active = await loadActive(user); if (!active) throw new Error("Aktivní kariéra nebyla nalezena."); const club = active.clubs.find((item) => item.isManaged)!; const player = club.players.find((item) => item.id === playerId && item.squadLevel === "U19"); const plan = active.academyPlans.find((item) => item.playerId === playerId); if (!player || !plan) throw new Error("Hráč není v akademii.");
+  if (command === "PROMOTE" && plan.readiness < 45) throw new Error("Sportovní úsek nepovažuje hráče za připraveného na trvalé povýšení.");
+  await prisma.$transaction(async (tx) => { await tx.directorAcademyPlan.update({ where: { id: plan.id }, data: { pathway: command, focus: focus ?? plan.focus, status: command === "PROMOTE" || command === "RELEASE" ? "COMPLETED" : "ACTIVE", lastReviewDay: active.dayIndex, explanation: [`Ředitel zvolil cestu ${command}. Dopad závisí na skutečných minutách a připravenosti.`] } }); if (command === "PROMOTE") await tx.directorPlayer.update({ where: { id: player.id }, data: { squadLevel: "SENIOR", promisedRole: "SQUAD", adaptation: 55 } }); if (command === "RELEASE") await tx.directorPlayer.update({ where: { id: player.id }, data: { squadLevel: "RELEASED", transferStatus: "RELEASED" } }); }); return (await getDirectorWorld(user))!;
+}
+
+export async function updateDirectorIdentity(user: CurrentUser, declared: string[]): Promise<DirectorDTO> {
+  const active = await loadActive(user); if (!active) throw new Error("Aktivní kariéra nebyla nalezena."); const club = active.clubs.find((item) => item.isManaged)!; const unique = [...new Set(declared)]; if (unique.length > 3 || unique.some((item) => !["ACADEMY", "LOCAL", "DATA", "SUSTAINABLE", "ATTRACTIVE", "WIN_NOW", "COMMERCIAL"].includes(item))) throw new Error("Vyber nejvýše tři platné pilíře identity."); const latest = active.identitySnapshots[0]; const credibility = clamp((latest?.credibility ?? 60) - (latest && JSON.stringify(asStringArray(latest.declared)) !== JSON.stringify(unique) ? 8 : 0)); await prisma.directorIdentitySnapshot.upsert({ where: { careerId_clubId_dayIndex: { careerId: active.id, clubId: club.id, dayIndex: active.dayIndex } }, create: { careerId: active.id, clubId: club.id, dayIndex: active.dayIndex, declared: unique, observed: latest?.observed ?? {}, alignment: latest?.alignment ?? 50, credibility, drivers: ["Deklarované pilíře budou porovnávány se skutečnými rozhodnutími."] }, update: { declared: unique, credibility } }); return (await getDirectorWorld(user))!;
+}
+
+export async function acceptDirectorSponsor(user: CurrentUser, offerId: string): Promise<DirectorDTO> {
+  const active = await loadActive(user); if (!active) throw new Error("Aktivní kariéra nebyla nalezena."); const club = active.clubs.find((item) => item.isManaged)!; const offer = active.sponsorOffers.find((item) => item.id === offerId && item.clubId === club.id && item.status === "OPEN" && item.expiresDay >= active.dayIndex); const sponsor = active.sponsors.find((item) => item.id === offer?.sponsorId); if (!offer || !sponsor) throw new Error("Sponzorská nabídka už není dostupná."); const conflict = active.sponsorContracts.some((item) => item.status === "ACTIVE" && (item.category === offer.category || (item.exclusivity && item.exclusivity === offer.exclusivity))); if (conflict) throw new Error("Nabídka je v konfliktu s aktivní exkluzivitou.");
+  await prisma.$transaction(async (tx) => { await tx.directorSponsorOffer.update({ where: { id: offer.id }, data: { status: "ACCEPTED" } }); await tx.directorSponsorContract.create({ data: { careerId: active.id, sponsorId: sponsor.id, clubId: club.id, offerId: offer.id, category: offer.category, guaranteed: offer.guaranteed, bonus: offer.bonus, startDay: active.dayIndex, endDay: active.dayIndex + offer.durationDays, namingRights: offer.namingRights, exclusivity: offer.exclusivity, conditions: offer.conditions! } }); await tx.directorClub.update({ where: { id: club.id }, data: { cashBalance: { increment: offer.guaranteed } } }); await tx.directorLedgerEntry.create({ data: { careerId: active.id, clubId: club.id, dayIndex: active.dayIndex, category: "SPONSOR", direction: "IN", amount: offer.guaranteed, sourceType: "SPONSOR_OFFER", sourceId: offer.id, description: `Smlouva s partnerem ${sponsor.name}` } }); if (sponsor.ethics < 45) for (const segment of active.supporterSegments.filter((item) => item.clubId === club.id)) await tx.directorSupporterSegment.update({ where: { id: segment.id }, data: { trust: clamp(segment.trust - segment.identitySensitivity * 6), conflict: { increment: segment.identitySensitivity * 4 } } }); }); return (await getDirectorWorld(user))!;
 }
 
 export async function manageDirectorCoach(user: CurrentUser, command: "SUPPORT" | "WARN" | "SHARED_AUTHORITY" | "DIRECTOR_AUTHORITY" | "DISMISS") {
@@ -1071,11 +1226,18 @@ export async function rolloverDirectorSeason(user: CurrentUser): Promise<Directo
     const reward = Math.round(250_000 + (detailed.length - position + 1) * 85_000);
     await tx.directorClub.update({ where: { id: managed.id }, data: { cashBalance: { increment: reward }, transferBudget: { increment: Math.round(reward * .55) } } });
     await tx.directorLedgerEntry.create({ data: { careerId: active.id, clubId: managed.id, dayIndex: active.dayIndex, category: "SEASON_REWARD", direction: "IN", amount: reward, sourceType: "SEASON", sourceId: season.id, description: `Odměna za ${position}. místo` } });
+    if (position <= Math.ceil(detailed.length / 2)) for (const contract of active.sponsorContracts.filter((item) => item.status === "ACTIVE" && Boolean((item.conditions as { topHalfBonus?: boolean }).topHalfBonus) && item.bonus > 0)) { await tx.directorClub.update({ where: { id: managed.id }, data: { cashBalance: { increment: contract.bonus } } }); await tx.directorLedgerEntry.create({ data: { careerId: active.id, clubId: managed.id, dayIndex: active.dayIndex, category: "SPONSOR_BONUS", direction: "IN", amount: contract.bonus, sourceType: "SPONSOR_CONTRACT", sourceId: contract.id, description: "Výkonnostní bonus partnera za horní polovinu tabulky" } }); }
     await tx.directorPlayer.updateMany({ where: { club: { careerId: active.id } }, data: { age: { increment: 1 }, appearances: 0, minutes: 0, form: 50 } });
+    for (const youth of managed.players.filter((item) => item.squadLevel === "U19" && item.age >= 19)) { const plan = active.academyPlans.find((item) => item.playerId === youth.id); const promote = (plan?.readiness ?? 0) >= 55; await tx.directorPlayer.update({ where: { id: youth.id }, data: { squadLevel: promote ? "SENIOR" : "RELEASED", promisedRole: promote ? "SQUAD" : youth.promisedRole, transferStatus: promote ? "AVAILABLE" : "RELEASED" } }); if (plan) await tx.directorAcademyPlan.update({ where: { id: plan.id }, data: { status: "COMPLETED", pathway: promote ? "PROMOTE" : "RELEASE", explanation: [promote ? "Po dosažení věkové hranice byl hráč připraven pro A-tým." : "Po dosažení věkové hranice nebyla připravenost pro A-tým dostatečná."] } }); }
     const schedule = roundRobinSchedule(detailed.map((item) => item.id));
     const startDay = active.dayIndex + 7;
     const endDay = startDay + Math.max(...schedule.map((item) => item.scheduledDay)) + 7;
     const next = await tx.directorSeason.create({ data: { careerId: active.id, number: nextNumber, startDay, endDay, rules: seasonRules(endDay) } });
+    const academyTeam = await tx.directorAcademyTeam.create({ data: { careerId: active.id, clubId: managed.id, seasonNumber: nextNumber, reputation: 38 + managed.academyLevel * 8, coachingQuality: 42 + managed.academyLevel * 9 } });
+    await tx.directorAcademyMatch.createMany({ data: Array.from({ length: 16 }, (_, index) => ({ careerId: active.id, teamId: academyTeam.id, seasonNumber: nextNumber, round: index + 1, scheduledDay: startDay + 2 + index * 5, opponent: `Akademie ${index + 1}` })) });
+    const intakeTeam: GameTeam = { id: managed.externalTeamId - 700_000 - nextNumber, name: `${managed.name} ročník ${nextNumber}`, short: `${managed.shortName}Y${nextNumber}`, color: managed.primaryColor, attack: managed.baseAttack * .78, defense: managed.baseDefense * 1.15, homeBoost: 1.04 }; const intake = generatePlayers(intakeTeam, clamp(36 + managed.academyLevel * 6, 40, 68), active.gameDate).slice(0, 4); const intakeIds: string[] = [];
+    for (const [index, generated] of intake.entries()) { const created = await tx.directorPlayer.create({ data: { ...generated, clubId: managed.id, age: 16 + index % 2, squadLevel: "U19", homegrownClubId: managed.id, academyJoinedDay: active.dayIndex, developmentFocus: ["TECHNIQUE", "PHYSICAL", "MENTAL", "TACTICAL"][index], weeklyWage: Math.min(350, generated.weeklyWage), marketValue: Math.round(generated.marketValue * .16), owningClubId: managed.id, promisedRole: "ACADEMY" } }); intakeIds.push(created.id); await tx.directorAcademyPlan.create({ data: { careerId: active.id, playerId: created.id, focus: ["TECHNIQUE", "PHYSICAL", "MENTAL", "TACTICAL"][index], pathway: "U19", readiness: clamp((created.ability - 35) * 1.25), lastReviewDay: active.dayIndex, explanation: ["Nový akademický ročník."] } }); }
+    await tx.directorAcademyIntake.create({ data: { careerId: active.id, clubId: managed.id, seasonNumber: nextNumber, dayIndex: active.dayIndex, playerIds: intakeIds, quality: intake.reduce((sum, item) => sum + item.potential, 0) / Math.max(1, intake.length), explanation: ["Kvalita ročníku vznikla z náborové sítě a zázemí, bez garantovaného elitního talentu."] } });
     await tx.directorStanding.createMany({ data: detailed.map((item) => ({ seasonId: next.id, clubId: item.id })) });
     await tx.directorMatch.createMany({ data: schedule.map((item) => ({ careerId: active.id, seasonId: next.id, ...item, scheduledDay: startDay + item.scheduledDay })) });
     await tx.directorSeasonObjective.createMany({ data: [
@@ -1111,8 +1273,9 @@ async function unlock(tx: Prisma.TransactionClient, careerId: string, item: { ke
 }
 
 function toDTO(career: LoadedCareer, legacyArchiveAvailable: boolean): DirectorDTO {
-  const club = career.clubs.find((item) => item.isManaged);
-  if (!club) throw new Error("Kariéra nemá přiřazený klub.");
+  const managedClub = career.clubs.find((item) => item.isManaged);
+  if (!managedClub) throw new Error("Kariéra nemá přiřazený klub.");
+  const club = { ...managedClub, players: managedClub.players.filter((item) => item.squadLevel === "SENIOR") };
   const coach = club.coaches.find((item) => item.status === "ACTIVE") ?? null;
   const season = career.seasons[0] ?? null;
   const standings = season ? [...season.standings].sort((a, b) => b.points - a.points || (b.goalsFor - b.goalsAgainst) - (a.goalsFor - a.goalsAgainst) || b.goalsFor - a.goalsFor) : [];
@@ -1183,7 +1346,22 @@ function toDTO(career: LoadedCareer, legacyArchiveAvailable: boolean): DirectorD
       return { needs: career.needs.filter((item) => item.clubId === club.id && item.status === "OPEN").map((item) => ({ id: item.id, position: item.target, role: item.desiredRole, urgency: item.urgency, reason: item.reason, budgetMin: item.budgetMin, budgetMax: item.budgetMax, tacticalFit: item.tacticalFit })), shortlist: career.shortlistEntries.filter((item) => item.clubId === club.id && item.status !== "REMOVED").map((item) => { const player = career.clubs.flatMap((entry) => entry.players).find((entry) => entry.id === item.playerId); return { playerId: item.playerId, playerName: player ? `${player.firstName} ${player.lastName}` : "Hráč", priority: item.priority, status: item.status, note: item.note, alert: item.lastAlert }; }), payments: pending.map((item) => ({ id: item.id, kind: item.kind, amount: item.amount, dueDay: item.dueDay, status: item.status, direction: item.payerClubId === club.id ? "OUT" : "IN" })), clauses: career.transferClauses.filter((item) => item.status === "ACTIVE" && item.beneficiaryClubId === club.id).map((item) => ({ id: item.id, playerId: item.playerId, kind: item.kind, value: item.value, status: item.status })), reservedCash: club.reservedCash, worstProjectedCash: projection.worst };
     })(),
     season: season ? { number: season.number, currentRound: season.currentRound, status: season.status, table: standings.map((row, index) => { const team = career.clubs.find((item) => item.id === row.clubId)!; return { position: index + 1, clubId: row.clubId, clubName: team?.name ?? "Klub", logo: team?.logo ?? null, played: row.played, wins: row.wins, draws: row.draws, losses: row.losses, goalsFor: row.goalsFor, goalsAgainst: row.goalsAgainst, points: row.points, expectedPoints: row.expectedPoints, performance: row.performance, isManaged: Boolean(team?.isManaged) }; }) } : null,
+    infrastructure: buildInfrastructureDTO(career, managedClub, club.id),
     legacyArchiveAvailable,
+  };
+}
+
+function buildInfrastructureDTO(career: LoadedCareer, managedClub: LoadedCareer["clubs"][number], clubId: string): NonNullable<DirectorDTO["infrastructure"]> {
+  const academyTeam = career.academyTeams[0]; const identity = career.identitySnapshots[0]; const policy = career.ticketPolicies.find((item) => item.clubId === clubId && item.status === "ACTIVE") ?? null; const youth = managedClub.players.filter((item) => item.squadLevel === "U19");
+  return {
+    zones: career.stadiumZones.filter((item) => item.clubId === clubId).map((item) => ({ id: item.id, kind: item.kind, name: item.name, level: item.level, capacity: item.capacity, condition: item.condition, quality: item.quality, operatingCost: item.operatingCost, revenuePotential: item.revenuePotential, temporaryCapacity: item.temporaryCapacity })),
+    projects: career.capitalProjects.filter((item) => item.clubId === clubId).map((item) => ({ id: item.id, kind: item.kind, title: item.title, phase: item.phase, status: item.status, targetDay: item.targetDay, costMin: item.costMin, costMax: item.costMax, approvedCost: item.approvedCost, spent: item.spent, contingency: item.contingency, temporaryCapacity: item.temporaryCapacity, approvals: item.approvals.map((approval) => ({ stakeholder: approval.stakeholder, status: approval.status, explanation: approval.explanation })), financing: item.financing.map((finance) => ({ source: finance.source, amount: finance.amount, remaining: finance.remaining, interestRate: finance.interestRate, status: finance.status })) })),
+    supporters: career.supporterSegments.filter((item) => item.clubId === clubId).map((item) => ({ kind: item.kind, size: item.size, trust: item.trust, conflict: item.conflict, preference: typeof (item.preferences as { headline?: unknown }).headline === "string" ? (item.preferences as { headline: string }).headline : "Klubová stabilita" })),
+    ticketPolicy: policy ? { standardPrice: policy.standardPrice, familyPrice: policy.familyPrice, premiumPrice: policy.premiumPrice, seasonTicket: policy.seasonTicket } : null,
+    academy: academyTeam ? { teamId: academyTeam.id, coachingQuality: academyTeam.coachingQuality, players: youth.map((player) => { const plan = career.academyPlans.find((item) => item.playerId === player.id); return { id: player.id, name: `${player.firstName} ${player.lastName}`, age: player.age, position: player.position, ability: player.ability, potential: player.potential, readiness: plan?.readiness ?? 0, pathway: plan?.pathway ?? "U19", focus: plan?.focus ?? player.developmentFocus ?? "GENERAL", minutes: player.minutes }; }), recentMatches: career.academyMatches.filter((item) => item.teamId === academyTeam.id).slice(0, 8).map((item) => ({ id: item.id, round: item.round, opponent: item.opponent, status: item.status, goalsFor: item.goalsFor, goalsAgainst: item.goalsAgainst, performance: item.performance })) } : null,
+    identity: identity ? { declared: asStringArray(identity.declared), observed: identity.observed as Record<string, number>, alignment: identity.alignment, credibility: identity.credibility, drivers: asStringArray(identity.drivers) } : null,
+    sponsorOffers: career.sponsorOffers.filter((item) => item.clubId === clubId && item.status === "OPEN").map((item) => ({ id: item.id, sponsor: career.sponsors.find((sponsor) => sponsor.id === item.sponsorId)?.name ?? "Partner", category: item.category, guaranteed: item.guaranteed, bonus: item.bonus, durationDays: item.durationDays, namingRights: item.namingRights, expiresDay: item.expiresDay, ethics: career.sponsors.find((sponsor) => sponsor.id === item.sponsorId)?.ethics ?? 50 })),
+    sponsorContracts: career.sponsorContracts.filter((item) => item.clubId === clubId).map((item) => ({ id: item.id, sponsor: career.sponsors.find((sponsor) => sponsor.id === item.sponsorId)?.name ?? "Partner", category: item.category, guaranteed: item.guaranteed, bonus: item.bonus, endDay: item.endDay, namingRights: item.namingRights, status: item.status })),
   };
 }
 

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/authUser";
 import { allowRequest, tooMany } from "@/lib/rateLimit";
-import { advanceDirectorDay, createDirectorWorld, getDirectorWorld, isDirectorLeagueAllowed, manageDirectorCoach, manageDirectorStaff, markDirectorAchievementsSeen, openDirectorCoachNegotiation, openDirectorNegotiation, openDirectorTransferCase, resolveDirectorEvent, resolveDirectorSportMeeting, resolveIncomingTransfer, rolloverDirectorSeason, scoutDirectorPlayer, startDirectorProject, submitDirectorCoachOffer, submitDirectorContractOffer, submitDirectorOffer, submitDirectorTransferOffer, updateDirectorPlayer, updateDirectorShortlist, updateDirectorSportPolicy } from "@/lib/director/dal";
+import { acceptDirectorSponsor, advanceDirectorDay, createDirectorWorld, financeDirectorProject, getDirectorWorld, isDirectorLeagueAllowed, manageDirectorAcademyPlayer, manageDirectorCoach, manageDirectorStaff, markDirectorAchievementsSeen, openDirectorCoachNegotiation, openDirectorNegotiation, openDirectorTransferCase, resolveDirectorEvent, resolveDirectorSportMeeting, resolveIncomingTransfer, rolloverDirectorSeason, scoutDirectorPlayer, startDirectorCapitalProject, startDirectorProject, submitDirectorCoachOffer, submitDirectorContractOffer, submitDirectorOffer, submitDirectorTransferOffer, updateDirectorIdentity, updateDirectorPlayer, updateDirectorShortlist, updateDirectorSportPolicy, updateDirectorTicketPolicy } from "@/lib/director/dal";
 
 const commandSchema = z.discriminatedUnion("action", [
   z.object({
@@ -15,6 +15,12 @@ const commandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("open_negotiation"), playerId: z.string().cuid() }),
   z.object({ action: z.literal("submit_offer"), negotiationId: z.string().cuid(), upfront: z.number().int().min(0).max(1_000_000_000), installments: z.number().int().min(0).max(1_000_000_000), bonuses: z.number().int().min(0).max(1_000_000_000), sellOn: z.number().min(0).max(35), weeklyWage: z.number().int().min(100).max(10_000_000), years: z.number().int().min(1).max(6), promisedRole: z.enum(["STARTER", "ROTATION", "SQUAD"]) }),
   z.object({ action: z.literal("start_project"), kind: z.enum(["ATMOSPHERE", "COMMERCIAL", "ACADEMY"]) }),
+  z.object({ action: z.literal("start_capital_project"), kind: z.enum(["PITCH", "ACTIVE_END", "HOSPITALITY", "EXPANSION", "NEW_STADIUM", "ACADEMY"]) }),
+  z.object({ action: z.literal("finance_project"), projectId: z.string().cuid(), cash: z.number().int().min(0), loan: z.number().int().min(0), owner: z.number().int().min(0), partner: z.number().int().min(0) }),
+  z.object({ action: z.literal("ticket_policy"), standardPrice: z.number().int(), familyPrice: z.number().int(), premiumPrice: z.number().int(), seasonTicket: z.number().int() }),
+  z.object({ action: z.literal("academy_player"), playerId: z.string().cuid(), command: z.enum(["U19", "FIRST_TEAM_TRAINING", "PROMOTE", "RELEASE"]), focus: z.string().max(40).optional() }),
+  z.object({ action: z.literal("update_identity"), declared: z.array(z.enum(["ACADEMY", "LOCAL", "DATA", "SUSTAINABLE", "ATTRACTIVE", "WIN_NOW", "COMMERCIAL"])).max(3) }),
+  z.object({ action: z.literal("accept_sponsor"), offerId: z.string().cuid() }),
   z.object({ action: z.literal("resolve_event"), eventId: z.string().cuid(), choiceKey: z.string().min(1).max(40) }),
   z.object({ action: z.literal("coach_action"), command: z.enum(["SUPPORT", "WARN", "SHARED_AUTHORITY", "DIRECTOR_AUTHORITY", "DISMISS"]) }),
   z.object({ action: z.literal("staff_action"), staffId: z.string().cuid(), command: z.enum(["HIRE", "FIRE"]) }),
@@ -60,6 +66,12 @@ export async function POST(req: Request) {
     if (parsed.data.action === "open_negotiation") return NextResponse.json({ world: await openDirectorNegotiation(user, parsed.data.playerId) });
     if (parsed.data.action === "submit_offer") return NextResponse.json({ world: await submitDirectorOffer(user, parsed.data.negotiationId, parsed.data) });
     if (parsed.data.action === "start_project") return NextResponse.json({ world: await startDirectorProject(user, parsed.data.kind) });
+    if (parsed.data.action === "start_capital_project") return NextResponse.json({ world: await startDirectorCapitalProject(user, parsed.data.kind) });
+    if (parsed.data.action === "finance_project") return NextResponse.json({ world: await financeDirectorProject(user, parsed.data.projectId, parsed.data) });
+    if (parsed.data.action === "ticket_policy") return NextResponse.json({ world: await updateDirectorTicketPolicy(user, parsed.data) });
+    if (parsed.data.action === "academy_player") return NextResponse.json({ world: await manageDirectorAcademyPlayer(user, parsed.data.playerId, parsed.data.command, parsed.data.focus) });
+    if (parsed.data.action === "update_identity") return NextResponse.json({ world: await updateDirectorIdentity(user, parsed.data.declared) });
+    if (parsed.data.action === "accept_sponsor") return NextResponse.json({ world: await acceptDirectorSponsor(user, parsed.data.offerId) });
     if (parsed.data.action === "coach_action") return NextResponse.json({ world: await manageDirectorCoach(user, parsed.data.command) });
     if (parsed.data.action === "staff_action") return NextResponse.json({ world: await manageDirectorStaff(user, parsed.data.staffId, parsed.data.command) });
     if (parsed.data.action === "open_coach_negotiation") return NextResponse.json({ world: await openDirectorCoachNegotiation(user, parsed.data.candidateId) });

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { TeamLogo } from "./TeamLogo";
 import type { SessionUser } from "./sessionUser";
 import type { DirectorDTO, DirectorSection } from "@/lib/director/types";
+import { DirectorInfrastructure } from "./DirectorInfrastructure";
 
 type League = { id: number; name: string; country: string; tier: number };
 type Team = { id: number; name: string; short: string; color: string; logo?: string };
@@ -91,7 +92,7 @@ export function DirectorApp({ user }: { user: SessionUser | null }) {
       {section === "office" && <Office world={world} busy={busy} command={command} resolve={(eventId, choiceKey) => command({ action: "resolve_event", eventId, choiceKey })} />}
       {section === "team" && <><SportPolicyPanel world={world} busy={busy} command={command} /><TeamSection world={world} busy={busy} command={command} /><CoachMarket world={world} busy={busy} command={command} /></>}
       {section === "market" && <MarketSection key={world.people.transferCases.find((item) => item.status === "OPEN")?.id ?? "market"} world={world} busy={busy} command={command} />}
-      {section === "club" && <><ClubSection world={world} busy={busy} command={command} /><StaffPanel world={world} busy={busy} command={command} /></>}
+      {section === "club" && <><DirectorInfrastructure world={world} busy={busy} command={command} />{!world.infrastructure && <ClubSection world={world} busy={busy} command={command} />}<StaffPanel world={world} busy={busy} command={command} /></>}
       {section === "competitions" && <><CompetitionsSection world={world} /><SeasonGovernance world={world} busy={busy} command={command} /></>}
     </div>
   );
