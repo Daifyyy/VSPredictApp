@@ -15,6 +15,7 @@ import { commitmentState, describeDrivers, diminishingMagnitude, effectAppliedTo
 import { roundRobinSchedule, tableRows } from "./season";
 import { boardReview, coachEvaluation, informationQuality, playerExpectation, STAFF_ROLES, targetMinuteShare, transferOfferUtility, transferWindow } from "./people";
 import { defaultSportingPolicy, meetingDecision, normalizePolicy, PHASES, roleScores, trainingUpdate, type SportingStyle } from "./sporting";
+import { chooseMicrocycle, defaultCoachMemory, evolveRoleFamiliarity, medicalState, systemCosts, updateCoachMemory, type CoachMemoryState, type MatchEvidence } from "./adaptation";
 
 const CAREER_INCLUDE = {
   clubs: { include: { players: true, coaches: true }, orderBy: { name: "asc" as const } },
@@ -46,6 +47,11 @@ const CAREER_INCLUDE = {
   sportMeetings: { orderBy: { createdAt: "desc" as const }, take: 24 },
   matchPlans: { orderBy: { createdAt: "desc" as const }, take: 40 },
   playerAppearances: { orderBy: { createdAt: "desc" as const }, take: 300 },
+  coachMemories: true,
+  trainingCycles: { orderBy: { dayIndex: "desc" as const }, take: 80 },
+  opponentAnalyses: { orderBy: { createdAt: "desc" as const }, take: 40 },
+  medicalReports: { orderBy: { dayIndex: "desc" as const }, take: 120 },
+  planReviews: { orderBy: { createdDay: "desc" as const }, take: 80 },
 } satisfies Prisma.DirectorCareerInclude;
 
 type LoadedCareer = Prisma.DirectorCareerGetPayload<{ include: typeof CAREER_INCLUDE }>;
@@ -76,6 +82,21 @@ function asStringArray(value: Prisma.JsonValue): string[] {
 
 function asChoices(value: Prisma.JsonValue): DirectorChoice[] {
   return Array.isArray(value) ? (value as unknown as DirectorChoice[]) : [];
+}
+
+function coachMemoryState(memory: LoadedCareer["coachMemories"][number] | undefined): CoachMemoryState {
+  if (!memory) return defaultCoachMemory();
+  const fallback = defaultCoachMemory();
+  return {
+    phaseAssessment: { ...fallback.phaseAssessment, ...(memory.phaseAssessment as Partial<CoachMemoryState["phaseAssessment"]>) },
+    tacticalBudget: memory.tacticalBudget,
+    systemFamiliarity: memory.systemFamiliarity,
+    predictability: memory.predictability,
+    lastFormation: memory.lastFormation,
+    lastStyle: memory.lastStyle,
+    recentPlans: Array.isArray(memory.recentPlans) ? memory.recentPlans as unknown as CoachMemoryState["recentPlans"] : [],
+    confidence: memory.confidence,
+  };
 }
 
 async function upgradeCausalWorld(tx: Prisma.TransactionClient, career: LoadedCareer) {
@@ -172,6 +193,14 @@ async function upgradeSportingWorld(tx: Prisma.TransactionClient, career: Loaded
   await tx.directorCareer.update({ where: { id: career.id }, data: { version: 4 } });
 }
 
+async function upgradeAdaptiveWorld(tx: Prisma.TransactionClient, career: LoadedCareer) {
+  if (career.version >= 5) return;
+  await tx.directorCoachMemory.createMany({ data: career.clubs.flatMap((club) => { const coach = club.coaches.find((item) => item.status === "ACTIVE") ?? club.coaches[0]; if (!coach) return []; const memory = defaultCoachMemory(); return [{ careerId: career.id, clubId: club.id, coachId: coach.id, phaseAssessment: memory.phaseAssessment, tacticalBudget: memory.tacticalBudget, systemFamiliarity: memory.systemFamiliarity, predictability: memory.predictability, lastFormation: coach.formation, lastStyle: coach.philosophy, recentPlans: [], confidence: 0, updatedDay: career.dayIndex }]; }), skipDuplicates: true });
+  await tx.directorPlayer.updateMany({ where: { club: { careerId: career.id } }, data: { healthStatus: "FIT", recurrenceRisk: 0 } });
+  await tx.directorCausalLog.create({ data: { careerId: career.id, dayIndex: career.dayIndex, sourceType: "MIGRATION", category: "SPORT", headline: "Trenéři získali paměť a adaptivní mikrocyklus", explanation: "Budoucí plány přerozdělují omezený taktický rozpočet. Zlepšení jedné fáze proto nevytváří čistý bonus a soupeři používají stejná pravidla.", importance: 4 } });
+  await tx.directorCareer.update({ where: { id: career.id }, data: { version: 5 } });
+}
+
 async function runAiTransferActivity(tx: Prisma.TransactionClient, career: LoadedCareer, day: number) {
   const buyers = career.clubs.filter((item) => !item.isManaged && item.players.length < 27 && item.cashBalance > item.weeklyWages * 10).sort((a, b) => b.transferBudget - a.transferBudget);
   const buyer = buyers.length ? buyers[day % buyers.length] : null;
@@ -215,8 +244,13 @@ export async function getDirectorWorld(user: CurrentUser): Promise<DirectorDTO |
     career = await loadActive(user);
     if (!career) return null;
   }
-  if (career.version < DIRECTOR_WORLD_VERSION) {
+  if (career.version < 4) {
     await prisma.$transaction((tx) => upgradeSportingWorld(tx, career!), { timeout: 30_000 });
+    career = await loadActive(user);
+    if (!career) return null;
+  }
+  if (career.version < DIRECTOR_WORLD_VERSION) {
+    await prisma.$transaction((tx) => upgradeAdaptiveWorld(tx, career!), { timeout: 30_000 });
     career = await loadActive(user);
     if (!career) return null;
   }
@@ -386,14 +420,27 @@ export async function advanceDirectorDay(user: CurrentUser): Promise<DirectorDTO
     const coach = club.coaches[0];
     const player = club.players[(nextDay * 7) % club.players.length];
     const sportPolicies = await tx.directorSportPolicy.findMany({ where: { careerId: active.id } });
+    const coachMemories = await tx.directorCoachMemory.findMany({ where: { careerId: active.id } });
     for (const team of clubs) {
       const coachForPolicy = team.coaches.find((item) => item.status === "ACTIVE") ?? team.coaches[0];
       const stored = sportPolicies.find((item) => item.clubId === team.id);
       const policy = normalizePolicy(stored ? { desiredStyle: stored.desiredStyle as SportingStyle, youthPreference: stored.youthPreference, rotationLevel: stored.rotationLevel, trainingIntensity: stored.trainingIntensity, healthRiskTolerance: stored.healthRiskTolerance, phasePriorities: stored.phasePriorities as Record<(typeof PHASES)[number], number> } : {}, defaultSportingPolicy(coachForPolicy?.philosophy));
+      const teamMatches = active.matches.filter((match) => match.homeClubId === team.id || match.awayClubId === team.id); const nextMatch = teamMatches.filter((match) => match.status === "SCHEDULED" && match.scheduledDay >= nextDay).sort((a, b) => a.scheduledDay - b.scheduledDay)[0]; const previousMatch = teamMatches.filter((match) => match.status === "PLAYED" && match.scheduledDay < nextDay).sort((a, b) => b.scheduledDay - a.scheduledDay)[0]; const matchesNextSevenDays = teamMatches.filter((match) => match.status === "SCHEDULED" && match.scheduledDay >= nextDay && match.scheduledDay <= nextDay + 7).length;
+      const cycle = chooseMicrocycle({ daysToMatch: nextMatch ? nextMatch.scheduledDay - nextDay : null, daysSinceMatch: previousMatch ? nextDay - previousMatch.scheduledDay : null, matchesNextSevenDays, policy, coachRiskBias: ((coachForPolicy?.interferenceTolerance ?? 50) - 50) / 50 });
+      await tx.directorTrainingCycle.upsert({ where: { careerId_clubId_dayIndex: { careerId: active.id, clubId: team.id, dayIndex: nextDay } }, create: { careerId: active.id, clubId: team.id, dayIndex: nextDay, kind: cycle.kind, intensity: cycle.intensity, focus: cycle.focus, congestion: cycle.congestion, effects: { load: cycle.load }, explanation: cycle.explanation }, update: {} });
+      if (nextMatch) {
+        const opponentId = nextMatch.homeClubId === team.id ? nextMatch.awayClubId : nextMatch.homeClubId;
+        const opponentMemory = coachMemoryState(coachMemories.find((item) => item.clubId === opponentId));
+        const history = active.matches.filter((match) => match.status === "PLAYED" && match.scheduledDay < nextDay && (match.homeClubId === opponentId || match.awayClubId === opponentId)).sort((a, b) => b.scheduledDay - a.scheduledDay).slice(0, 8);
+        const uncertainty = clamp(1 - history.length / 8, .08, .85);
+        await tx.directorOpponentAnalysis.upsert({ where: { matchId_clubId: { matchId: nextMatch.id, clubId: team.id } }, create: { careerId: active.id, matchId: nextMatch.id, clubId: team.id, opponentClubId: opponentId, dataCutoffDay: nextDay - 1, sampleSize: history.length, tendencies: { phases: opponentMemory.phaseAssessment, lastFormation: opponentMemory.lastFormation, lastStyle: opponentMemory.lastStyle }, keyDuels: PHASES.slice().sort((a, b) => opponentMemory.phaseAssessment[b] - opponentMemory.phaseAssessment[a]).slice(0, 2), predictability: opponentMemory.predictability, uncertainty, explanation: history.length ? [`Analýza používá pouze ${history.length} utkání odehraných před dnešním dnem.`, "Čitelnost nabízí omezenou přípravu, nikoliv skrytý bonus síly."] : ["Pro spolehlivou analýzu soupeře zatím chybí historie."] }, update: { dataCutoffDay: nextDay - 1, sampleSize: history.length, tendencies: { phases: opponentMemory.phaseAssessment, lastFormation: opponentMemory.lastFormation, lastStyle: opponentMemory.lastStyle }, predictability: opponentMemory.predictability, uncertainty } });
+      }
+      const medicalStaff = active.staff.find((item) => item.clubId === team.id && item.role === "MEDICAL" && item.status === "ACTIVE");
       for (const squadPlayer of team.players) {
-        const update = trainingUpdate(squadPlayer, policy, nextDay, active.worldSeed);
-        await tx.directorPlayer.update({ where: { id: squadPlayer.id }, data: update });
-        Object.assign(squadPlayer, update);
+        const update = trainingUpdate(squadPlayer, { ...policy, trainingIntensity: cycle.intensity }, nextDay, active.worldSeed); const health = medicalState({ injuryDays: squadPlayer.injuryDays, fitness: update.fitness, acuteLoad: update.acuteLoad, chronicLoad: update.chronicLoad, previousStatus: squadPlayer.healthStatus, currentDay: nextDay, medicalInformationQuality: medicalStaff?.ability ?? 35, seed: hashSeed(active.worldSeed, squadPlayer.id) }); const familiarity = evolveRoleFamiliarity({ familiarity: squadPlayer.tacticalFamiliarity as Record<string, number>, minutes: 0, tacticalTraining: cycle.kind === "TACTICAL" });
+        await tx.directorPlayer.update({ where: { id: squadPlayer.id }, data: { ...update, tacticalFamiliarity: familiarity, healthStatus: health.status, healthIssueType: health.issueType, returnWindowMin: health.estimatedMinDay, returnWindowMax: health.estimatedMaxDay, minutesLimit: health.minutesLimit, recurrenceRisk: health.recurrenceRisk } });
+        await tx.directorMedicalReport.upsert({ where: { careerId_playerId_dayIndex: { careerId: active.id, playerId: squadPlayer.id, dayIndex: nextDay } }, create: { careerId: active.id, clubId: team.id, playerId: squadPlayer.id, dayIndex: nextDay, status: health.status, issueType: health.issueType, readiness: health.readiness, recurrenceRisk: health.recurrenceRisk, estimatedMinDay: health.estimatedMinDay, estimatedMaxDay: health.estimatedMaxDay, minutesLimit: health.minutesLimit, uncertainty: health.uncertainty, explanation: health.status === "FIT" ? "Hráč je bez známého omezení." : health.status === "RETURNING" ? "Návrat vyžaduje omezené minuty kvůli riziku recidivy." : "Dostupnost omezuje aktuální zdravotní stav nebo zátěž." }, update: {} });
+        Object.assign(squadPlayer, update, { tacticalFamiliarity: familiarity, matchReadiness: health.readiness, healthStatus: health.status, minutesLimit: health.minutesLimit, recurrenceRisk: health.recurrenceRisk });
       }
     }
     const upcomingManaged = active.matches.find((match) => match.status === "SCHEDULED" && match.scheduledDay > nextDay && match.scheduledDay <= nextDay + 2 && (match.homeClubId === club.id || match.awayClubId === club.id));
@@ -502,13 +549,63 @@ export async function advanceDirectorDay(user: CurrentUser): Promise<DirectorDTO
       if (home && away) {
         const storedHomePolicy = sportPolicies.find((item) => item.clubId === home.id);
         const storedAwayPolicy = sportPolicies.find((item) => item.clubId === away.id);
-        const policyForMatch = (stored: typeof storedHomePolicy, teamId: string) => { if (!stored) return undefined; const priorities = { ...(stored.phasePriorities as Record<(typeof PHASES)[number], number>) }; const meeting = active.sportMeetings.find((item) => item.matchId === dueMatch.id && item.clubId === teamId && item.status === "RESOLVED"); const response = meeting?.response as { phaseDelta?: number } | null; const recommendation = meeting?.recommendation as { phase?: (typeof PHASES)[number] } | null; if (response?.phaseDelta && recommendation?.phase && PHASES.includes(recommendation.phase)) priorities[recommendation.phase] = clamp((priorities[recommendation.phase] ?? 50) + response.phaseDelta, 0, 100); return { ...stored, desiredStyle: stored.desiredStyle as SportingStyle, phasePriorities: priorities }; };
+        const policyForMatch = (stored: typeof storedHomePolicy, teamId: string) => {
+          if (!stored) return undefined;
+          const memory = coachMemoryState(coachMemories.find((item) => item.clubId === teamId));
+          const policyPriorities = stored.phasePriorities as Record<(typeof PHASES)[number], number>;
+          const priorities = Object.fromEntries(PHASES.map((phase) => [phase, policyPriorities[phase] * .65 + memory.phaseAssessment[phase] * .35])) as Record<(typeof PHASES)[number], number>;
+          const meeting = active.sportMeetings.find((item) => item.matchId === dueMatch.id && item.clubId === teamId && item.status === "RESOLVED");
+          const response = meeting?.response as { phaseDelta?: number } | null;
+          const recommendation = meeting?.recommendation as { phase?: (typeof PHASES)[number] } | null;
+          if (response?.phaseDelta && recommendation?.phase && PHASES.includes(recommendation.phase)) {
+            const donor = PHASES.filter((phase) => phase !== recommendation.phase).sort((a, b) => priorities[b] - priorities[a])[0];
+            const delta = clamp(response.phaseDelta, -3, 3);
+            priorities[recommendation.phase] += delta;
+            priorities[donor] -= delta;
+          }
+          return { ...stored, desiredStyle: stored.desiredStyle as SportingStyle, phasePriorities: priorities };
+        };
+        for (const [team, opponent] of [[home, away], [away, home]] as const) {
+          const history = active.matches.filter((match) => match.status === "PLAYED" && match.scheduledDay < nextDay && (match.homeClubId === opponent.id || match.awayClubId === opponent.id)).sort((a, b) => b.scheduledDay - a.scheduledDay).slice(0, 8);
+          const opponentPlans = history.map((match) => active.matchPlans.find((plan) => plan.matchId === match.id && plan.clubId === opponent.id)).filter(Boolean);
+          const formations = opponentPlans.reduce<Record<string, number>>((counts, plan) => { counts[plan!.formation] = (counts[plan!.formation] ?? 0) + 1; return counts; }, {});
+          const opponentMemory = coachMemoryState(coachMemories.find((item) => item.clubId === opponent.id));
+          const sampleSize = history.length;
+          const uncertainty = clamp(1 - sampleSize / 8, .08, .85);
+          await tx.directorOpponentAnalysis.upsert({
+            where: { matchId_clubId: { matchId: dueMatch.id, clubId: team.id } },
+            create: { careerId: active.id, matchId: dueMatch.id, clubId: team.id, opponentClubId: opponent.id, version: 1, dataCutoffDay: nextDay - 1, sampleSize, tendencies: { formations, phases: opponentMemory.phaseAssessment }, keyDuels: PHASES.slice().sort((a, b) => opponentMemory.phaseAssessment[b] - opponentMemory.phaseAssessment[a]).slice(0, 2), predictability: opponentMemory.predictability, uncertainty, explanation: sampleSize ? [`Analýza vychází z ${sampleSize} dříve odehraných utkání.`, "Vyšší čitelnost pomáhá přípravě, ale nemění kvalitu kádru."] : ["Soupeře zatím nelze spolehlivě přečíst." ] },
+            update: {},
+          });
+        }
         const played = simulateDirectorMatch({ seed: active.worldSeed, day: nextDay, round: dueMatch.round, home, away, homePolicy: policyForMatch(storedHomePolicy, home.id), awayPolicy: policyForMatch(storedAwayPolicy, away.id) });
-        await tx.directorMatch.update({ where: { id: dueMatch.id }, data: { status: "PLAYED", engineVersion: 4, homeGoals: played.homeGoals, awayGoals: played.awayGoals, homeXg: played.homeXg, awayXg: played.awayXg, homeStrength: played.homeStrength, awayStrength: played.awayStrength, timeline: played.timeline, phaseStats: played.phaseStats, coachReport: played.coachReport, playedAt: now } });
-        for (const [side, team, plan] of [["HOME", home, played.homePlan], ["AWAY", away, played.awayPlan]] as const) await tx.directorMatchPlan.create({ data: { careerId: active.id, matchId: dueMatch.id, clubId: team.id, coachId: team.coaches.find((item) => item.status === "ACTIVE")?.id, side, formation: plan.formation, mentality: plan.mentality, lineup: plan.lineup as unknown as Prisma.InputJsonValue, bench: plan.bench as unknown as Prisma.InputJsonValue, roles: Object.fromEntries(plan.lineup.map((item) => [item.playerId, item.role])), phaseProfile: plan.phases, selectionReasons: plan.reasons, weaknesses: plan.weaknesses, confidence: plan.confidence, createdDay: nextDay, lockedAt: now } });
+        await tx.directorMatch.update({ where: { id: dueMatch.id }, data: { status: "PLAYED", engineVersion: 5, homeGoals: played.homeGoals, awayGoals: played.awayGoals, homeXg: played.homeXg, awayXg: played.awayXg, homeStrength: played.homeStrength, awayStrength: played.awayStrength, timeline: played.timeline, phaseStats: played.phaseStats, coachReport: played.coachReport, playedAt: now } });
+        const savedPlans = new Map<string, { id: string; costs: ReturnType<typeof systemCosts> }>();
+        for (const [side, team, plan, stored] of [["HOME", home, played.homePlan, storedHomePolicy], ["AWAY", away, played.awayPlan, storedAwayPolicy]] as const) {
+          const coachForTeam = team.coaches.find((item) => item.status === "ACTIVE") ?? team.coaches[0];
+          const memory = coachMemoryState(coachMemories.find((item) => item.clubId === team.id && item.coachId === coachForTeam?.id));
+          const costs = systemCosts({ previous: memory, formation: plan.formation, style: stored?.desiredStyle ?? "BALANCED", phases: plan.phases });
+          const saved = await tx.directorMatchPlan.create({ data: { careerId: active.id, matchId: dueMatch.id, clubId: team.id, coachId: coachForTeam?.id, side, formation: plan.formation, mentality: plan.mentality, lineup: plan.lineup as unknown as Prisma.InputJsonValue, bench: plan.bench as unknown as Prisma.InputJsonValue, roles: Object.fromEntries(plan.lineup.map((item) => [item.playerId, item.role])), phaseProfile: plan.phases, selectionReasons: plan.reasons, weaknesses: plan.weaknesses, confidence: plan.confidence, familiarity: costs.familiarity, predictability: costs.predictability, cohesionCost: costs.cohesionCost, changeMagnitude: costs.changeMagnitude, uncertainty: memory.confidence < .45 ? ["omezený vzorek trenérské paměti"] : [], engineVersion: 5, createdDay: nextDay, lockedAt: now } });
+          savedPlans.set(team.id, { id: saved.id, costs });
+        }
         for (const [team, appearances] of [[home, played.homeAppearances], [away, played.awayAppearances]] as const) for (const appearance of appearances) {
           await tx.directorPlayerAppearance.create({ data: { careerId: active.id, matchId: dueMatch.id, clubId: team.id, ...appearance } });
-          await tx.directorPlayer.update({ where: { id: appearance.playerId }, data: { appearances: { increment: 1 }, minutes: { increment: appearance.minutes }, acuteLoad: { increment: appearance.load }, fitness: { decrement: appearance.load * .16 }, injuryDays: appearance.injuryDays || undefined } });
+          const squadPlayer = team.players.find((item) => item.id === appearance.playerId);
+          const familiarity = squadPlayer ? evolveRoleFamiliarity({ familiarity: squadPlayer.tacticalFamiliarity as Record<string, number>, usedRole: appearance.role, minutes: appearance.minutes, tacticalTraining: false }) : undefined;
+          await tx.directorPlayer.update({ where: { id: appearance.playerId }, data: { appearances: { increment: 1 }, minutes: { increment: appearance.minutes }, acuteLoad: { increment: appearance.load }, fitness: { decrement: appearance.load * .16 }, tacticalFamiliarity: familiarity, injuryDays: appearance.injuryDays || undefined, healthStatus: appearance.injuryDays ? "ACUTE_INJURY" : undefined, healthIssueType: appearance.injuryDays ? "ACUTE" : undefined, returnDay: appearance.injuryDays ? nextDay + appearance.injuryDays : undefined } });
+        }
+        for (const [team, opponent, plan, xgFor, xgAgainst, goalsFor, goalsAgainst] of [[home, away, played.homePlan, played.homeXg, played.awayXg, played.homeGoals, played.awayGoals], [away, home, played.awayPlan, played.awayXg, played.homeXg, played.awayGoals, played.homeGoals]] as const) {
+          const coachForTeam = team.coaches.find((item) => item.status === "ACTIVE") ?? team.coaches[0];
+          if (!coachForTeam) continue;
+          const phasePerformance = Object.fromEntries(PHASES.map((phase) => [phase, clamp(plan.phases[phase] + (xgFor - xgAgainst) * 8, 20, 80)]));
+          const evidence: MatchEvidence = { day: nextDay, phases: phasePerformance, xgFor, xgAgainst, points: goalsFor > goalsAgainst ? 3 : goalsFor === goalsAgainst ? 1 : 0, opponentStrength: (opponent.baseAttack + 1 / Math.max(.2, opponent.baseDefense)) * 22, ownStrength: (team.baseAttack + 1 / Math.max(.2, team.baseDefense)) * 22, formation: plan.formation, style: (team.id === home.id ? storedHomePolicy?.desiredStyle : storedAwayPolicy?.desiredStyle) ?? "BALANCED" };
+          const analytics = active.staff.find((item) => item.clubId === team.id && item.role === "ANALYTICS" && item.status === "ACTIVE");
+          const previous = coachMemoryState(coachMemories.find((item) => item.clubId === team.id && item.coachId === coachForTeam.id));
+          const result = updateCoachMemory({ previous, evidence: [evidence], adaptability: coachForTeam.adaptability, analyticsQuality: analytics?.ability ?? 35, seed: hashSeed(active.worldSeed, nextDay, team.id) });
+          const saved = savedPlans.get(team.id);
+          await tx.directorPlanReview.create({ data: { careerId: active.id, matchId: dueMatch.id, clubId: team.id, coachId: coachForTeam.id, planId: saved?.id, version: 1, phasePerformance, execution: clamp(50 + (xgFor - xgAgainst) * 12), finishingLuck: (goalsFor - goalsAgainst) - (xgFor - xgAgainst), lessons: [`${result.adaptation.strengthened} vyžaduje větší pozornost.`, `${result.adaptation.reduced} uvolní stejnou část omezeného taktického rozpočtu.`], adaptation: result.adaptation, confidence: result.memory.confidence, createdDay: nextDay } });
+          await tx.directorCoachMemory.upsert({ where: { careerId_clubId_coachId: { careerId: active.id, clubId: team.id, coachId: coachForTeam.id } }, create: { careerId: active.id, clubId: team.id, coachId: coachForTeam.id, phaseAssessment: result.memory.phaseAssessment, tacticalBudget: result.memory.tacticalBudget, systemFamiliarity: saved?.costs.familiarity ?? previous.systemFamiliarity, predictability: saved?.costs.predictability ?? previous.predictability, lastFormation: plan.formation, lastStyle: evidence.style, recentPlans: result.memory.recentPlans, confidence: result.memory.confidence, updatedDay: nextDay }, update: { version: { increment: 1 }, phaseAssessment: result.memory.phaseAssessment, systemFamiliarity: saved?.costs.familiarity ?? previous.systemFamiliarity, predictability: saved?.costs.predictability ?? previous.predictability, lastFormation: plan.formation, lastStyle: evidence.style, recentPlans: result.memory.recentPlans, confidence: result.memory.confidence, updatedDay: nextDay } });
+          if (saved?.costs.cohesionCost) await tx.directorClub.update({ where: { id: team.id }, data: { cohesion: { decrement: saved.costs.cohesionCost * .08 } } });
         }
         for (const [team, lineupIds] of [] as unknown as ReadonlyArray<readonly [typeof home, string[]]>) {
           const injuryRandom = seeded(hashSeed(active.worldSeed, nextDay, dueMatch.id, team.id, "injury"));
@@ -932,7 +1029,7 @@ function toDTO(career: LoadedCareer, legacyArchiveAvailable: boolean): DirectorD
     career: { id: career.id, name: career.name, version: career.version, gameDate: career.gameDate.toISOString(), dayIndex: career.dayIndex, availableSteps: effectiveSteps(career), reputation: career.reputation, boardTrust: career.boardTrust, publicTrust: career.publicTrust, mediaCredibility: career.mediaCredibility, ethicsMode: career.ethicsMode, identityTags: asStringArray(career.identityTags) },
     club: { id: club.id, name: club.name, shortName: club.shortName, logo: club.logo, primaryColor: club.primaryColor, leagueName: career.leagueName, cashBalance: club.cashBalance, transferBudget: club.transferBudget, wageBudget: club.wageBudget, weeklyWages: club.weeklyWages, fanTrust: club.fanTrust, morale: club.morale, cohesion: club.cohesion, form: club.currentForm, stadium: { name: club.stadiumName, capacity: club.stadiumCapacity, attendance: club.stadiumAttendance, condition: club.stadiumCondition, atmosphere: club.stadiumAtmosphere, commercial: club.stadiumCommercial }, facilities: { academy: club.academyLevel, training: club.trainingLevel, medical: club.medicalLevel, scouting: club.scoutingLevel } },
     coach: coach ? { id: coach.id, name: coach.name, philosophy: coach.philosophy, formation: coach.formation, adaptability: coach.adaptability, youthDevelopment: coach.youthDevelopment, manManagement: coach.manManagement, matchManagement: coach.matchManagement, relationship: coach.relationship, transferAuthority: coach.transferAuthority, transferVeto: coach.transferVeto, contractUntil: coach.contractUntil.toISOString(), weeklyWage: coach.weeklyWage, personality: coach.personality, reputation: coach.reputation, ambition: coach.ambition, mandate: coach.mandate && typeof coach.mandate === "object" && !Array.isArray(coach.mandate) ? coach.mandate as Record<string, unknown> : {}, evaluation: coachScore } : null,
-    players: club.players.sort((a, b) => b.ability - a.ability).map((item) => { const expectation = career.expectations.find((entry) => entry.playerId === item.id); const agent = career.agents.find((entry) => entry.id === item.agentId); const reason = expectation && Array.isArray(expectation.reasons) && typeof expectation.reasons[0] === "string" ? expectation.reasons[0] : null; const roles = roleScores(item); return { id: item.id, name: `${item.firstName} ${item.lastName}`, position: item.position, archetype: item.archetype, personality: item.personality, age: item.age, ability: item.ability, potential: item.potential, form: item.form, fitness: item.fitness, morale: item.morale, injuryDays: item.injuryDays, contractUntil: item.contractUntil.toISOString(), weeklyWage: item.weeklyWage, marketValue: item.marketValue, promisedRole: item.promisedRole, transferStatus: item.transferStatus, tacticalRoles: Object.entries(roles).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([role, fit]) => ({ role, fit })), load: { acute: item.acuteLoad, chronic: item.chronicLoad, readiness: item.matchReadiness, healthRisk: item.healthRisk }, expectation: expectation ? { expectedRole: expectation.expectedRole, targetMinuteShare: expectation.targetMinuteShare, actualMinuteShare: expectation.actualMinuteShare, status: expectation.status, escalationStage: expectation.escalationStage, willingness: expectation.willingness, reason } : null, agent: agent ? { name: agent.name, personality: agent.personality } : null }; }),
+    players: club.players.sort((a, b) => b.ability - a.ability).map((item) => { const expectation = career.expectations.find((entry) => entry.playerId === item.id); const agent = career.agents.find((entry) => entry.id === item.agentId); const reason = expectation && Array.isArray(expectation.reasons) && typeof expectation.reasons[0] === "string" ? expectation.reasons[0] : null; const roles = roleScores(item); return { id: item.id, name: `${item.firstName} ${item.lastName}`, position: item.position, archetype: item.archetype, personality: item.personality, age: item.age, ability: item.ability, potential: item.potential, form: item.form, fitness: item.fitness, morale: item.morale, injuryDays: item.injuryDays, contractUntil: item.contractUntil.toISOString(), weeklyWage: item.weeklyWage, marketValue: item.marketValue, promisedRole: item.promisedRole, transferStatus: item.transferStatus, tacticalRoles: Object.entries(roles).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([role, fit]) => ({ role, fit })), load: { acute: item.acuteLoad, chronic: item.chronicLoad, readiness: item.matchReadiness, healthRisk: item.healthRisk, healthStatus: item.healthStatus, minutesLimit: item.minutesLimit, recurrenceRisk: item.recurrenceRisk }, expectation: expectation ? { expectedRole: expectation.expectedRole, targetMinuteShare: expectation.targetMinuteShare, actualMinuteShare: expectation.actualMinuteShare, status: expectation.status, escalationStage: expectation.escalationStage, willingness: expectation.willingness, reason } : null, agent: agent ? { name: agent.name, personality: agent.personality } : null }; }),
     events: career.events.map((item) => ({ id: item.id, category: item.category, severity: item.severity, title: item.title, body: item.body, reason: eventReason(item.category), stakes: eventStakes(item.category), dueDay: item.dueDay, choices: asChoices(item.choices) })),
     pulse: career.pulsePosts.map((item) => ({ id: item.id, authorType: item.authorType, authorName: item.authorName, tone: item.tone, body: item.body, topic: item.topic, trust: item.trust, reach: item.reach, dayIndex: item.dayIndex })),
     achievements: career.achievements.map((item) => ({ id: item.id, key: item.key, title: item.title, description: item.description, rarity: item.rarity as DirectorDTO["achievements"][number]["rarity"], unlockedAt: item.unlockedAt.toISOString(), seen: Boolean(item.seenAt) })),
@@ -940,7 +1037,7 @@ function toDTO(career: LoadedCareer, legacyArchiveAvailable: boolean): DirectorD
       const home = career.clubs.find((item) => item.id === match.homeClubId)!;
       const away = career.clubs.find((item) => item.id === match.awayClubId)!;
       const plan = career.matchPlans.find((item) => item.matchId === match.id && item.clubId === club.id); const lineup = plan && Array.isArray(plan.lineup) ? plan.lineup as unknown as NonNullable<DirectorDTO["matches"][number]["plan"]>["lineup"] : [];
-      return { id: match.id, round: match.round, scheduledDay: match.scheduledDay, status: match.status, homeName: home?.name ?? "Domácí", awayName: away?.name ?? "Hosté", homeLogo: home?.logo ?? null, awayLogo: away?.logo ?? null, homeGoals: match.homeGoals, awayGoals: match.awayGoals, homeXg: match.homeXg, awayXg: match.awayXg, engineVersion: match.engineVersion, phaseStats: match.phaseStats && typeof match.phaseStats === "object" && !Array.isArray(match.phaseStats) ? match.phaseStats as Record<string, unknown> : {}, plan: plan ? { formation: plan.formation, mentality: plan.mentality, confidence: plan.confidence, lineup, reasons: asStringArray(plan.selectionReasons), weaknesses: asStringArray(plan.weaknesses) } : null, timeline: Array.isArray(match.timeline) ? match.timeline as unknown as DirectorDTO["matches"][number]["timeline"] : [], coachReport: match.coachReport && typeof match.coachReport === "object" && !Array.isArray(match.coachReport) ? match.coachReport as DirectorDTO["matches"][number]["coachReport"] : {} };
+      return { id: match.id, round: match.round, scheduledDay: match.scheduledDay, status: match.status, homeName: home?.name ?? "Domácí", awayName: away?.name ?? "Hosté", homeLogo: home?.logo ?? null, awayLogo: away?.logo ?? null, homeGoals: match.homeGoals, awayGoals: match.awayGoals, homeXg: match.homeXg, awayXg: match.awayXg, engineVersion: match.engineVersion, phaseStats: match.phaseStats && typeof match.phaseStats === "object" && !Array.isArray(match.phaseStats) ? match.phaseStats as Record<string, unknown> : {}, plan: plan ? { formation: plan.formation, mentality: plan.mentality, confidence: plan.confidence, familiarity: plan.familiarity, predictability: plan.predictability, cohesionCost: plan.cohesionCost, uncertainty: asStringArray(plan.uncertainty), lineup, reasons: asStringArray(plan.selectionReasons), weaknesses: asStringArray(plan.weaknesses) } : null, timeline: Array.isArray(match.timeline) ? match.timeline as unknown as DirectorDTO["matches"][number]["timeline"] : [], coachReport: match.coachReport && typeof match.coachReport === "object" && !Array.isArray(match.coachReport) ? match.coachReport as DirectorDTO["matches"][number]["coachReport"] : {} };
     }),
     marketTargets: career.clubs.filter((item) => !item.isManaged).flatMap((item) => item.players.map((player) => ({ player, club: item }))).sort((a, b) => b.player.potential - a.player.potential).slice(0, 12).map(({ player, club: owner }) => {
       const uncertainty = Math.max(3, 12 - club.scoutingLevel * 1.5);
@@ -963,7 +1060,16 @@ function toDTO(career: LoadedCareer, legacyArchiveAvailable: boolean): DirectorD
       coachNegotiations: career.coachNegotiations.map((item) => ({ id: item.id, candidateName: career.coachCandidates.find((candidate) => candidate.id === item.candidateId)?.name ?? "Kandidát", status: item.status, round: item.round, patience: item.patience, response: item.response })),
       jobOffers: career.jobOffers.map((item) => ({ id: item.id, clubName: career.clubs.find((clubItem) => clubItem.id === item.clubId)?.name ?? "Klub", status: item.status, expiresDay: item.expiresDay })),
     },
-    sporting: { policy: (() => { const item = career.sportPolicies.find((entry) => entry.clubId === club.id); return item ? { desiredStyle: item.desiredStyle, youthPreference: item.youthPreference, rotationLevel: item.rotationLevel, trainingIntensity: item.trainingIntensity, healthRiskTolerance: item.healthRiskTolerance, phasePriorities: item.phasePriorities as Record<string, number> } : null; })(), meetings: career.sportMeetings.filter((item) => item.clubId === club.id).map((item) => ({ id: item.id, title: item.title, briefing: item.briefing, trigger: item.trigger, status: item.status, dueDay: item.dueDay, recommendation: item.recommendation as Record<string, unknown>, resolution: item.resolution })) },
+    sporting: (() => {
+      const policy = career.sportPolicies.find((entry) => entry.clubId === club.id);
+      const memory = career.coachMemories.find((entry) => entry.clubId === club.id && entry.coachId === coach?.id);
+      const cycle = career.trainingCycles.find((entry) => entry.clubId === club.id);
+      const nextMatch = career.matches.find((match) => match.status === "SCHEDULED" && (match.homeClubId === club.id || match.awayClubId === club.id));
+      const analysis = nextMatch ? career.opponentAnalyses.find((entry) => entry.matchId === nextMatch.id && entry.clubId === club.id) : undefined;
+      const opponent = career.clubs.find((entry) => entry.id === analysis?.opponentClubId);
+      const medicalAlerts = career.medicalReports.filter((entry) => entry.clubId === club.id && entry.dayIndex === career.dayIndex && entry.status !== "FIT").map((entry) => { const player = club.players.find((item) => item.id === entry.playerId); return { playerId: entry.playerId, playerName: player ? `${player.firstName} ${player.lastName}` : "Hráč", status: entry.status, readiness: entry.readiness, recurrenceRisk: entry.recurrenceRisk, minutesLimit: entry.minutesLimit, returnWindow: entry.estimatedMinDay !== null && entry.estimatedMaxDay !== null ? `${entry.estimatedMinDay}.–${entry.estimatedMaxDay}. den` : null, explanation: entry.explanation }; });
+      return { policy: policy ? { desiredStyle: policy.desiredStyle, youthPreference: policy.youthPreference, rotationLevel: policy.rotationLevel, trainingIntensity: policy.trainingIntensity, healthRiskTolerance: policy.healthRiskTolerance, phasePriorities: policy.phasePriorities as Record<string, number> } : null, meetings: career.sportMeetings.filter((item) => item.clubId === club.id).map((item) => ({ id: item.id, title: item.title, briefing: item.briefing, trigger: item.trigger, status: item.status, dueDay: item.dueDay, recommendation: item.recommendation as Record<string, unknown>, resolution: item.resolution })), memory: memory ? { phases: memory.phaseAssessment as Record<string, number>, familiarity: memory.systemFamiliarity, predictability: memory.predictability, confidence: memory.confidence, sampleSize: Array.isArray(memory.recentPlans) ? memory.recentPlans.length : 0 } : null, microcycle: cycle ? { kind: cycle.kind, intensity: cycle.intensity, focus: cycle.focus, congestion: cycle.congestion, explanation: cycle.explanation } : null, medicalAlerts, opponentAnalysis: analysis ? { opponentName: opponent?.name ?? "Soupeř", sampleSize: analysis.sampleSize, predictability: analysis.predictability, uncertainty: analysis.uncertainty, keyDuels: asStringArray(analysis.keyDuels), explanation: asStringArray(analysis.explanation) } : null };
+    })(),
     projects: career.projects.map((item) => ({ id: item.id, kind: item.kind, title: item.title, status: item.status, startedDay: item.startedDay, finishDay: item.finishDay, cost: item.cost })),
     influences: career.effects.filter((item) => item.status === "ACTIVE").map((item) => { const value = effectValue({ ...item, decay: item.decay as "NONE" | "LINEAR" | "EXPONENTIAL" }, career.dayIndex); return { id: item.id, sourceLabel: item.sourceLabel, metric: item.metric, direction: item.direction, strength: Math.abs(value) < .5 ? "slabý" : Math.abs(value) < 1.5 ? "mírný" : Math.abs(value) < 3 ? "výrazný" : "silný", confidence: item.confidence >= .8 ? "vysoká" : item.confidence >= .55 ? "střední" : "nízká", explanation: item.explanation, startDay: item.startDay, endDay: item.endDay }; }),
     commitments: career.commitments.map((item) => ({ id: item.id, stakeholderType: item.stakeholderType, title: item.title, status: item.status, dueDay: item.dueDay, progress: item.progress, explanation: item.explanation })),

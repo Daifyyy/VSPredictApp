@@ -17,7 +17,7 @@ export interface SportingPlayer {
   id: string; position: string; archetype: string; age: number; ability: number; potential: number;
   ballSkill: number; creation: number; finishing: number; defending: number; physical: number; mentality: number;
   form: number; fitness: number; morale: number; cohesion: number; injuryDays: number;
-  acuteLoad?: number; chronicLoad?: number; matchReadiness?: number; healthRisk?: number;
+  acuteLoad?: number; chronicLoad?: number; matchReadiness?: number; healthRisk?: number; healthStatus?: string; minutesLimit?: number | null; recurrenceRisk?: number;
   tacticalFamiliarity?: unknown;
 }
 
@@ -100,11 +100,12 @@ function formationQuotas(formation: string) {
 
 export function prepareSportingPlan(input: { players: SportingPlayer[]; coach: SportingCoach; policy: SportingPolicy; opponentStrength: number; seed: number; day: number }): SportingPlan {
   const { coach, policy } = input; const quotas = formationQuotas(coach.formation);
-  const candidates = input.players.filter((p) => p.injuryDays <= 0 && (p.matchReadiness ?? p.fitness) >= 35).map((player) => {
+  const candidates = input.players.filter((p) => p.injuryDays <= 0 && p.healthStatus !== "ILLNESS" && p.healthStatus !== "ACUTE_INJURY" && (p.matchReadiness ?? p.fitness) >= 35).map((player) => {
     const role = preferredRole(player, coach); const readiness = player.matchReadiness ?? player.fitness;
     const youth = player.age <= 22 ? policy.youthPreference * coach.youthDevelopment * .035 : 0;
     const fatiguePenalty = Math.max(0, (player.acuteLoad ?? 20) - (player.chronicLoad ?? 25) * 1.35) * (1 + policy.rotationLevel) * .3;
-    const score = player.ability * .52 + role.fit * .18 + player.form * .08 + readiness * .1 + player.morale * .05 + player.cohesion * .07 + youth - fatiguePenalty;
+    const returnPenalty = player.minutesLimit !== null && player.minutesLimit !== undefined && player.minutesLimit < 60 ? 18 : (player.recurrenceRisk ?? 0) * policy.healthRiskTolerance * .08;
+    const score = player.ability * .52 + role.fit * .18 + player.form * .08 + readiness * .1 + player.morale * .05 + player.cohesion * .07 + youth - fatiguePenalty - returnPenalty;
     return { player, role: role.role, roleFit: role.fit, score };
   }).sort((a, b) => b.score - a.score || a.player.id.localeCompare(b.player.id));
   const selected: typeof candidates = [];

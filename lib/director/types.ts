@@ -1,4 +1,4 @@
-export const DIRECTOR_WORLD_VERSION = 4;
+export const DIRECTOR_WORLD_VERSION = 5;
 export const MAX_BANKED_STEPS = 3;
 
 export type DirectorSection = "office" | "team" | "market" | "club" | "competitions";
@@ -98,7 +98,7 @@ export interface DirectorDTO {
     promisedRole: string;
     transferStatus: string;
     tacticalRoles: Array<{ role: string; fit: number }>;
-    load: { acute: number; chronic: number; readiness: number; healthRisk: number };
+    load: { acute: number; chronic: number; readiness: number; healthRisk: number; healthStatus: string; minutesLimit: number | null; recurrenceRisk: number };
     expectation: { expectedRole: string; targetMinuteShare: number; actualMinuteShare: number; status: string; escalationStage: number; willingness: number; reason: string | null } | null;
     agent: { name: string; personality: string } | null;
   }>;
@@ -150,11 +150,15 @@ export interface DirectorDTO {
     coachReport: { headline?: string; summary?: string };
     engineVersion?: number;
     phaseStats?: Record<string, unknown>;
-    plan?: { formation: string; mentality: string; confidence: number; lineup: Array<{ playerId: string; role: string; roleFit: number; reason: string }>; reasons: string[]; weaknesses: string[] } | null;
+    plan?: { formation: string; mentality: string; confidence: number; familiarity: number; predictability: number; cohesionCost: number; uncertainty: string[]; lineup: Array<{ playerId: string; role: string; roleFit: number; reason: string }>; reasons: string[]; weaknesses: string[] } | null;
   }>;
   sporting?: {
     policy: { desiredStyle: string; youthPreference: number; rotationLevel: number; trainingIntensity: number; healthRiskTolerance: number; phasePriorities: Record<string, number> } | null;
     meetings: Array<{ id: string; title: string; briefing: string; trigger: string; status: string; dueDay: number | null; recommendation: Record<string, unknown>; resolution: string | null }>;
+    memory: { phases: Record<string, number>; familiarity: number; predictability: number; confidence: number; sampleSize: number } | null;
+    microcycle: { kind: string; intensity: number; focus: string; congestion: number; explanation: string } | null;
+    medicalAlerts: Array<{ playerId: string; playerName: string; status: string; readiness: number; recurrenceRisk: number; minutesLimit: number | null; returnWindow: string | null; explanation: string }>;
+    opponentAnalysis: { opponentName: string; sampleSize: number; predictability: number; uncertainty: number; keyDuels: string[]; explanation: string[] } | null;
   };
   marketTargets: Array<{ id: string; name: string; club: string; position: string; archetype: string; age: number; estimateMin: number; estimateMax: number; abilityMin: number; abilityMax: number }>;
   negotiations: Array<{ id: string; playerId: string; playerName: string; clubName: string; status: string; round: number; patience: number; referenceValue: number; response: string | null }>;

@@ -639,6 +639,11 @@ model DirectorCareer {
   sportMeetings     DirectorSportMeeting[]
   matchPlans        DirectorMatchPlan[]
   playerAppearances DirectorPlayerAppearance[]
+  coachMemories     DirectorCoachMemory[]
+  trainingCycles    DirectorTrainingCycle[]
+  opponentAnalyses  DirectorOpponentAnalysis[]
+  medicalReports    DirectorMedicalReport[]
+  planReviews       DirectorPlanReview[]
 
   @@index([userId, status])
   @@index([ownerEmail, createdAt])
@@ -728,6 +733,13 @@ model DirectorPlayer {
   matchReadiness      Float    @default(85)
   healthRisk          Float    @default(10)
   healthRiskHistory   Json     @default("[]")
+  healthStatus        String   @default("FIT")
+  healthIssueType     String?
+  returnDay           Int?
+  returnWindowMin     Int?
+  returnWindowMax     Int?
+  minutesLimit        Int?
+  recurrenceRisk      Float    @default(0)
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -1124,6 +1136,11 @@ model DirectorMatchPlan {
   selectionReasons Json
   weaknesses       Json
   confidence       Float
+  familiarity      Float     @default(50)
+  predictability   Float     @default(0)
+  cohesionCost     Float     @default(0)
+  changeMagnitude  Float     @default(0)
+  uncertainty      Json      @default("[]")
   engineVersion    Int       @default(4)
   createdDay       Int
   lockedAt         DateTime?
@@ -1131,6 +1148,117 @@ model DirectorMatchPlan {
 
   career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
   match  DirectorMatch  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, clubId])
+  @@index([careerId, createdDay])
+}
+
+model DirectorCoachMemory {
+  id                String   @id @default(cuid())
+  careerId          String
+  clubId            String
+  coachId           String
+  version           Int      @default(1)
+  phaseAssessment   Json     @default("{}")
+  tacticalBudget    Float    @default(300)
+  systemFamiliarity Float    @default(50)
+  predictability    Float    @default(0)
+  lastFormation     String?
+  lastStyle         String?
+  recentPlans       Json     @default("[]")
+  confidence        Float    @default(0)
+  updatedDay        Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@unique([careerId, clubId, coachId])
+  @@index([careerId, updatedDay])
+}
+
+model DirectorTrainingCycle {
+  id          String   @id @default(cuid())
+  careerId    String
+  clubId      String
+  dayIndex    Int
+  kind        String
+  intensity   Float
+  focus       String
+  congestion  Float    @default(0)
+  effects     Json
+  explanation String
+  createdAt   DateTime @default(now())
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@unique([careerId, clubId, dayIndex])
+  @@index([careerId, dayIndex])
+}
+
+model DirectorOpponentAnalysis {
+  id             String   @id @default(cuid())
+  careerId       String
+  matchId        String
+  clubId         String
+  opponentClubId String
+  version        Int      @default(1)
+  dataCutoffDay  Int
+  sampleSize     Int
+  tendencies     Json
+  keyDuels       Json
+  predictability Float
+  uncertainty    Float
+  explanation    Json
+  createdAt      DateTime @default(now())
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, clubId])
+  @@index([careerId, dataCutoffDay])
+}
+
+model DirectorMedicalReport {
+  id              String   @id @default(cuid())
+  careerId        String
+  clubId          String
+  playerId        String
+  dayIndex        Int
+  status          String
+  issueType       String?
+  readiness       Float
+  recurrenceRisk  Float
+  estimatedMinDay Int?
+  estimatedMaxDay Int?
+  minutesLimit    Int?
+  uncertainty     Float
+  explanation     String
+  createdAt       DateTime @default(now())
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@unique([careerId, playerId, dayIndex])
+  @@index([careerId, clubId, dayIndex])
+}
+
+model DirectorPlanReview {
+  id               String   @id @default(cuid())
+  careerId         String
+  matchId          String
+  clubId           String
+  coachId          String?
+  planId           String?
+  version          Int      @default(1)
+  phasePerformance Json
+  execution        Float
+  finishingLuck    Float
+  lessons          Json
+  adaptation       Json
+  confidence       Float
+  createdDay       Int
+  createdAt        DateTime @default(now())
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
 
   @@unique([matchId, clubId])
   @@index([careerId, createdDay])
