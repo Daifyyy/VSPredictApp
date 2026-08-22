@@ -1,11 +1,11 @@
-import { HraApp } from "../_components/HraApp";
+import { DirectorApp } from "../_components/DirectorApp";
 import { getCurrentUser } from "@/lib/authUser";
 import type { SessionUser } from "../_components/sessionUser";
 
 export const metadata = {
-  title: "Hra: Manažer — Football Insight",
+  title: "Klubový ředitel — Football Insight",
   description:
-    "Klubový manažer se simulací ligy. Vyber tým, zvol taktiku a odehraj sezónu — na stejném predikčním modelu jako reálné tipy.",
+    "Živý svět klubového a sportovního ředitele: kádr, trenér, finance, stadion, fanoušci a média.",
 };
 
 export default async function HraPage() {
@@ -21,7 +21,7 @@ export default async function HraPage() {
     : null;
   return (
     <div className="flex-1">
-      <HraApp user={user} />
+      <DirectorApp user={user} />
     </div>
   );
 }

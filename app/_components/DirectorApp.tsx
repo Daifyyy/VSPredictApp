@@ -1,0 +1,176 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { TeamLogo } from "./TeamLogo";
+import type { SessionUser } from "./sessionUser";
+import type { DirectorDTO, DirectorSection } from "@/lib/director/types";
+
+type League = { id: number; name: string; country: string; tier: number };
+type Team = { id: number; name: string; short: string; color: string; logo?: string };
+
+const NAV: Array<{ key: DirectorSection; label: string; note: string }> = [
+  { key: "office", label: "Kancelář", note: "Dnešní agenda" },
+  { key: "team", label: "Tým", note: "Kádr a trenér" },
+  { key: "market", label: "Trh", note: "Scouting a smlouvy" },
+  { key: "club", label: "Klub", note: "Finance a stadion" },
+  { key: "competitions", label: "Soutěže", note: "Kalendář a výsledky" },
+];
+
+const RARITY: Record<string, string> = {
+  COMMON: "Běžný", UNCOMMON: "Neobvyklý", RARE: "Vzácný", EPIC: "Epický", LEGENDARY: "Legendární", SECRET: "Tajný",
+};
+
+export function DirectorApp({ user }: { user: SessionUser | null }) {
+  const [world, setWorld] = useState<DirectorDTO | null>(null);
+  const [loading, setLoading] = useState(Boolean(user));
+  const [error, setError] = useState<string | null>(null);
+  const [section, setSection] = useState<DirectorSection>("office");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    const controller = new AbortController();
+    fetch("/api/director", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => ({ response, data: await response.json().catch(() => ({})) }))
+      .then(({ response, data }) => {
+        if (!response.ok) setError(data.error ?? "Kariéru se nepodařilo načíst.");
+        else setWorld(data.world ?? null);
+        setLoading(false);
+      })
+      .catch((fetchError) => {
+        if ((fetchError as Error).name !== "AbortError") {
+          setError("Kariéru se nepodařilo načíst.");
+          setLoading(false);
+        }
+      });
+    return () => controller.abort();
+  }, [user]);
+
+  async function command(payload: object) {
+    setBusy(true); setError(null);
+    const response = await fetch("/api/director", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) setError(data.error ?? "Akci se nepodařilo dokončit.");
+    else setWorld(data.world);
+    setBusy(false);
+  }
+
+  if (!user) return <SignInState />;
+  if (loading) return <DirectorSkeleton />;
+  if (!world) return <CareerStart user={user} busy={busy} error={error} onCreate={command} />;
+
+  const unseen = world.achievements.find((item) => !item.seen);
+  return (
+    <div className="director-shell" style={{ "--club-accent": world.club.primaryColor } as React.CSSProperties}>
+      {unseen && <AchievementToast achievement={unseen} dismiss={() => command({ action: "ack_achievements" })} />}
+      <header className="director-hero">
+        <div className="flex min-w-0 items-center gap-3">
+          <TeamLogo src={world.club.logo ?? undefined} alt={world.club.name} size={48} />
+          <div className="min-w-0">
+            <p className="page-kicker">Ředitelská kancelář</p>
+            <h1 className="truncate text-2xl font-bold tracking-tight text-foreground sm:text-3xl">{world.club.name}</h1>
+            <p className="text-sm text-muted">{world.club.leagueName} · {formatDate(world.career.gameDate)} · den {world.career.dayIndex + 1}</p>
+          </div>
+        </div>
+        <div className="director-step-card">
+          <span className="text-xs text-muted">Dostupné kroky</span>
+          <strong className="text-xl tabular-nums">{world.career.availableSteps}/3</strong>
+          <button type="button" disabled={busy || world.career.availableSteps < 1 || world.events.some((event) => event.choices.length)} onClick={() => command({ action: "advance" })} className="director-primary">
+            {busy ? "Zpracovávám…" : "Uzavřít den →"}
+          </button>
+        </div>
+      </header>
+
+      {error && <div role="alert" className="director-alert">{error}</div>}
+
+      <nav className="director-nav" aria-label="Klubové oddělení">
+        {NAV.map((item) => <button key={item.key} type="button" aria-current={section === item.key ? "page" : undefined} onClick={() => setSection(item.key)} className={section === item.key ? "is-active" : ""}><strong>{item.label}</strong><span>{item.note}</span></button>)}
+      </nav>
+
+      {section === "office" && <Office world={world} busy={busy} resolve={(eventId, choiceKey) => command({ action: "resolve_event", eventId, choiceKey })} />}
+      {section === "team" && <TeamSection world={world} />}
+      {section === "market" && <MarketSection key={world.negotiations.find((item) => item.status === "OPEN")?.id ?? "market"} world={world} busy={busy} command={command} />}
+      {section === "club" && <ClubSection world={world} busy={busy} command={command} />}
+      {section === "competitions" && <CompetitionsSection world={world} />}
+    </div>
+  );
+}
+
+function SignInState() {
+  return <div className="mx-auto mt-8 max-w-2xl rounded-2xl border border-border bg-surface p-8 text-center shadow-sm"><p className="page-kicker">Klubový ředitel</p><h1 className="mt-2 text-3xl font-bold">Tvůj klubový svět potřebuje profil</h1><p className="mx-auto mt-3 max-w-lg text-muted">Kariéra ukládá vlastní hráče, smlouvy, rozhodnutí a dlouhodobou paměť. Přihlášení je proto nutné i ve FREE režimu.</p><Link href="/prihlaseni" className="mt-5 inline-flex min-h-11 items-center rounded-xl bg-positive px-5 font-semibold text-white">Přihlásit se</Link></div>;
+}
+
+function DirectorSkeleton() {
+  return <div className="director-shell animate-pulse"><div className="h-28 rounded-2xl bg-border/60" /><div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">{Array.from({ length: 5 }, (_, i) => <div key={i} className="h-16 rounded-xl bg-border/50" />)}</div><div className="mt-5 h-72 rounded-2xl bg-border/40" /></div>;
+}
+
+function CareerStart({ user, busy, error, onCreate }: { user: SessionUser; busy: boolean; error: string | null; onCreate: (payload: object) => Promise<void> }) {
+  const [leagues, setLeagues] = useState<League[]>([]); const [teams, setTeams] = useState<Team[]>([]);
+  const [leagueId, setLeagueId] = useState<number | null>(null); const [teamId, setTeamId] = useState<number | null>(null);
+  const [ethicsMode, setEthicsMode] = useState("REALISTIC"); const [loadingTeams, setLoadingTeams] = useState(false);
+  useEffect(() => { fetch("/api/game/leagues").then((r) => r.json()).then((data) => setLeagues(data.leagues ?? [])).catch(() => undefined); }, []);
+  async function chooseLeague(value: number) { setLeagueId(value); setTeamId(null); setLoadingTeams(true); const response = await fetch(`/api/game/league?id=${value}`); const data = await response.json().catch(() => ({})); setTeams(data.teams ?? []); setLoadingTeams(false); }
+  return <div className="mx-auto max-w-5xl py-6">
+    <div className="director-start-hero"><div><p className="page-kicker">Nová generace Manažera</p><h1 className="mt-2 text-3xl font-bold sm:text-5xl">Převezmi klub. Ne lavičku.</h1><p className="mt-4 max-w-2xl text-muted">Jako klubový a sportovní ředitel vybíráš trenéra, skládáš kádr, řídíš finance a neseš odpovědnost před radou i fanoušky. Každá kariéra je vlastní alternativní fotbalový svět.</p></div><div className="director-document"><span>ROLE</span><strong>Klubový ředitel</strong><small>1 krok denně · max. 3 v zásobě</small></div></div>
+    {error && <div role="alert" className="director-alert mt-4">{error}</div>}
+    <div className="mt-5 grid gap-4 md:grid-cols-[.75fr_1.25fr]">
+      <section className="director-panel"><h2>1. Vyber soutěž</h2><div className="mt-3 grid gap-2">{leagues.map((league) => <button type="button" key={league.id} onClick={() => chooseLeague(league.id)} className={`director-list-button ${leagueId === league.id ? "is-selected" : ""}`}><span><strong>{league.name}</strong><small>{league.country} · {league.tier}. úroveň</small></span><span>→</span></button>)}</div></section>
+      <section className="director-panel"><h2>2. Podepiš první mandát</h2>{loadingTeams ? <p className="mt-4 text-muted">Připravuji startovní snapshot…</p> : !leagueId ? <p className="mt-4 text-muted">Nejdřív zvol soutěž.</p> : <><div className="mt-3 grid max-h-72 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">{teams.map((team) => <button type="button" key={team.id} onClick={() => setTeamId(team.id)} className={`director-team-pick ${teamId === team.id ? "is-selected" : ""}`}><TeamLogo src={team.logo} alt={team.name} size={32} /><span>{team.name}</span></button>)}</div><label className="mt-4 block text-xs font-semibold uppercase tracking-wide text-muted">Etická témata<select value={ethicsMode} onChange={(event) => setEthicsMode(event.target.value)} className="ui-control mt-1 w-full px-3 text-sm text-foreground"><option value="OFF">Bez šedé zóny</option><option value="REALISTIC">Realistická</option><option value="EXTENDED">Rozšířená</option></select></label><button type="button" disabled={busy || !teamId} onClick={() => onCreate({ action: "create", leagueId, teamId, directorName: user.name || "Sportovní ředitel", ethicsMode })} className="director-primary mt-4 w-full">{busy ? "Zakládám svět…" : "Převzít klub"}</button></>}</section>
+    </div>
+  </div>;
+}
+
+function Office({ world, busy, resolve }: { world: DirectorDTO; busy: boolean; resolve: (eventId: string, choiceKey: string) => void }) {
+  const decision = world.events.find((event) => event.choices.length > 0);
+  return <main className="director-grid">
+    <section className="director-panel director-agenda"><div className="director-section-head"><div><p className="page-kicker">Dnešní agenda</p><h2>{decision ? "Čeká na tvé rozhodnutí" : "Kancelář je připravená"}</h2></div><span className={decision?.severity === "CRISIS" ? "director-status danger" : "director-status"}>{decision ? decision.category : "Bez blokace"}</span></div>
+      {decision ? <article className="director-decision"><h3>{decision.title}</h3><p>{decision.body}</p><div className="director-event-context"><span><b>Proč nyní</b>{decision.reason}</span><span><b>Co je v sázce</b>{decision.stakes}</span></div>{decision.dueDay !== null && <small>Termín: herní den {decision.dueDay + 1}</small>}<div className="mt-4 grid gap-2">{decision.choices.map((item) => <button type="button" disabled={busy} key={item.key} onClick={() => resolve(decision.id, item.key)} className="director-choice"><strong>{item.label}</strong><span>{item.detail}</span></button>)}</div></article> : <div className="director-empty"><strong>Další krok můžeš bezpečně uzavřít.</strong><span>Nové situace vznikají ze stavu klubu a pamatují si předchozí rozhodnutí.</span></div>}
+      {world.events.filter((event) => event.id !== decision?.id).map((event) => <div key={event.id} className="mt-3 rounded-xl border border-border bg-background/50 p-3"><strong className="text-sm">{event.title}</strong><p className="mt-1 text-xs leading-relaxed text-muted">{event.body}</p></div>)}
+    </section>
+    <aside className="space-y-4"><StatusCard world={world} /><section className="director-panel"><div className="director-section-head"><h2>Football Pulse</h2><span className="director-status">živý svět</span></div><div className="mt-3 space-y-3">{world.pulse.slice(0, 5).map((post) => <article key={post.id} className="director-pulse"><div><strong>{post.authorName}</strong><span>{post.authorType} · důvěra {Math.round(post.trust)} %</span></div><p>{post.body}</p><small>den {post.dayIndex + 1} · dosah {compact(post.reach)}</small></article>)}</div></section></aside>
+    <section className="director-panel md:col-span-2"><div className="director-section-head"><div><p className="page-kicker">Kauzální přehled</p><h2>Co se změnilo a proč</h2></div><span className="director-status">bez skrytých bonusů</span></div><div className="director-causal-grid"><div><h3>Poslední změny</h3>{world.changes.slice(0, 6).map((item) => <article key={item.id} className="director-causal-item"><span>den {item.dayIndex + 1} · {item.category}</span><strong>{item.headline}</strong><p>{item.explanation}</p></article>)}</div><div><h3>Aktivní vlivy</h3>{world.influences.length ? world.influences.slice(0, 6).map((item) => <article key={item.id} className={`director-influence ${item.direction === "POSITIVE" ? "positive" : "negative"}`}><strong>{item.sourceLabel}</strong><p>{item.explanation}</p><span>{item.strength} vliv · jistota {item.confidence}</span></article>) : <p className="director-empty-copy">Žádný dlouhodobý vliv právě nepůsobí.</p>}</div></div></section>
+    <section className="director-panel"><div className="director-section-head"><h2>Závazky a rizika</h2><span className="director-status">{world.commitments.filter((item) => ["TRACKING", "ON_TRACK", "AT_RISK"].includes(item.status)).length} aktivní</span></div>{world.commitments.length ? world.commitments.slice(0, 6).map((item) => <article key={item.id} className={`director-commitment status-${item.status.toLowerCase()}`}><div><strong>{item.title}</strong><span>{commitmentLabel(item.status)}</span></div><p>{item.explanation}</p><small>termín: den {item.dueDay + 1}{item.progress !== null ? ` · současný stav ${Math.round(item.progress)}` : ""}</small></article>) : <p className="director-empty-copy">Zatím nemáš žádný měřitelný slib.</p>}</section>
+    <section className="director-panel"><h2>Vztahy a paměť</h2>{world.relationships.map((item) => <article key={item.id} className="director-relationship"><div><strong>{item.actorName}</strong><span>důvěra {Math.round(item.trust)} · respekt {Math.round(item.respect)}</span></div><p>{item.summary}</p></article>)}</section>
+  </main>;
+}
+
+function StatusCard({ world }: { world: DirectorDTO }) { return <section className="director-panel"><p className="page-kicker">Mandát vedení</p><div className="mt-3 grid grid-cols-2 gap-3"><Metric label="Důvěra rady" value={world.career.boardTrust} /><Metric label="Veřejnost" value={world.career.publicTrust} /><Metric label="Fanoušci" value={world.club.fanTrust} /><Metric label="Trenér" value={world.coach?.relationship ?? 0} /></div>{world.legacyArchiveAvailable && <p className="mt-3 border-t border-border pt-3 text-xs text-muted">Původní kariéra je zachovaná jako archiv a nebyla přepsána.</p>}</section>; }
+
+function TeamSection({ world }: { world: DirectorDTO }) { const byPosition = useMemo(() => [...world.players].sort((a, b) => positionOrder(a.position) - positionOrder(b.position) || b.ability - a.ability), [world.players]); return <main className="director-grid"><section className="director-panel"><div className="director-section-head"><div><p className="page-kicker">Sportovní vedení</p><h2>Trenér odpovídá za hřiště</h2></div><span className="director-status">{world.coach?.formation}</span></div>{world.coach && <div className="director-coach"><div><strong>{world.coach.name}</strong><span>{world.coach.philosophy} · {world.coach.formation}</span></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4"><MiniMetric label="Zápas" value={world.coach.matchManagement} /><MiniMetric label="Mládež" value={world.coach.youthDevelopment} /><MiniMetric label="Kabina" value={world.coach.manManagement} /><MiniMetric label="Adaptace" value={world.coach.adaptability} /></div><p>Pravomoci u přestupů: <strong>{world.coach.transferVeto ? "právo veta" : "konzultace"}</strong>. Ředitel určuje filozofii a kádr, trenér sestavu a taktiku.</p></div>}</section><aside className="director-panel"><p className="page-kicker">Týmový stav</p><div className="mt-3 grid grid-cols-3 gap-2"><Metric label="Morálka" value={world.club.morale} /><Metric label="Sehrání" value={world.club.cohesion} /><Metric label="Forma" value={50 + world.club.form} /></div></aside><section className="director-panel md:col-span-2"><div className="director-section-head"><h2>Kádr · {world.players.length} hráčů</h2><span className="text-xs text-muted">Schopnosti vlastního týmu znáš přesněji než trh</span></div><div className="mt-3 overflow-x-auto"><table className="director-table"><thead><tr><th>Hráč</th><th>Pozice</th><th>Profil</th><th>Věk</th><th>Síla</th><th>Forma</th><th>Kondice</th><th>Hodnota</th><th>Smlouva</th></tr></thead><tbody>{byPosition.map((player) => <tr key={player.id}><td><strong>{player.name}</strong><small>{player.personality} · {roleLabel(player.promisedRole)}</small></td><td>{player.position}</td><td>{player.archetype}</td><td>{player.age}</td><td><Score value={player.ability} /></td><td><Score value={player.form} /></td><td><Score value={player.fitness} /></td><td>{money(player.marketValue)}</td><td>{new Date(player.contractUntil).getUTCFullYear()}</td></tr>)}</tbody></table></div></section></main>; }
+
+function MarketSection({ world, busy, command }: { world: DirectorDTO; busy: boolean; command: (payload: object) => Promise<void> }) {
+  const expiring = world.players.filter((player) => yearsUntil(player.contractUntil) <= 1.2);
+  const active = world.negotiations.find((item) => item.status === "OPEN");
+  const [offer, setOffer] = useState({ upfront: active?.referenceValue ?? 0, installments: 0, bonuses: 0, sellOn: 10, weeklyWage: 15_000, years: 4, promisedRole: "ROTATION" });
+  return <main className="director-grid">
+    <section className="director-panel"><p className="page-kicker">Přestupová místnost</p><h2 className="mt-1">Nabídka je struktura, ne tajný práh</h2><p className="mt-2 text-sm leading-relaxed text-muted">Prodávající posuzuje jistotu platby, bonusy, další prodej i důležitost hráče. Každé kolo stojí část trpělivosti protistrany.</p><div className="mt-4 grid gap-2 sm:grid-cols-2"><InfoBox label="Rozpočet na přestupy" value={money(world.club.transferBudget)} /><InfoBox label="Mzdový prostor" value={money(Math.max(0, world.club.wageBudget - world.club.weeklyWages)) + "/týden"} /></div></section>
+    <aside className="director-panel"><h2>Smlouvy k řešení</h2>{expiring.length ? expiring.map((player) => <div key={player.id} className="director-market-row"><span><strong>{player.name}</strong><small>{player.position} · konec {new Date(player.contractUntil).getUTCFullYear()}</small></span><span>{money(player.weeklyWage)}/t.</span></div>) : <p className="mt-3 text-sm text-muted">V nejbližším roce nekončí žádná smlouva.</p>}</aside>
+    {active && <section className="director-panel md:col-span-2"><div className="director-section-head"><div><p className="page-kicker">Aktivní jednání · kolo {active.round}</p><h2>{active.playerName} · {active.clubName}</h2></div><span className="director-status">trpělivost {active.patience}/100</span></div>{active.response && <p className="director-negotiation-response">{active.response}</p>}<div className="director-offer-grid"><OfferField label="Ihned" value={offer.upfront} set={(value) => setOffer({ ...offer, upfront: value })} /><OfferField label="Splátky" value={offer.installments} set={(value) => setOffer({ ...offer, installments: value })} /><OfferField label="Bonusy" value={offer.bonuses} set={(value) => setOffer({ ...offer, bonuses: value })} /><OfferField label="Další prodej %" value={offer.sellOn} set={(value) => setOffer({ ...offer, sellOn: value })} /><OfferField label="Mzda / týden" value={offer.weeklyWage} set={(value) => setOffer({ ...offer, weeklyWage: value })} /><OfferField label="Roky" value={offer.years} set={(value) => setOffer({ ...offer, years: value })} /><label>Role<select className="ui-control" value={offer.promisedRole} onChange={(event) => setOffer({ ...offer, promisedRole: event.target.value })}><option value="STARTER">Základ</option><option value="ROTATION">Rotace</option><option value="SQUAD">Šířka kádru</option></select></label></div><button className="director-primary mt-4" disabled={busy} onClick={() => command({ action: "submit_offer", negotiationId: active.id, ...offer })}>Odeslat strukturovanou nabídku</button></section>}
+    <section className="director-panel md:col-span-2"><div className="director-section-head"><div><p className="page-kicker">Scouting</p><h2>Dostupné cíle</h2></div><span className="text-xs text-muted">Schopnosti jsou odhadované rozsahy</span></div><div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{world.marketTargets.map((player) => <article key={player.id} className="director-scout-card"><span>{player.position} · {player.club}</span><strong>{player.name}</strong><p>{player.archetype} · odhad síly {player.abilityMin}–{player.abilityMax}</p><small>{player.age} let · cena {money(player.estimateMin)}–{money(player.estimateMax)}</small><button type="button" disabled={busy || Boolean(active)} onClick={() => command({ action: "open_negotiation", playerId: player.id })}>Zahájit jednání</button></article>)}</div></section>
+  </main>;
+}
+
+function ClubSection({ world, busy, command }: { world: DirectorDTO; busy: boolean; command: (payload: object) => Promise<void> }) { const s = world.club.stadium; const active = world.projects.find((item) => item.status === "ACTIVE"); return <main className="director-grid"><section className="director-panel"><p className="page-kicker">Finanční ředitelství</p><h2 className="mt-1">{money(world.club.cashBalance)} v hotovosti</h2><div className="mt-4 grid grid-cols-2 gap-3"><InfoBox label="Přestupový rozpočet" value={money(world.club.transferBudget)} /><InfoBox label="Budoucí závazky" value={money(world.finances.liabilities)} /><InfoBox label="Pohledávky" value={money(world.finances.receivables)} /><InfoBox label="Současné mzdy" value={money(world.club.weeklyWages) + "/t."} /></div></section><aside className="director-panel"><p className="page-kicker">Zázemí</p><div className="mt-3 space-y-3"><Facility label="Akademie" level={world.club.facilities.academy} /><Facility label="Trénink" level={world.club.facilities.training} /><Facility label="Zdravotní" level={world.club.facilities.medical} /><Facility label="Scouting" level={world.club.facilities.scouting} /></div></aside><section className="director-panel md:col-span-2"><div className="director-section-head"><div><p className="page-kicker">Stadion a areál</p><h2>{s.name}</h2></div><span className="director-status">{s.capacity.toLocaleString("cs-CZ")} míst</span></div><div className="director-stadium"><div className="director-pitch"><span>TRÁVNÍK</span><strong>{Math.round(s.condition)} %</strong></div><StadiumZone title="Tribuny" value={s.attendance * 100} note={`${Math.round(s.attendance * s.capacity).toLocaleString("cs-CZ")} očekávaných diváků`} /><StadiumZone title="Kotel a atmosféra" value={s.atmosphere} note="Dopad na identitu a domácí prostředí" /><StadiumZone title="Komerční prostory" value={s.commercial} note="Hospitality, obchod a nezápasové příjmy" /></div>{active ? <div className="director-project"><div><strong>{active.title}</strong><span>den {active.startedDay + 1}–{active.finishDay + 1} · investice {money(active.cost)}</span></div><div><i style={{ width: `${Math.max(4, Math.min(100, ((world.career.dayIndex - active.startedDay) / (active.finishDay - active.startedDay)) * 100))}%` }} /></div></div> : <div className="director-project-options"><button disabled={busy} onClick={() => command({ action: "start_project", kind: "ATMOSPHERE" })}><strong>Tribuny a kotel</strong><span>18 dní · {money(450_000)}</span></button><button disabled={busy} onClick={() => command({ action: "start_project", kind: "COMMERCIAL" })}><strong>Hospitality</strong><span>24 dní · {money(700_000)}</span></button><button disabled={busy} onClick={() => command({ action: "start_project", kind: "ACADEMY" })}><strong>Akademie</strong><span>28 dní · {money(620_000)}</span></button></div>}</section><section className="director-panel md:col-span-2"><div className="director-section-head"><h2>Účetní kniha</h2><span className="text-xs text-muted">skutečný den vzniku a splatnosti</span></div><div className="director-ledger">{world.finances.recent.map((item) => <div key={item.id}><span>den {item.dayIndex + 1} · {item.category}<small>{item.description}</small></span><strong className={item.direction === "IN" ? "positive" : "negative"}>{item.direction === "IN" ? "+" : "−"}{money(item.amount)}<small>{item.status === "PENDING" ? "splatné později" : item.status === "CONDITIONAL" ? "podmíněné" : "zaúčtováno"}</small></strong></div>)}</div></section></main>; }
+
+function CompetitionsSection({ world }: { world: DirectorDTO }) { const next = world.matches.find((match) => match.status === "SCHEDULED" && (match.homeName === world.club.name || match.awayName === world.club.name)); const played = world.matches.filter((match) => match.status === "PLAYED" && (match.homeName === world.club.name || match.awayName === world.club.name)).slice(-5).reverse(); return <main className="director-grid"><section className="director-panel"><p className="page-kicker">Alternativní fotbalový svět</p><h2 className="mt-1">{world.club.leagueName}</h2><p className="mt-2 text-sm text-muted">Všechny kluby hrají podle stejného rozpisu a stejných pravidel. Forma se odvozuje z výsledků, xG a síly soupeřů.</p>{next ? <MatchCard match={next} currentDay={world.career.dayIndex} /> : <div className="director-empty"><strong>Rozpis je dohraný</strong><span>Rada připravuje vyhodnocení sezony.</span></div>}</section><aside className="director-panel"><p className="page-kicker">Kariérní profil</p><h2 className="mt-1">{world.career.name}</h2><div className="mt-3 space-y-2 text-sm"><Line label="Reputace" value={`${Math.round(world.career.reputation)}/100`} /><Line label="Důvěryhodnost médií" value={`${Math.round(world.career.mediaCredibility)}/100`} /><Line label="Etický režim" value={ethicsLabel(world.career.ethicsMode)} /><Line label="Achievementy" value={String(world.achievements.length)} /></div></aside>{world.season && <section className="director-panel md:col-span-2"><div className="director-section-head"><div><p className="page-kicker">Sezona {world.season.number}</p><h2>Ligová tabulka</h2></div><span className="director-status">kolo {world.season.currentRound}</span></div><div className="overflow-x-auto"><table className="director-table director-standing"><thead><tr><th>#</th><th>Klub</th><th>Z</th><th>V</th><th>R</th><th>P</th><th>Skóre</th><th>Body</th><th>Výkon</th></tr></thead><tbody>{world.season.table.map((row) => <tr key={row.clubId} className={row.isManaged ? "is-managed" : ""}><td>{row.position}.</td><td><span className="director-table-club"><TeamLogo src={row.logo ?? undefined} alt={row.clubName} size={22} /><strong>{row.clubName}</strong></span></td><td>{row.played}</td><td>{row.wins}</td><td>{row.draws}</td><td>{row.losses}</td><td>{row.goalsFor}:{row.goalsAgainst}</td><td><strong>{row.points}</strong></td><td><span className={row.performance > .2 ? "positive" : row.performance < -.2 ? "negative" : ""}>{row.performance > .2 ? "nad výkony" : row.performance < -.2 ? "pod výkony" : "odpovídá"}</span></td></tr>)}</tbody></table></div></section>}<section className="director-panel md:col-span-2"><h2>Poslední zápasy</h2><div className="mt-3 grid gap-3">{played.length ? played.map((match) => <MatchCard key={match.id} match={match} currentDay={world.career.dayIndex} />) : <p className="text-sm text-muted">První zápas čeká v herním dni {next ? next.scheduledDay + 1 : "—"}.</p>}</div></section><section className="director-panel md:col-span-2"><h2>Kariérní milníky</h2><div className="mt-3 grid gap-3 sm:grid-cols-3">{world.achievements.length ? world.achievements.map((item) => <article key={item.id} className={`director-achievement rarity-${item.rarity.toLowerCase()}`}><span>{RARITY[item.rarity] ?? item.rarity}</span><strong>{item.title}</strong><p>{item.description}</p></article>) : <p className="text-sm text-muted">První milník získáš dokončením úvodního dne.</p>}</div></section></main>; }
+
+function MatchCard({ match, currentDay }: { match: DirectorDTO["matches"][number]; currentDay: number }) { const played = match.status === "PLAYED"; return <article className="director-match"><div className="director-match-teams"><span><TeamLogo src={match.homeLogo ?? undefined} alt={match.homeName} size={32} /><strong>{match.homeName}</strong></span><b>{played ? `${match.homeGoals}:${match.awayGoals}` : `za ${Math.max(0, match.scheduledDay - currentDay)} dny`}</b><span><TeamLogo src={match.awayLogo ?? undefined} alt={match.awayName} size={32} /><strong>{match.awayName}</strong></span></div>{played && <details><summary>Průběh a zpráva trenéra</summary><div className="director-match-report"><strong>{match.coachReport.headline}</strong><p>{match.coachReport.summary}</p><p>xG {match.homeXg?.toFixed(2)}–{match.awayXg?.toFixed(2)}</p>{match.timeline.map((event, index) => <small key={`${event.minute}-${index}`}><b>{event.minute}&apos;</b> {event.text}</small>)}</div></details>}</article>; }
+
+function AchievementToast({ achievement, dismiss }: { achievement: DirectorDTO["achievements"][number]; dismiss: () => void }) { return <div className={`director-toast rarity-${achievement.rarity.toLowerCase()}`} role="status"><button type="button" onClick={dismiss} aria-label="Zavřít oznámení achievementu">×</button><span>{RARITY[achievement.rarity] ?? achievement.rarity} achievement</span><strong>{achievement.title}</strong><p>{achievement.description}</p></div>; }
+function Metric({ label, value }: { label: string; value: number }) { const tone = value >= 66 ? "good" : value < 42 ? "bad" : "mid"; return <div className={`director-metric ${tone}`}><span>{label}</span><strong>{Math.round(value)}</strong><i><b style={{ width: `${Math.max(0, Math.min(100, value))}%` }} /></i></div>; }
+function MiniMetric({ label, value }: { label: string; value: number }) { return <div className="rounded-lg bg-background/70 p-2"><span className="block text-[10px] text-muted">{label}</span><strong className="tabular-nums">{Math.round(value)}</strong></div>; }
+function Score({ value }: { value: number }) { return <span className={value >= 72 ? "score good" : value < 52 ? "score bad" : "score"}>{Math.round(value)}</span>; }
+function InfoBox({ label, value }: { label: string; value: string }) { return <div className="rounded-xl border border-border bg-background/50 p-3"><span className="text-xs text-muted">{label}</span><strong className="mt-1 block text-base tabular-nums">{value}</strong></div>; }
+function OfferField({ label, value, set }: { label: string; value: number; set: (value: number) => void }) { return <label>{label}<input className="ui-control" type="number" min="0" value={value} onChange={(event) => set(Number(event.target.value))} /></label>; }
+function Facility({ label, level }: { label: string; level: number }) { return <div><div className="flex justify-between text-xs"><span>{label}</span><strong>{level}/5</strong></div><div className="mt-1 h-2 overflow-hidden rounded-full bg-border"><i className="block h-full rounded-full bg-positive" style={{ width: `${level * 20}%` }} /></div></div>; }
+function StadiumZone({ title, value, note }: { title: string; value: number; note: string }) { return <div className="director-stadium-zone"><strong>{title}</strong><span>{note}</span><div><i style={{ width: `${Math.max(4, Math.min(100, value))}%` }} /></div></div>; }
+function Line({ label, value }: { label: string; value: string }) { return <div className="flex justify-between gap-3 border-b border-border pb-2"><span className="text-muted">{label}</span><strong className="text-right">{value}</strong></div>; }
+function formatDate(value: string) { return new Intl.DateTimeFormat("cs-CZ", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(value)); }
+function money(value: number) { return new Intl.NumberFormat("cs-CZ", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value); }
+function compact(value: number) { return new Intl.NumberFormat("cs-CZ", { notation: "compact", maximumFractionDigits: 1 }).format(value); }
+function yearsUntil(value: string) { return (new Date(value).getTime() - Date.now()) / 31_556_952_000; }
+function positionOrder(position: string) { return ["GK", "CB", "LB", "RB", "FB", "DM", "CM", "AM", "LW", "RW", "W", "ST"].indexOf(position); }
+function roleLabel(role: string) { return role === "STARTER" ? "základ" : role === "ROTATION" ? "rotace" : "kádr"; }
+function ethicsLabel(mode: string) { return mode === "OFF" ? "bez šedé zóny" : mode === "EXTENDED" ? "rozšířený" : "realistický"; }
+function commitmentLabel(status: string) { return status === "FULFILLED" ? "splněno" : status === "BROKEN" ? "nesplněno" : status === "AT_RISK" ? "v ohrožení" : "plní se"; }

@@ -108,6 +108,7 @@ model User {
   sessions         Session[]
   savedComparisons SavedComparison[]
   gameSave         GameSave?
+  directorCareers  DirectorCareer[]
   tips             UserTip[]
   favoriteLeagues  FavoriteLeague[]
   favoriteFixtures FavoriteFixture[]
@@ -578,6 +579,470 @@ model GameSave {
   updatedAt DateTime @updatedAt
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+/// Manažer v2: relační svět klubového a sportovního ředitele. Starý GameSave zůstává
+/// čitelným archivem a do tohoto modelu se nepřevádí.
+model DirectorCareer {
+  id               String   @id @default(cuid())
+  userId           String
+  ownerEmail        String
+  name              String
+  status            String   @default("ACTIVE")
+  version           Int      @default(1)
+  leagueId          Int
+  leagueName        String
+  country           String
+  managedClubId     String?
+  worldSeed         Int
+  gameDate          DateTime
+  dayIndex          Int      @default(0)
+  availableSteps    Int      @default(1)
+  lastStepGrantAt   DateTime @default(now())
+  reputation        Float    @default(35)
+  boardTrust        Float    @default(65)
+  publicTrust       Float    @default(60)
+  mediaCredibility Float    @default(55)
+  ethicsMode        String   @default("REALISTIC")
+  publicProfile     Boolean  @default(false)
+  identityTags      Json     @default("[]")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clubs        DirectorClub[]
+  events       DirectorEvent[]
+  pulsePosts   DirectorPulsePost[]
+  achievements DirectorAchievement[]
+  matches      DirectorMatch[]
+  negotiations DirectorNegotiation[]
+  projects     DirectorProject[]
+  effects      DirectorCausalEffect[]
+  commitments  DirectorCommitment[]
+  relationships DirectorRelationship[]
+  ledger       DirectorLedgerEntry[]
+  seasons      DirectorSeason[]
+  needs        DirectorClubNeed[]
+  causalLogs   DirectorCausalLog[]
+
+  @@index([userId, status])
+  @@index([ownerEmail, createdAt])
+}
+
+model DirectorClub {
+  id                 String   @id @default(cuid())
+  careerId           String
+  externalTeamId     Int
+  name               String
+  shortName          String
+  logo               String?
+  primaryColor       String
+  isManaged          Boolean  @default(false)
+  tier               Int      @default(1)
+  baseAttack         Float
+  baseDefense        Float
+  currentForm        Float    @default(0)
+  cohesion           Float    @default(60)
+  morale             Float    @default(60)
+  cashBalance        Int
+  transferBudget     Int
+  wageBudget         Int
+  weeklyWages        Int      @default(0)
+  fanTrust           Float    @default(60)
+  boardExpectation   String   @default("STABILITY")
+  stadiumName        String
+  stadiumCapacity    Int
+  stadiumAttendance  Float    @default(0.72)
+  stadiumCondition   Float    @default(65)
+  stadiumAtmosphere  Float    @default(60)
+  stadiumCommercial  Float    @default(45)
+  academyLevel       Int      @default(2)
+  trainingLevel      Int      @default(2)
+  medicalLevel       Int      @default(2)
+  scoutingLevel      Int      @default(2)
+  infrastructure    Json     @default("{}")
+  financeHistory     Json     @default("[]")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  players DirectorPlayer[]
+  coaches DirectorCoach[]
+  standings DirectorStanding[]
+
+  @@unique([careerId, externalTeamId])
+  @@index([careerId, isManaged])
+}
+
+model DirectorPlayer {
+  id               String   @id @default(cuid())
+  clubId           String
+  firstName        String
+  lastName         String
+  position         String
+  preferredFoot    String
+  archetype        String
+  personality      String
+  age              Int
+  ability          Float
+  potential        Float
+  ballSkill        Float
+  creation         Float
+  finishing        Float
+  defending        Float
+  physical         Float
+  mentality        Float
+  form             Float    @default(50)
+  fitness          Float    @default(90)
+  morale           Float    @default(60)
+  cohesion         Float    @default(50)
+  injuryDays       Int      @default(0)
+  contractUntil    DateTime
+  weeklyWage       Int
+  marketValue      Int
+  promisedRole     String   @default("SQUAD")
+  appearances      Int      @default(0)
+  minutes          Int      @default(0)
+  scoutMin         Float?
+  scoutMax         Float?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  club DirectorClub @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@index([clubId, position])
+  @@index([marketValue])
+}
+
+model DirectorCoach {
+  id                 String   @id @default(cuid())
+  clubId             String
+  name               String
+  philosophy         String
+  formation          String
+  adaptability       Float
+  youthDevelopment   Float
+  manManagement      Float
+  matchManagement    Float
+  relationship       Float    @default(65)
+  transferAuthority  String   @default("CONSULT")
+  transferVeto       Boolean  @default(false)
+  contractUntil      DateTime
+  weeklyWage         Int
+  severanceMonths    Int      @default(6)
+  promises           Json     @default("[]")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  club DirectorClub @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@index([clubId])
+}
+
+model DirectorEvent {
+  id          String   @id @default(cuid())
+  careerId    String
+  templateId  String
+  category    String
+  severity    String
+  status      String   @default("OPEN")
+  title       String
+  body        String   @db.Text
+  actorKey    String?
+  payload     Json     @default("{}")
+  choices     Json     @default("[]")
+  selectedKey String?
+  dueDay      Int?
+  memoryTags  Json     @default("[]")
+  createdDay  Int
+  resolvedDay Int?
+  createdAt   DateTime @default(now())
+  resolvedAt  DateTime?
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, status, createdDay])
+  @@index([careerId, templateId])
+}
+
+model DirectorPulsePost {
+  id          String   @id @default(cuid())
+  careerId    String
+  dayIndex    Int
+  authorType  String
+  authorName  String
+  tone        String
+  body        String   @db.Text
+  topic       String
+  trust       Float
+  reach       Int
+  relatedType String?
+  relatedId   String?
+  createdAt   DateTime @default(now())
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, dayIndex])
+}
+
+model DirectorAchievement {
+  id          String   @id @default(cuid())
+  careerId    String
+  key         String
+  title       String
+  description String
+  rarity      String
+  context     Json     @default("{}")
+  seenAt      DateTime?
+  unlockedAt  DateTime @default(now())
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@unique([careerId, key])
+  @@index([careerId, unlockedAt])
+}
+
+model DirectorMatch {
+  id          String   @id @default(cuid())
+  careerId    String
+  round       Int
+  scheduledDay Int
+  homeClubId  String
+  awayClubId  String
+  status      String   @default("SCHEDULED")
+  homeGoals   Int?
+  awayGoals   Int?
+  homeXg      Float?
+  awayXg      Float?
+  homeStrength Float?
+  awayStrength Float?
+  timeline    Json     @default("[]")
+  coachReport Json     @default("{}")
+  playedAt    DateTime?
+  createdAt   DateTime @default(now())
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@unique([careerId, round, homeClubId, awayClubId])
+  @@index([careerId, scheduledDay])
+}
+
+model DirectorNegotiation {
+  id             String   @id @default(cuid())
+  careerId       String
+  playerId       String
+  sellingClubId  String
+  status         String   @default("OPEN")
+  round          Int      @default(0)
+  patience       Int      @default(3)
+  referenceValue Int
+  clubPriorities Json
+  playerPriorities Json
+  lastOffer      Json?
+  response       String?
+  history        Json     @default("[]")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, status])
+  @@unique([careerId, playerId, status])
+}
+
+model DirectorProject {
+  id          String   @id @default(cuid())
+  careerId    String
+  clubId      String
+  kind        String
+  title       String
+  status      String   @default("ACTIVE")
+  startedDay  Int
+  finishDay   Int
+  cost        Int
+  effects     Json
+  createdAt   DateTime @default(now())
+  completedAt DateTime?
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, status])
+}
+
+model DirectorCausalEffect {
+  id          String   @id @default(cuid())
+  careerId    String
+  sourceType  String
+  sourceId    String?
+  sourceLabel String
+  targetType  String
+  targetId    String?
+  metric      String
+  direction   String
+  magnitude   Float
+  confidence  Float    @default(1)
+  startDay    Int
+  endDay      Int?
+  decay       String   @default("LINEAR")
+  condition   Json     @default("{}")
+  status      String   @default("ACTIVE")
+  applied     Float    @default(0)
+  explanation String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, status, startDay])
+  @@index([careerId, targetType, targetId])
+}
+
+model DirectorCommitment {
+  id          String   @id @default(cuid())
+  careerId    String
+  sourceEventId String?
+  stakeholderType String
+  stakeholderId String?
+  title       String
+  metric      String
+  target      Float
+  tolerance   Float    @default(0)
+  baseline    Float?
+  dueDay      Int
+  severity    String   @default("MEDIUM")
+  status      String   @default("TRACKING")
+  progress    Float?
+  explanation String
+  resolvedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, status, dueDay])
+}
+
+model DirectorRelationship {
+  id          String   @id @default(cuid())
+  careerId    String
+  actorType   String
+  actorId     String?
+  actorName   String
+  trust       Float    @default(60)
+  respect     Float    @default(60)
+  alignment   Float    @default(50)
+  conflicts   Float    @default(0)
+  credibility Float    @default(60)
+  priorities  Json     @default("{}")
+  memory      Json     @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@unique([careerId, actorType, actorName])
+  @@index([careerId, actorType])
+}
+
+model DirectorLedgerEntry {
+  id          String   @id @default(cuid())
+  careerId    String
+  clubId      String
+  dayIndex    Int
+  category    String
+  direction   String
+  amount      Int
+  status      String   @default("POSTED")
+  dueDay      Int?
+  sourceType  String
+  sourceId    String?
+  description String
+  createdAt   DateTime @default(now())
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, clubId, dayIndex])
+  @@index([careerId, status, dueDay])
+}
+
+model DirectorSeason {
+  id          String   @id @default(cuid())
+  careerId    String
+  number      Int      @default(1)
+  startDay    Int      @default(0)
+  endDay      Int
+  status      String   @default("ACTIVE")
+  currentRound Int     @default(0)
+  rules       Json     @default("{}")
+  createdAt   DateTime @default(now())
+  completedAt DateTime?
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  standings DirectorStanding[]
+
+  @@unique([careerId, number])
+}
+
+model DirectorStanding {
+  id          String   @id @default(cuid())
+  seasonId    String
+  clubId      String
+  played      Int      @default(0)
+  wins        Int      @default(0)
+  draws       Int      @default(0)
+  losses      Int      @default(0)
+  goalsFor    Int      @default(0)
+  goalsAgainst Int     @default(0)
+  points      Int      @default(0)
+  expectedPoints Float @default(0)
+  performance Float    @default(0)
+  updatedAt   DateTime @updatedAt
+
+  season DirectorSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  club   DirectorClub @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@unique([seasonId, clubId])
+  @@index([seasonId, points])
+}
+
+model DirectorClubNeed {
+  id          String   @id @default(cuid())
+  careerId    String
+  clubId      String
+  kind        String
+  target      String
+  urgency     Float
+  reason      String
+  status      String   @default("OPEN")
+  lastEvaluatedDay Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@unique([careerId, clubId, kind, target])
+  @@index([careerId, status, urgency])
+}
+
+model DirectorCausalLog {
+  id          String   @id @default(cuid())
+  careerId    String
+  dayIndex    Int
+  sourceType  String
+  sourceId    String?
+  effectId    String?
+  category    String
+  headline    String
+  explanation String
+  targetType  String?
+  targetId    String?
+  importance  Int      @default(1)
+  createdAt   DateTime @default(now())
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, dayIndex, importance])
+  @@index([careerId, sourceType, sourceId])
 }
 
 /// Oblíbená liga uživatele (PRO) – v Programu Zápasů se všechny její zápasy počítají jako
