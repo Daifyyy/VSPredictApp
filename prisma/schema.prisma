@@ -665,6 +665,15 @@ model DirectorCareer {
   sponsors          DirectorSponsor[]
   sponsorOffers     DirectorSponsorOffer[]
   sponsorContracts  DirectorSponsorContract[]
+  stories           DirectorStory[]
+  actors            DirectorActor[]
+  mediaAccounts     DirectorMediaAccount[]
+  pulseTopics       DirectorPulseTopic[]
+  statements        DirectorPublicStatement[]
+  complianceTraces  DirectorComplianceTrace[]
+  investigations    DirectorInvestigation[]
+  reputationHistory DirectorReputationSnapshot[]
+  directorOutbox    DirectorNotificationOutbox[]
 
   @@index([userId, status])
   @@index([ownerEmail, createdAt])
@@ -1490,8 +1499,14 @@ model DirectorEvent {
   resolvedDay Int?
   createdAt   DateTime  @default(now())
   resolvedAt  DateTime?
+  storyId     String?
+  phase       String    @default("DECISION")
+  sourceType  String?
+  sourceId    String?
+  nextDueDay  Int?
 
   career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  story  DirectorStory? @relation(fields: [storyId], references: [id], onDelete: SetNull)
 
   @@index([careerId, status, createdDay])
   @@index([careerId, templateId])
@@ -1510,28 +1525,248 @@ model DirectorPulsePost {
   reach       Int
   relatedType String?
   relatedId   String?
+  accountId   String?
+  topicId     String?
+  perspective String?
   createdAt   DateTime @default(now())
 
-  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  career     DirectorCareer        @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  account    DirectorMediaAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  pulseTopic DirectorPulseTopic?   @relation(fields: [topicId], references: [id], onDelete: SetNull)
 
   @@index([careerId, dayIndex])
 }
 
 model DirectorAchievement {
-  id          String    @id @default(cuid())
-  careerId    String
-  key         String
-  title       String
-  description String
-  rarity      String
-  context     Json      @default("{}")
-  seenAt      DateTime?
-  unlockedAt  DateTime  @default(now())
+  id           String    @id @default(cuid())
+  careerId     String
+  key          String
+  title        String
+  description  String
+  rarity       String
+  context      Json      @default("{}")
+  category     String    @default("CAREER")
+  seasonNumber Int?
+  dayIndex     Int?
+  progress     Float     @default(1)
+  hidden       Boolean   @default(false)
+  causalLogIds Json      @default("[]")
+  seenAt       DateTime?
+  unlockedAt   DateTime  @default(now())
 
   career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
 
   @@unique([careerId, key])
   @@index([careerId, unlockedAt])
+}
+
+model DirectorStory {
+  id            String   @id @default(cuid())
+  careerId      String
+  key           String
+  pack          String
+  phase         String   @default("SIGNAL")
+  status        String   @default("ACTIVE")
+  severity      String   @default("INFO")
+  headline      String
+  summary       String   @db.Text
+  sourceType    String
+  sourceId      String?
+  actorIds      Json     @default("[]")
+  memory        Json     @default("[]")
+  tags          Json     @default("[]")
+  openedDay     Int
+  nextDueDay    Int?
+  closedDay     Int?
+  cooldownUntil Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  career     DirectorCareer            @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  events     DirectorEvent[]
+  statements DirectorPublicStatement[]
+  traces     DirectorComplianceTrace[]
+
+  @@index([careerId, status, nextDueDay])
+  @@index([careerId, key, cooldownUntil])
+}
+
+model DirectorActor {
+  id           String   @id @default(cuid())
+  careerId     String
+  kind         String
+  name         String
+  organization String?
+  personality  String
+  priorities   Json     @default("{}")
+  alternatives Json     @default("[]")
+  memory       Json     @default("[]")
+  trust        Float    @default(55)
+  respect      Float    @default(55)
+  influence    Float    @default(50)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@unique([careerId, kind, name])
+  @@index([careerId, kind, active])
+}
+
+model DirectorMediaAccount {
+  id            String   @id @default(cuid())
+  careerId      String
+  kind          String
+  name          String
+  tone          String
+  credibility   Float
+  reach         Int
+  priorities    Json     @default("[]")
+  relationships Json     @default("{}")
+  errorHistory  Json     @default("[]")
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  career DirectorCareer      @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  posts  DirectorPulsePost[]
+
+  @@unique([careerId, kind, name])
+  @@index([careerId, active])
+}
+
+model DirectorPulseTopic {
+  id          String   @id @default(cuid())
+  careerId    String
+  key         String
+  title       String
+  sourceType  String
+  sourceId    String?
+  relevance   Float    @default(50)
+  sentiment   Float    @default(0)
+  momentum    Float    @default(0)
+  status      String   @default("ACTIVE")
+  openedDay   Int
+  lastPostDay Int
+  closedDay   Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  career DirectorCareer      @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  posts  DirectorPulsePost[]
+
+  @@unique([careerId, key])
+  @@index([careerId, status, relevance])
+}
+
+model DirectorPublicStatement {
+  id                String   @id @default(cuid())
+  careerId          String
+  storyId           String
+  tone              String
+  audience          String
+  claim             String   @db.Text
+  commitmentMetric  String?
+  commitmentTarget  Float?
+  credibilityAtTime Float
+  reach             Int
+  dayIndex          Int
+  outcome           String?
+  evaluatedDay      Int?
+  createdAt         DateTime @default(now())
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  story  DirectorStory  @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, dayIndex])
+  @@index([storyId])
+}
+
+model DirectorComplianceTrace {
+  id             String   @id @default(cuid())
+  careerId       String
+  storyId        String?
+  kind           String
+  sourceType     String
+  sourceId       String?
+  informedActors Json     @default("[]")
+  evidence       Json     @default("[]")
+  exposure       Float    @default(0)
+  motivation     Float    @default(0)
+  expiresDay     Int?
+  status         String   @default("DORMANT")
+  disclosedDay   Int?
+  resolvedDay    Int?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  career         DirectorCareer          @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  story          DirectorStory?          @relation(fields: [storyId], references: [id], onDelete: SetNull)
+  investigations DirectorInvestigation[]
+
+  @@index([careerId, status, expiresDay])
+}
+
+model DirectorInvestigation {
+  id        String   @id @default(cuid())
+  careerId  String
+  traceId   String
+  kind      String
+  status    String   @default("REVIEW")
+  openedDay Int
+  dueDay    Int
+  response  String?
+  findings  Json     @default("[]")
+  outcome   Json     @default("{}")
+  closedDay Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  career DirectorCareer          @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  trace  DirectorComplianceTrace @relation(fields: [traceId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, status, dueDay])
+}
+
+model DirectorReputationSnapshot {
+  id          String   @id @default(cuid())
+  careerId    String
+  dayIndex    Int
+  sporting    Float
+  financial   Float
+  people      Float
+  negotiation Float
+  public      Float
+  ethical     Float
+  overall     Float
+  archetypes  Json     @default("[]")
+  drivers     Json     @default("[]")
+  createdAt   DateTime @default(now())
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@unique([careerId, dayIndex])
+}
+
+model DirectorNotificationOutbox {
+  id          String    @id @default(cuid())
+  careerId    String
+  key         String
+  kind        String
+  title       String
+  body        String
+  url         String    @default("/hra")
+  importance  Int       @default(2)
+  status      String    @default("PENDING")
+  availableAt DateTime  @default(now())
+  sentAt      DateTime?
+  attempts    Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@unique([careerId, key])
+  @@index([status, availableAt])
 }
 
 model DirectorMatch {
@@ -2124,6 +2359,7 @@ model NotificationPreference {
   smartFavoriteLeagues Boolean  @default(false)
   halftimeAndFinal     Boolean  @default(false)
   checklistCandidate   Boolean  @default(false)
+  directorImportant    Boolean  @default(false)
   updatedAt            DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

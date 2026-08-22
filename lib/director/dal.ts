@@ -18,6 +18,7 @@ import { defaultSportingPolicy, meetingDecision, normalizePolicy, PHASES, roleSc
 import { chooseMicrocycle, defaultCoachMemory, evolveRoleFamiliarity, medicalState, systemCosts, updateCoachMemory, type CoachMemoryState, type MatchEvidence } from "./adaptation";
 import { cashFlowProjection, contractOfferUtility, dynamicMarketValue, FOREIGN_MARKET_CLUBS, scoutingSnapshot } from "./market";
 import { academyDevelopment, attendanceDemand, identityProfile, PROJECTS, projectShock, projectStudy, sponsorOfferValue, type CapitalProjectKind } from "./infrastructure";
+import { complianceExposure, nextStoryPhase, reputationProfile, statementImpact, storyCooldownKey, supporterCouncil, type StatementTone, type StoryPhase } from "./worldV8";
 
 const CAREER_INCLUDE = {
   clubs: { include: { players: true, coaches: true }, orderBy: { name: "asc" as const } },
@@ -75,6 +76,15 @@ const CAREER_INCLUDE = {
   sponsors: true,
   sponsorOffers: { orderBy: { createdAt: "desc" as const }, take: 30 },
   sponsorContracts: { orderBy: { createdAt: "desc" as const }, take: 20 },
+  stories: { orderBy: [{ status: "asc" as const }, { nextDueDay: "asc" as const }], take: 40 },
+  actors: { where: { active: true }, orderBy: { influence: "desc" as const } },
+  mediaAccounts: { where: { active: true }, orderBy: { reach: "desc" as const } },
+  pulseTopics: { orderBy: { relevance: "desc" as const }, take: 30 },
+  statements: { orderBy: { dayIndex: "desc" as const }, take: 40 },
+  complianceTraces: { orderBy: { createdAt: "desc" as const }, take: 30 },
+  investigations: { orderBy: { createdAt: "desc" as const }, take: 20 },
+  reputationHistory: { orderBy: { dayIndex: "desc" as const }, take: 20 },
+  directorOutbox: { orderBy: { createdAt: "desc" as const }, take: 20 },
 } satisfies Prisma.DirectorCareerInclude;
 
 type LoadedCareer = Prisma.DirectorCareerGetPayload<{ include: typeof CAREER_INCLUDE }>;
@@ -285,6 +295,66 @@ async function upgradeInfrastructureWorld(tx: Prisma.TransactionClient, career: 
   await tx.directorCareer.update({ where: { id: career.id }, data: { version: 7 } });
 }
 
+const V8_ACTORS = [
+  { kind: "OWNER", name: "Majitel klubu", personality: "PRAGMATIC", influence: 88, priorities: { finance: .8, reputation: .55 }, alternatives: ["omezit financování", "změnit mandát"] },
+  { kind: "BOARD", name: "Klubová rada", personality: "CAUTIOUS", influence: 78, priorities: { sustainability: .8, results: .65 }, alternatives: ["vyžádat nápravu", "zahájit mimořádný přezkum"] },
+  { kind: "SUPPORTERS", name: "Rada fanoušků", personality: "IDENTITY_DRIVEN", influence: 62, priorities: { identity: .9, prices: .75 }, alternatives: ["veřejné stanovisko", "bojkot konzultace"] },
+  { kind: "COMPLIANCE", name: "Compliance manažer", personality: "PRECISE", influence: 55, priorities: { transparency: .9, process: .8 }, alternatives: ["interní audit", "právní prověření"] },
+] as const;
+const V8_MEDIA = [
+  { kind: "LOCAL", name: "Klubový reportér", tone: "ANALYTICAL", credibility: 82, reach: 5200, priorities: ["club", "people"] },
+  { kind: "QUALITY", name: "Fotbal v souvislostech", tone: "FACTUAL", credibility: 88, reach: 11000, priorities: ["sport", "finance"] },
+  { kind: "TABLOID", name: "Fotbal Expres", tone: "EMOTIONAL", credibility: 46, reach: 24000, priorities: ["conflict", "transfer"] },
+  { kind: "ANALYST", name: "Datová tribuna", tone: "ANALYTICAL", credibility: 91, reach: 7400, priorities: ["performance", "data"] },
+  { kind: "CLUB", name: "Klubový účet", tone: "OFFICIAL", credibility: 100, reach: 12500, priorities: ["club", "community"] },
+  { kind: "SUPPORTERS", name: "Hlas tribuny", tone: "EMOTIONAL", credibility: 64, reach: 9800, priorities: ["identity", "fans"] },
+] as const;
+
+async function upgradeLivingWorld(tx: Prisma.TransactionClient, career: LoadedCareer) {
+  if (career.version >= 8) return;
+  await tx.directorActor.createMany({ data: V8_ACTORS.map((item) => ({ careerId: career.id, ...item })), skipDuplicates: true });
+  await tx.directorMediaAccount.createMany({ data: V8_MEDIA.map((item) => ({ careerId: career.id, ...item })), skipDuplicates: true });
+  for (const event of career.events.filter((item) => item.status === "OPEN")) {
+    const story = await tx.directorStory.create({ data: { careerId: career.id, key: `legacy:${event.templateId}:${event.id}`, pack: event.category, phase: "DECISION", severity: event.severity, headline: event.title, summary: event.body, sourceType: "EVENT", sourceId: event.id, actorIds: event.actorKey ? [event.actorKey] : [], memory: [{ day: event.createdDay, action: "MIGRATED" }], tags: asStringArray(event.memoryTags), openedDay: event.createdDay, nextDueDay: event.dueDay, cooldownUntil: event.createdDay + 20 } });
+    await tx.directorEvent.update({ where: { id: event.id }, data: { storyId: story.id, phase: "DECISION", sourceType: "LEGACY_EVENT", sourceId: event.id, nextDueDay: event.dueDay } });
+  }
+  const accounts = await tx.directorMediaAccount.findMany({ where: { careerId: career.id } });
+  for (const post of career.pulsePosts) {
+    const account = accounts.find((item) => item.kind === post.authorType) ?? accounts.find((item) => item.name === post.authorName);
+    const key = `${post.relatedType ?? "legacy"}:${post.relatedId ?? post.topic}:${post.dayIndex}`;
+    const topic = await tx.directorPulseTopic.upsert({ where: { careerId_key: { careerId: career.id, key } }, create: { careerId: career.id, key, title: post.topic, sourceType: post.relatedType ?? "LEGACY", sourceId: post.relatedId, relevance: Math.min(100, 35 + post.reach / 500), sentiment: post.tone === "EMOTIONAL" ? -5 : 0, openedDay: post.dayIndex, lastPostDay: post.dayIndex }, update: { lastPostDay: post.dayIndex } });
+    await tx.directorPulsePost.update({ where: { id: post.id }, data: { accountId: account?.id, topicId: topic.id, perspective: post.authorType } });
+  }
+  await tx.directorReputationSnapshot.create({ data: { careerId: career.id, dayIndex: career.dayIndex, sporting: career.reputation, financial: career.boardTrust, people: career.publicTrust, negotiation: 50, public: career.mediaCredibility, ethical: career.ethicsMode === "OFF" ? 60 : 65, overall: (career.reputation + career.boardTrust + career.publicTrust + career.mediaCredibility + 110) / 6, archetypes: ["Datový pragmatik"], drivers: ["Výchozí profil světa v8"] } });
+  await tx.directorCausalLog.create({ data: { careerId: career.id, dayIndex: career.dayIndex, sourceType: "MIGRATION", category: "WORLD", headline: "Klubový svět získal paměť a veřejný hlas", explanation: "Média, rada, fanoušci, reputace a příběhy se od tohoto dne vyvíjejí z konkrétních událostí.", importance: 4 } });
+  await tx.directorCareer.update({ where: { id: career.id }, data: { version: 8, publicProfile: false, ethicsMode: career.ethicsMode === "EXTENDED" ? "REALISTIC" : career.ethicsMode } });
+}
+
+async function processLivingWorldDay(tx: Prisma.TransactionClient, career: LoadedCareer, day: number, club: LoadedCareer["clubs"][number]) {
+  for (const story of career.stories.filter((item) => item.status === "ACTIVE" && item.nextDueDay !== null && item.nextDueDay <= day)) {
+    const phase = nextStoryPhase(story.phase as StoryPhase);
+    await tx.directorStory.update({ where: { id: story.id }, data: { phase, status: phase === "CLOSED" ? "CLOSED" : "ACTIVE", nextDueDay: phase === "CLOSED" ? null : day + (phase === "DECISION" ? 2 : 3), closedDay: phase === "CLOSED" ? day : null, memory: [...(Array.isArray(story.memory) ? story.memory : []), { day, action: `PHASE_${phase}` }] } });
+    if (phase === "CONSEQUENCE") await tx.directorCausalLog.create({ data: { careerId: career.id, dayIndex: day, sourceType: "STORY", sourceId: story.id, category: story.pack, headline: `Příběh má konkrétní následek: ${story.headline}`, explanation: story.summary, importance: story.severity === "CRISIS" ? 4 : 2 } });
+  }
+  for (const trace of career.complianceTraces.filter((item) => ["DORMANT", "WATCHED"].includes(item.status) && (item.expiresDay === null || item.expiresDay >= day))) {
+    const relationConflict = career.relationships.reduce((max, item) => Math.max(max, item.conflicts), 0); const result = complianceExposure({ exposure: trace.exposure, motivation: trace.motivation, conflict: relationConflict, auditPressure: career.boardTrust < 45 ? 80 : 30, seed: career.worldSeed, traceId: trace.id, day });
+    if (!result.disclosed) continue;
+    const investigation = await tx.directorInvestigation.create({ data: { careerId: career.id, traceId: trace.id, kind: "INTERNAL_REVIEW", openedDay: day, dueDay: day + 4, findings: [{ confidence: result.confidence, source: trace.kind }] } });
+    await tx.directorComplianceTrace.update({ where: { id: trace.id }, data: { status: "DISCLOSED", disclosedDay: day } });
+    await tx.directorStory.create({ data: { careerId: career.id, key: `compliance:${trace.id}`, pack: "ETHICS", phase: "DECISION", severity: "CRISIS", headline: "Compliance žádá vysvětlení", summary: "Dřívější hraniční rozhodnutí zanechalo dohledatelnou stopu a vyžaduje transparentní reakci.", sourceType: "INVESTIGATION", sourceId: investigation.id, actorIds: asStringArray(trace.informedActors), tags: ["ethics", "compliance"], openedDay: day, nextDueDay: day + 2, cooldownUntil: day + 60 } });
+  }
+  const standings = career.seasons[0]?.standings.slice().sort((a, b) => b.points - a.points); const row = standings?.find((item) => item.clubId === club.id); const position = Math.max(1, (standings?.findIndex((item) => item.clubId === club.id) ?? 0) + 1); const activeTraces = career.complianceTraces.filter((item) => item.status !== "RESOLVED").length;
+  const profile = reputationProfile({ sporting: clamp(72 - position * 2 + (row?.performance ?? 0) * 5), financial: clamp(55 + (club.cashBalance - club.reservedCash) / Math.max(100_000, club.weeklyWages * 4)), people: clamp((club.morale + club.fanTrust + career.publicTrust) / 3), negotiation: clamp(48 + career.transferCases.filter((item) => item.status === "COMPLETED").length * 3), public: career.mediaCredibility, ethical: clamp(75 - activeTraces * 8) });
+  await tx.directorReputationSnapshot.upsert({ where: { careerId_dayIndex: { careerId: career.id, dayIndex: day } }, create: { careerId: career.id, dayIndex: day, sporting: clamp(72 - position * 2), financial: clamp(55 + club.cashBalance / Math.max(100_000, club.weeklyWages * 6)), people: clamp((club.morale + club.fanTrust + career.publicTrust) / 3), negotiation: clamp(48 + career.transferCases.filter((item) => item.status === "COMPLETED").length * 3), public: career.mediaCredibility, ethical: clamp(75 - activeTraces * 8), overall: profile.overall, archetypes: profile.archetypes, drivers: [`Ligová pozice ${position}.`, `${activeTraces} otevřených compliance stop`] }, update: { overall: profile.overall, archetypes: profile.archetypes } });
+  await tx.directorCareer.update({ where: { id: career.id }, data: { reputation: profile.overall } });
+  if (career.boardTrust >= 75 && career.publicTrust >= 75 && club.fanTrust >= 75) await unlock(tx, career.id, ACHIEVEMENTS.trustedMandate);
+  if (club.players.some((item) => item.squadLevel === "SENIOR" && item.homegrownClubId === club.id)) await unlock(tx, career.id, ACHIEVEMENTS.academyPathway);
+  if (career.capitalProjects.some((item) => item.status === "COMPLETED")) await unlock(tx, career.id, ACHIEVEMENTS.stadiumLegacy);
+  if (career.investigations.some((item) => item.status === "CLOSED" && ["DISCLOSE", "REMEDIATE", "LEGAL_REVIEW"].includes(item.response ?? ""))) await unlock(tx, career.id, ACHIEVEMENTS.transparentRepair);
+  if (career.investigations.length) await unlock(tx, career.id, ACHIEVEMENTS.paperTrail);
+  if (career.seasons[0]?.status === "COMPLETED" && position === 1) await unlock(tx, career.id, ACHIEVEMENTS.championDirector);
+}
+
 async function processInfrastructureDay(tx: Prisma.TransactionClient, career: LoadedCareer, day: number, clubs: LoadedCareer["clubs"]) {
   const club = clubs.find((item) => item.isManaged)!;
   for (const finance of career.projectFinancing.filter((item) => item.status === "ACTIVE" && item.nextDueDay !== null && item.nextDueDay <= day && item.remaining > 0)) {
@@ -401,6 +471,11 @@ export async function getDirectorWorld(user: CurrentUser): Promise<DirectorDTO |
     career = await loadActive(user);
     if (!career) return null;
   }
+  if (career.version < 8) {
+    await prisma.$transaction((tx) => upgradeLivingWorld(tx, career!), { timeout: 60_000 });
+    career = await loadActive(user);
+    if (!career) return null;
+  }
   const legacy = await prisma.gameSave.findUnique({ where: { email: ownerKey(user) }, select: { email: true } });
   return toDTO(career, Boolean(legacy));
 }
@@ -502,6 +577,17 @@ export async function resolveDirectorEvent(user: CurrentUser, eventId: string, c
 
   await prisma.$transaction(async (tx) => {
     await tx.directorEvent.update({ where: { id: event.id }, data: { status: "RESOLVED", selectedKey: choiceKey, resolvedDay: active.dayIndex, resolvedAt: new Date() } });
+    if (event.storyId) {
+      const story = active.stories.find((item) => item.id === event.storyId);
+      await tx.directorStory.update({ where: { id: event.storyId }, data: { phase: "CONSEQUENCE", nextDueDay: active.dayIndex + 3, memory: [...(Array.isArray(story?.memory) ? story.memory : []), { day: active.dayIndex, action: "DECISION", choiceKey, label: selected.label }] } });
+      const actorKeys = new Set([...(story ? asStringArray(story.actorIds) : []), ...(event.actorKey ? [event.actorKey] : [])]);
+      for (const actor of active.actors.filter((item) => actorKeys.has(item.kind) || actorKeys.has(item.id) || actorKeys.has(item.name))) {
+        await tx.directorActor.update({ where: { id: actor.id }, data: { memory: [...(Array.isArray(actor.memory) ? actor.memory : []), { day: active.dayIndex, storyId: event.storyId, choiceKey, label: selected.label }] } });
+      }
+      for (const relationship of active.relationships.filter((item) => actorKeys.has(item.actorType) || (item.actorId ? actorKeys.has(item.actorId) : false) || actorKeys.has(item.actorName))) {
+        await tx.directorRelationship.update({ where: { id: relationship.id }, data: { memory: [...(Array.isArray(relationship.memory) ? relationship.memory : []), { day: active.dayIndex, storyId: event.storyId, choiceKey, label: selected.label }] } });
+      }
+    }
     const definitions = [
       { metric: "BOARD_TRUST", value: selected.effects.boardTrust, targetType: "CAREER", targetId: active.id, label: "důvěru klubové rady" },
       { metric: "PUBLIC_TRUST", value: selected.effects.publicTrust, targetType: "CAREER", targetId: active.id, label: "veřejnou důvěru" },
@@ -531,7 +617,13 @@ export async function resolveDirectorEvent(user: CurrentUser, eventId: string, c
     }
 
     const pulse = pulseForStory(event, club.name, active.dayIndex, active.worldSeed);
-    await tx.directorPulsePost.create({ data: { careerId: active.id, dayIndex: active.dayIndex, topic: event.category, ...pulse } });
+    const topic = active.version >= 8 ? await tx.directorPulseTopic.upsert({ where: { careerId_key: { careerId: active.id, key: `event:${event.id}` } }, create: { careerId: active.id, key: `event:${event.id}`, title: event.title, sourceType: "EVENT", sourceId: event.id, relevance: event.severity === "CRISIS" ? 90 : 62, sentiment: selected.effects.fanTrust ?? 0, momentum: 20, openedDay: active.dayIndex, lastPostDay: active.dayIndex }, update: { lastPostDay: active.dayIndex, momentum: { increment: 5 } } }) : null;
+    await tx.directorPulsePost.create({ data: { careerId: active.id, dayIndex: active.dayIndex, topic: event.category, topicId: topic?.id, perspective: pulse.authorType, relatedType: "EVENT", relatedId: event.id, ...pulse } });
+    if (active.version >= 8) {
+      const second = active.mediaAccounts.find((account) => account.kind === (event.category === "FANS" ? "SUPPORTERS" : "QUALITY"));
+      if (second) await tx.directorPulsePost.create({ data: { careerId: active.id, dayIndex: active.dayIndex, accountId: second.id, topicId: topic?.id, authorType: second.kind, authorName: second.name, tone: second.tone, body: `${selected.label}. ${second.kind === "SUPPORTERS" ? "Fanoušci budou hodnotit skutečné následky, ne pouze slova vedení." : "Rozhodnutí bude možné posoudit podle uložených závazků a dopadu na klub."}`, topic: event.category, trust: second.credibility, reach: second.reach, relatedType: "EVENT", relatedId: event.id, perspective: second.kind } });
+      if (event.category === "ETHICS" && ["accept", "leak", "brief"].includes(choiceKey) && active.ethicsMode !== "OFF") await tx.directorComplianceTrace.create({ data: { careerId: active.id, storyId: event.storyId, kind: event.templateId === "information-leak" ? "INFORMATION_LEAK" : "CONFLICT_OF_INTEREST", sourceType: "EVENT", sourceId: event.id, informedActors: ["MEDIA", "AGENT"], evidence: [{ day: active.dayIndex, choiceKey, document: "decision-record" }], exposure: choiceKey === "accept" || choiceKey === "leak" ? 72 : 46, motivation: 55, expiresDay: active.dayIndex + 90, status: "WATCHED" } });
+    }
     if (event.templateId === "information-leak" && choiceKey === "refuse") await unlock(tx, active.id, ACHIEVEMENTS.cleanHands);
     if (event.templateId === "supporters-ticket-prices" && choiceKey === "freeze") await unlock(tx, active.id, ACHIEVEMENTS.supporterVoice);
   });
@@ -566,6 +658,7 @@ export async function advanceDirectorDay(user: CurrentUser): Promise<DirectorDTO
     const club = clubs.find((item) => item.isManaged)!;
     const coach = club.coaches[0];
     await processInfrastructureDay(tx, active, nextDay, clubs);
+    await processLivingWorldDay(tx, active, nextDay, club);
     const player = club.players[(nextDay * 7) % club.players.length];
     const sportPolicies = await tx.directorSportPolicy.findMany({ where: { careerId: active.id } });
     const coachMemories = await tx.directorCoachMemory.findMany({ where: { careerId: active.id } });
@@ -872,10 +965,13 @@ export async function advanceDirectorDay(user: CurrentUser): Promise<DirectorDTO
     const hasBlockingEvent = await tx.directorEvent.count({ where: { careerId: active.id, status: "OPEN", severity: { in: ["DECISION", "CRISIS"] } } });
     const unresolvedRisks = await tx.directorCommitment.count({ where: { careerId: active.id, status: "AT_RISK" } });
     if (!hasBlockingEvent && (nextDay % 3 === 0 || unresolvedRisks > 0)) {
-      const recentTemplates = await tx.directorEvent.findMany({ where: { careerId: active.id }, orderBy: { createdDay: "desc" }, take: 8, select: { templateId: true } });
+      const recentTemplates = await tx.directorEvent.findMany({ where: { careerId: active.id }, orderBy: { createdDay: "desc" }, take: 12, select: { templateId: true } });
       const topNeed = await tx.directorClubNeed.findFirst({ where: { careerId: active.id, clubId: club.id, status: "OPEN" }, orderBy: { urgency: "desc" } });
-      const story = buildStory({ seed: active.worldSeed, day: nextDay, clubName: club.name, coachName: coach?.name ?? "trenér", playerName: player ? `${player.firstName} ${player.lastName}` : "hráč", cash: club.cashBalance, boardTrust: active.boardTrust, fanTrust: club.fanTrust, recentTemplates: recentTemplates.map((item) => item.templateId), ethicsMode: active.ethicsMode, weakPositionUrgency: topNeed?.urgency, unhappyPlayer: club.players.some((item) => item.morale < 45 || (item.promisedRole === "STARTER" && item.appearances < Math.max(1, Math.floor(nextDay / 6)))), attendance: club.stadiumAttendance, activeProject: active.projects.some((item) => item.status === "ACTIVE"), activeNegotiation: active.negotiations.some((item) => item.status === "OPEN"), cashPressure: club.cashBalance < club.weeklyWages * 6 });
-      const created = await tx.directorEvent.create({ data: { careerId: active.id, templateId: story.templateId, category: story.category, severity: story.severity, title: story.title, body: story.body, choices: story.choices as unknown as Prisma.InputJsonValue, dueDay: story.dueDay, memoryTags: story.memoryTags, createdDay: nextDay, payload: { trigger: unresolvedRisks > 0 ? "COMMITMENT_RISK" : "WORLD_STATE" } } });
+      const coolingTemplates = active.stories.filter((item) => (item.cooldownUntil ?? -1) >= nextDay).map((item) => item.key.split(":")[0]);
+      const story = buildStory({ seed: active.worldSeed, day: nextDay, clubName: club.name, coachName: coach?.name ?? "trenér", playerName: player ? `${player.firstName} ${player.lastName}` : "hráč", cash: club.cashBalance, boardTrust: active.boardTrust, fanTrust: club.fanTrust, recentTemplates: [...new Set([...recentTemplates.map((item) => item.templateId), ...coolingTemplates])], ethicsMode: active.ethicsMode, weakPositionUrgency: topNeed?.urgency, unhappyPlayer: club.players.some((item) => item.morale < 45 || (item.promisedRole === "STARTER" && item.appearances < Math.max(1, Math.floor(nextDay / 6)))), attendance: club.stadiumAttendance, activeProject: active.projects.some((item) => item.status === "ACTIVE"), activeNegotiation: active.negotiations.some((item) => item.status === "OPEN"), cashPressure: club.cashBalance < club.weeklyWages * 6 });
+      const actorIds = active.actors.filter((actor) => story.memoryTags.includes(actor.kind.toLowerCase()) || actor.kind === story.category).map((actor) => actor.id).slice(0, 3); const cooldownKey = storyCooldownKey(story.category, actorIds);
+      const storyInstance = await tx.directorStory.create({ data: { careerId: active.id, key: `${story.templateId}:${cooldownKey}:${nextDay}`, pack: story.category, phase: story.choices.length ? "DECISION" : "SIGNAL", severity: story.severity, headline: story.title, summary: story.body, sourceType: unresolvedRisks > 0 ? "COMMITMENT" : "WORLD_STATE", actorIds, tags: story.memoryTags, openedDay: nextDay, nextDueDay: story.dueDay, cooldownUntil: nextDay + (story.severity === "CRISIS" ? 45 : 20), memory: [{ day: nextDay, action: "OPENED" }] } });
+      const created = await tx.directorEvent.create({ data: { careerId: active.id, storyId: storyInstance.id, phase: story.choices.length ? "DECISION" : "SIGNAL", sourceType: storyInstance.sourceType, templateId: story.templateId, category: story.category, severity: story.severity, title: story.title, body: story.body, choices: story.choices as unknown as Prisma.InputJsonValue, dueDay: story.dueDay, nextDueDay: story.dueDay, memoryTags: story.memoryTags, createdDay: nextDay, payload: { trigger: unresolvedRisks > 0 ? "COMMITMENT_RISK" : "WORLD_STATE" } } });
       const pulse = pulseForStory(story, club.name, nextDay, active.worldSeed);
       await tx.directorPulsePost.create({ data: { careerId: active.id, dayIndex: nextDay, topic: story.category, relatedType: "EVENT", relatedId: created.id, ...pulse } });
     }
@@ -888,6 +984,30 @@ export async function markDirectorAchievementsSeen(user: CurrentUser): Promise<D
   const active = await loadActive(user);
   if (!active) throw new Error("Aktivní kariéra nebyla nalezena.");
   await prisma.directorAchievement.updateMany({ where: { careerId: active.id, seenAt: null }, data: { seenAt: new Date() } });
+  return (await getDirectorWorld(user))!;
+}
+
+export async function publishDirectorStatement(user: CurrentUser, storyId: string, tone: StatementTone): Promise<DirectorDTO> {
+  const active = await loadActive(user); if (!active) throw new Error("Aktivní kariéra nebyla nalezena.");
+  const story = active.stories.find((item) => item.id === storyId && item.status === "ACTIVE"); if (!story) throw new Error("Tato situace už veřejné vyjádření nepřijímá.");
+  if (active.statements.some((item) => item.storyId === storyId)) throw new Error("K této situaci už bylo veřejné stanovisko vydáno.");
+  const club = active.clubs.find((item) => item.isManaged)!; const pressure = story.severity === "CRISIS" ? 85 : story.severity === "DECISION" ? 60 : 35; const impact = statementImpact(tone, active.mediaCredibility, pressure);
+  const claims: Record<StatementTone, string> = { FACTUAL: "Budeme zveřejňovat ověřená fakta a rozhodnutí doložíme konkrétními kroky.", DIPLOMATIC: "Respektujeme všechny strany a budeme hledat řešení v dlouhodobém zájmu klubu.", AMBITIOUS: "Klub situaci zvládne a promění ji v příležitost k dalšímu růstu.", DEFENSIVE: "Vedení odmítá nepodložené závěry a stojí za dosavadním postupem.", EMOTIONAL: "Klub si nenechá vzít svou identitu ani důvěru lidí, kteří za ním stojí.", NO_COMMENT: "Klub se v tuto chvíli nebude k probíhající situaci vyjadřovat." };
+  await prisma.$transaction(async (tx) => {
+    const statement = await tx.directorPublicStatement.create({ data: { careerId: active.id, storyId, tone, audience: story.pack === "FANS" ? "SUPPORTERS" : "PUBLIC", claim: claims[tone], commitmentMetric: tone === "AMBITIOUS" ? "PUBLIC_PROMISE" : null, commitmentTarget: tone === "AMBITIOUS" ? 1 : null, credibilityAtTime: active.mediaCredibility, reach: Math.round(8500 * impact.reachMultiplier), dayIndex: active.dayIndex } });
+    await tx.directorCareer.update({ where: { id: active.id }, data: { mediaCredibility: clamp(active.mediaCredibility + impact.credibilityDelta) } });
+    const topic = await tx.directorPulseTopic.upsert({ where: { careerId_key: { careerId: active.id, key: `story:${storyId}` } }, create: { careerId: active.id, key: `story:${storyId}`, title: story.headline, sourceType: "STORY", sourceId: storyId, relevance: pressure, sentiment: impact.credibilityDelta, momentum: impact.conflictRisk, openedDay: story.openedDay, lastPostDay: active.dayIndex }, update: { lastPostDay: active.dayIndex, momentum: { increment: impact.conflictRisk } } });
+    const account = active.mediaAccounts.find((item) => item.kind === "CLUB"); await tx.directorPulsePost.create({ data: { careerId: active.id, dayIndex: active.dayIndex, accountId: account?.id, topicId: topic.id, authorType: "CLUB", authorName: club.name, tone, body: claims[tone], topic: story.pack, trust: active.mediaCredibility, reach: statement.reach, relatedType: "STATEMENT", relatedId: statement.id, perspective: "DIRECTOR" } });
+    if (tone === "AMBITIOUS") await tx.directorCommitment.create({ data: { careerId: active.id, stakeholderType: "PUBLIC", title: `Veřejný slib: ${story.headline}`, metric: "PUBLIC_PROMISE", target: 1, dueDay: active.dayIndex + 14, severity: "HIGH", explanation: "Ambiciózní veřejné vyjádření musí být potvrzeno skutečnými kroky vedení." } });
+    await tx.directorCausalLog.create({ data: { careerId: active.id, dayIndex: active.dayIndex, sourceType: "STATEMENT", sourceId: statement.id, category: "MEDIA", headline: "Ředitel vydal veřejné stanovisko", explanation: `${tone}: ${claims[tone]}`, importance: tone === "EMOTIONAL" || tone === "DEFENSIVE" ? 3 : 2 } });
+  });
+  return (await getDirectorWorld(user))!;
+}
+
+export async function resolveDirectorInvestigation(user: CurrentUser, investigationId: string, response: "DISCLOSE" | "REMEDIATE" | "LEGAL_REVIEW" | "DENY" | "SILENCE"): Promise<DirectorDTO> {
+  const active = await loadActive(user); if (!active) throw new Error("Aktivní kariéra nebyla nalezena."); const investigation = active.investigations.find((item) => item.id === investigationId && item.status !== "CLOSED"); if (!investigation) throw new Error("Prověření už není aktivní."); const trace = active.complianceTraces.find((item) => item.id === investigation.traceId)!;
+  const transparent = ["DISCLOSE", "REMEDIATE", "LEGAL_REVIEW"].includes(response); const credibility = transparent ? (response === "REMEDIATE" ? 5 : 3) : response === "DENY" ? -4 : -2; const fine = transparent ? 0 : Math.round(25_000 + trace.exposure * 1_500); const club = active.clubs.find((item) => item.isManaged)!;
+  await prisma.$transaction(async (tx) => { await tx.directorInvestigation.update({ where: { id: investigation.id }, data: { status: "CLOSED", response, closedDay: active.dayIndex, outcome: { transparent, fine }, findings: [...(Array.isArray(investigation.findings) ? investigation.findings : []), { day: active.dayIndex, response }] } }); await tx.directorComplianceTrace.update({ where: { id: trace.id }, data: { status: "RESOLVED", resolvedDay: active.dayIndex } }); await tx.directorCareer.update({ where: { id: active.id }, data: { mediaCredibility: clamp(active.mediaCredibility + credibility), publicTrust: clamp(active.publicTrust + (transparent ? 2 : -4)) } }); if (fine) { await tx.directorClub.update({ where: { id: club.id }, data: { cashBalance: { decrement: fine } } }); await tx.directorLedgerEntry.create({ data: { careerId: active.id, clubId: club.id, dayIndex: active.dayIndex, category: "COMPLIANCE", direction: "OUT", amount: fine, sourceType: "INVESTIGATION", sourceId: investigation.id, description: "Náklady a sankce související s compliance prověřením" } }); } await tx.directorCausalLog.create({ data: { careerId: active.id, dayIndex: active.dayIndex, sourceType: "INVESTIGATION", sourceId: investigation.id, category: "ETHICS", headline: transparent ? "Prověření bylo uzavřeno nápravou" : "Prověření poškodilo důvěryhodnost", explanation: `Reakce vedení: ${response}.`, importance: 4 } }); });
   return (await getDirectorWorld(user))!;
 }
 
@@ -1269,7 +1389,9 @@ export async function resolveDirectorSportMeeting(user: CurrentUser, meetingId: 
 }
 
 async function unlock(tx: Prisma.TransactionClient, careerId: string, item: { key: string; title: string; description: string; rarity: string }) {
-  await tx.directorAchievement.upsert({ where: { careerId_key: { careerId, key: item.key } }, create: { careerId, ...item }, update: {} });
+  const career = await tx.directorCareer.findUnique({ where: { id: careerId }, select: { dayIndex: true } }); const season = await tx.directorSeason.findFirst({ where: { careerId }, orderBy: { number: "desc" }, select: { number: true } });
+  await tx.directorAchievement.upsert({ where: { careerId_key: { careerId, key: item.key } }, create: { careerId, ...item, dayIndex: career?.dayIndex, seasonNumber: season?.number, category: item.key.includes("HAND") ? "ETHICS" : item.key.includes("SUPPORT") ? "FANS" : "CAREER", hidden: item.rarity === "SECRET" }, update: {} });
+  if (["RARE", "EPIC", "LEGENDARY", "SECRET"].includes(item.rarity)) await tx.directorNotificationOutbox.upsert({ where: { careerId_key: { careerId, key: `achievement:${item.key}` } }, create: { careerId, key: `achievement:${item.key}`, kind: "ACHIEVEMENT", title: item.title, body: item.description, importance: item.rarity === "LEGENDARY" ? 5 : 3 }, update: {} });
 }
 
 function toDTO(career: LoadedCareer, legacyArchiveAvailable: boolean): DirectorDTO {
@@ -1291,7 +1413,7 @@ function toDTO(career: LoadedCareer, legacyArchiveAvailable: boolean): DirectorD
     players: club.players.sort((a, b) => b.ability - a.ability).map((item) => { const expectation = career.expectations.find((entry) => entry.playerId === item.id); const agent = career.agents.find((entry) => entry.id === item.agentId); const reason = expectation && Array.isArray(expectation.reasons) && typeof expectation.reasons[0] === "string" ? expectation.reasons[0] : null; const roles = roleScores(item); return { id: item.id, name: `${item.firstName} ${item.lastName}`, position: item.position, archetype: item.archetype, personality: item.personality, age: item.age, ability: item.ability, potential: item.potential, form: item.form, fitness: item.fitness, morale: item.morale, injuryDays: item.injuryDays, contractUntil: item.contractUntil.toISOString(), weeklyWage: item.weeklyWage, marketValue: item.marketValue, promisedRole: item.promisedRole, transferStatus: item.transferStatus, tacticalRoles: Object.entries(roles).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([role, fit]) => ({ role, fit })), load: { acute: item.acuteLoad, chronic: item.chronicLoad, readiness: item.matchReadiness, healthRisk: item.healthRisk, healthStatus: item.healthStatus, minutesLimit: item.minutesLimit, recurrenceRisk: item.recurrenceRisk }, expectation: expectation ? { expectedRole: expectation.expectedRole, targetMinuteShare: expectation.targetMinuteShare, actualMinuteShare: expectation.actualMinuteShare, status: expectation.status, escalationStage: expectation.escalationStage, willingness: expectation.willingness, reason } : null, agent: agent ? { name: agent.name, personality: agent.personality } : null }; }),
     events: career.events.map((item) => ({ id: item.id, category: item.category, severity: item.severity, title: item.title, body: item.body, reason: eventReason(item.category), stakes: eventStakes(item.category), dueDay: item.dueDay, choices: asChoices(item.choices) })),
     pulse: career.pulsePosts.map((item) => ({ id: item.id, authorType: item.authorType, authorName: item.authorName, tone: item.tone, body: item.body, topic: item.topic, trust: item.trust, reach: item.reach, dayIndex: item.dayIndex })),
-    achievements: career.achievements.map((item) => ({ id: item.id, key: item.key, title: item.title, description: item.description, rarity: item.rarity as DirectorDTO["achievements"][number]["rarity"], unlockedAt: item.unlockedAt.toISOString(), seen: Boolean(item.seenAt) })),
+    achievements: career.achievements.map((item) => ({ id: item.id, key: item.key, title: item.title, description: item.description, rarity: item.rarity as DirectorDTO["achievements"][number]["rarity"], unlockedAt: item.unlockedAt.toISOString(), seen: Boolean(item.seenAt), category: item.category, seasonNumber: item.seasonNumber, dayIndex: item.dayIndex, progress: item.progress, hidden: item.hidden })),
     matches: career.matches.map((match) => {
       const home = career.clubs.find((item) => item.id === match.homeClubId)!;
       const away = career.clubs.find((item) => item.id === match.awayClubId)!;
@@ -1347,7 +1469,25 @@ function toDTO(career: LoadedCareer, legacyArchiveAvailable: boolean): DirectorD
     })(),
     season: season ? { number: season.number, currentRound: season.currentRound, status: season.status, table: standings.map((row, index) => { const team = career.clubs.find((item) => item.id === row.clubId)!; return { position: index + 1, clubId: row.clubId, clubName: team?.name ?? "Klub", logo: team?.logo ?? null, played: row.played, wins: row.wins, draws: row.draws, losses: row.losses, goalsFor: row.goalsFor, goalsAgainst: row.goalsAgainst, points: row.points, expectedPoints: row.expectedPoints, performance: row.performance, isManaged: Boolean(team?.isManaged) }; }) } : null,
     infrastructure: buildInfrastructureDTO(career, managedClub, club.id),
+    livingWorld: buildLivingWorldDTO(career, club.id),
     legacyArchiveAvailable,
+  };
+}
+
+function buildLivingWorldDTO(career: LoadedCareer, clubId: string): NonNullable<DirectorDTO["livingWorld"]> {
+  const activeStories = career.stories.filter((item) => item.status === "ACTIVE").sort((a, b) => (a.nextDueDay ?? 9999) - (b.nextDueDay ?? 9999) || (a.severity === "CRISIS" ? -1 : 1));
+  const critical = activeStories.find((item) => item.severity === "CRISIS") ?? activeStories.find((item) => item.phase === "DECISION") ?? null;
+  const segments = career.supporterSegments.filter((item) => item.clubId === clubId); const council = supporterCouncil(segments.map((item) => ({ kind: item.kind, size: item.size, trust: item.trust, conflict: item.conflict, identitySensitivity: item.identitySensitivity, priceSensitivity: item.priceSensitivity })), "IDENTITY");
+  const reputation = career.reputationHistory[0] ?? null; const academyGraduates = career.clubs.find((item) => item.id === clubId)?.players.filter((item) => item.squadLevel === "SENIOR" && item.homegrownClubId === clubId).length ?? 0;
+  return {
+    criticalStory: critical ? { id: critical.id, headline: critical.headline, summary: critical.summary, phase: critical.phase, severity: critical.severity, pack: critical.pack, nextDueDay: critical.nextDueDay, canRespond: !career.statements.some((item) => item.storyId === critical.id) } : null,
+    stories: activeStories.map((item) => ({ id: item.id, headline: item.headline, summary: item.summary, phase: item.phase, severity: item.severity, pack: item.pack, status: item.status, nextDueDay: item.nextDueDay })),
+    actors: career.actors.map((item) => ({ id: item.id, kind: item.kind, name: item.name, personality: item.personality, trust: item.trust, respect: item.respect, influence: item.influence, alternatives: asStringArray(item.alternatives) })),
+    topics: career.pulseTopics.map((item) => ({ id: item.id, title: item.title, relevance: item.relevance, sentiment: item.sentiment, momentum: item.momentum, status: item.status, lastPostDay: item.lastPostDay })),
+    supporterCouncil: council,
+    compliance: career.complianceTraces.map((item) => { const investigation = career.investigations.find((entry) => entry.traceId === item.id); return { id: item.id, kind: item.kind, status: item.status, exposure: item.exposure, expiresDay: item.expiresDay, investigationId: investigation?.id ?? null, investigationStatus: investigation?.status ?? null }; }),
+    reputation: reputation ? { sporting: reputation.sporting, financial: reputation.financial, people: reputation.people, negotiation: reputation.negotiation, public: reputation.public, ethical: reputation.ethical, overall: reputation.overall, archetypes: asStringArray(reputation.archetypes), drivers: asStringArray(reputation.drivers) } : null,
+    profile: { private: true, seasons: career.seasons[0]?.number ?? 1, trophies: career.achievements.filter((item) => item.category === "SPORT" && ["EPIC", "LEGENDARY"].includes(item.rarity)).length, completedTransfers: career.transferCases.filter((item) => item.status === "COMPLETED").length, academyGraduates, stadiumProjects: career.capitalProjects.filter((item) => item.status === "COMPLETED").length, achievements: career.achievements.length },
   };
 }
 

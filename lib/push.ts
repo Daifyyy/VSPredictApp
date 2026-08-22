@@ -87,6 +87,19 @@ export async function sendChecklistCandidateNotifications(candidates: NewCheckli
   return stats;
 }
 
+export async function sendDirectorNotifications() {
+  const stats = { eligible: 0, sent: 0, errors: 0 };
+  if (!pushConfigured()) return stats;
+  const outbox = await prisma.directorNotificationOutbox.findMany({ where: { status: "PENDING", availableAt: { lte: new Date() } }, include: { career: { select: { userId: true } } }, orderBy: { createdAt: "asc" }, take: 50 });
+  const preferences = await prisma.notificationPreference.findMany({ where: { userId: { in: [...new Set(outbox.map((item) => item.career.userId))] }, enabled: true, directorImportant: true }, include: { user: { select: { pushSubscriptions: true } } } }); const byUser = new Map(preferences.map((item) => [item.userId, item]));
+  for (const item of outbox) {
+    const preference = byUser.get(item.career.userId); if (!preference?.user.pushSubscriptions.length) continue; stats.eligible++;
+    let delivered = false; for (const subscription of preference.user.pushSubscriptions) try { delivered = await sendPushSubscription(subscription, { title: item.title, body: item.body, url: item.url, tag: `director-${item.id}` }) || delivered; } catch { stats.errors++; }
+    await prisma.directorNotificationOutbox.update({ where: { id: item.id }, data: delivered ? { status: "SENT", sentAt: new Date(), attempts: { increment: 1 } } : { attempts: { increment: 1 }, status: item.attempts >= 2 ? "FAILED" : "PENDING" } }); if (delivered) stats.sent++;
+  }
+  return stats;
+}
+
 export async function sendKickoffReminders(now = new Date()) {
   const emptyStats = { eligible: 0, sent: 0, errors: 0, checkedFixtures: 0, apiBatches: 0, halftimeSent: 0, finalSent: 0 };
   if (!pushConfigured()) return { ...emptyStats, configured: false };

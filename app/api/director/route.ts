@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/authUser";
 import { allowRequest, tooMany } from "@/lib/rateLimit";
-import { acceptDirectorSponsor, advanceDirectorDay, createDirectorWorld, financeDirectorProject, getDirectorWorld, isDirectorLeagueAllowed, manageDirectorAcademyPlayer, manageDirectorCoach, manageDirectorStaff, markDirectorAchievementsSeen, openDirectorCoachNegotiation, openDirectorNegotiation, openDirectorTransferCase, resolveDirectorEvent, resolveDirectorSportMeeting, resolveIncomingTransfer, rolloverDirectorSeason, scoutDirectorPlayer, startDirectorCapitalProject, startDirectorProject, submitDirectorCoachOffer, submitDirectorContractOffer, submitDirectorOffer, submitDirectorTransferOffer, updateDirectorIdentity, updateDirectorPlayer, updateDirectorShortlist, updateDirectorSportPolicy, updateDirectorTicketPolicy } from "@/lib/director/dal";
+import { acceptDirectorSponsor, advanceDirectorDay, createDirectorWorld, financeDirectorProject, getDirectorWorld, isDirectorLeagueAllowed, manageDirectorAcademyPlayer, manageDirectorCoach, manageDirectorStaff, markDirectorAchievementsSeen, openDirectorCoachNegotiation, openDirectorNegotiation, openDirectorTransferCase, publishDirectorStatement, resolveDirectorEvent, resolveDirectorInvestigation, resolveDirectorSportMeeting, resolveIncomingTransfer, rolloverDirectorSeason, scoutDirectorPlayer, startDirectorCapitalProject, startDirectorProject, submitDirectorCoachOffer, submitDirectorContractOffer, submitDirectorOffer, submitDirectorTransferOffer, updateDirectorIdentity, updateDirectorPlayer, updateDirectorShortlist, updateDirectorSportPolicy, updateDirectorTicketPolicy } from "@/lib/director/dal";
 
 const commandSchema = z.discriminatedUnion("action", [
   z.object({
@@ -35,6 +35,8 @@ const commandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("resolve_incoming_transfer"), caseId: z.string().cuid(), decision: z.enum(["ACCEPT", "REJECT"]) }),
   z.object({ action: z.literal("update_sport_policy"), desiredStyle: z.enum(["BALANCED", "POSSESSION", "HIGH_PRESS", "TRANSITION", "DEEP_BLOCK"]), youthPreference: z.number().min(0).max(1), rotationLevel: z.number().min(0).max(1), trainingIntensity: z.number().min(0).max(1), healthRiskTolerance: z.number().min(0).max(1), phasePriorities: z.record(z.string(), z.number().min(0).max(100)) }),
   z.object({ action: z.literal("resolve_sport_meeting"), meetingId: z.string().cuid(), choice: z.enum(["SUPPORT", "REQUEST_PRIORITY", "INSIST_MANDATE"]) }),
+  z.object({ action: z.literal("publish_statement"), storyId: z.string().cuid(), tone: z.enum(["FACTUAL", "DIPLOMATIC", "AMBITIOUS", "DEFENSIVE", "EMOTIONAL", "NO_COMMENT"]) }),
+  z.object({ action: z.literal("resolve_investigation"), investigationId: z.string().cuid(), response: z.enum(["DISCLOSE", "REMEDIATE", "LEGAL_REVIEW", "DENY", "SILENCE"]) }),
 ]);
 
 export async function GET() {
@@ -85,6 +87,8 @@ export async function POST(req: Request) {
     if (parsed.data.action === "resolve_incoming_transfer") return NextResponse.json({ world: await resolveIncomingTransfer(user, parsed.data.caseId, parsed.data.decision) });
     if (parsed.data.action === "update_sport_policy") return NextResponse.json({ world: await updateDirectorSportPolicy(user, parsed.data) });
     if (parsed.data.action === "resolve_sport_meeting") return NextResponse.json({ world: await resolveDirectorSportMeeting(user, parsed.data.meetingId, parsed.data.choice) });
+    if (parsed.data.action === "publish_statement") return NextResponse.json({ world: await publishDirectorStatement(user, parsed.data.storyId, parsed.data.tone) });
+    if (parsed.data.action === "resolve_investigation") return NextResponse.json({ world: await resolveDirectorInvestigation(user, parsed.data.investigationId, parsed.data.response) });
     return NextResponse.json({ world: await resolveDirectorEvent(user, parsed.data.eventId, parsed.data.choiceKey) });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Herní příkaz selhal.";

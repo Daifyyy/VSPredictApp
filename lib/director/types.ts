@@ -1,4 +1,4 @@
-export const DIRECTOR_WORLD_VERSION = 7;
+export const DIRECTOR_WORLD_VERSION = 8;
 export const MAX_BANKED_STEPS = 3;
 
 export type DirectorSection = "office" | "team" | "market" | "club" | "competitions";
@@ -132,6 +132,11 @@ export interface DirectorDTO {
     rarity: AchievementRarity;
     unlockedAt: string;
     seen: boolean;
+    category: string;
+    seasonNumber: number | null;
+    dayIndex: number | null;
+    progress: number;
+    hidden: boolean;
   }>;
   matches: Array<{
     id: string;
@@ -183,6 +188,16 @@ export interface DirectorDTO {
   finances: { receivables: number; liabilities: number; recent: Array<{ id: string; dayIndex: number; category: string; direction: string; amount: number; status: string; description: string }> };
   market: { needs: Array<{ id: string; position: string; role: string | null; urgency: number; reason: string; budgetMin: number | null; budgetMax: number | null; tacticalFit: number | null }>; shortlist: Array<{ playerId: string; playerName: string; priority: number; status: string; note: string | null; alert: string | null }>; payments: Array<{ id: string; kind: string; amount: number; dueDay: number | null; status: string; direction: string }>; clauses: Array<{ id: string; playerId: string; kind: string; value: number; status: string }>; reservedCash: number; worstProjectedCash: number };
   infrastructure?: { zones: Array<{ id: string; kind: string; name: string; level: number; capacity: number; condition: number; quality: number; operatingCost: number; revenuePotential: number; temporaryCapacity: number | null }>; projects: Array<{ id: string; kind: string; title: string; phase: string; status: string; targetDay: number | null; costMin: number; costMax: number; approvedCost: number | null; spent: number; contingency: number; temporaryCapacity: number | null; approvals: Array<{ stakeholder: string; status: string; explanation: string | null }>; financing: Array<{ source: string; amount: number; remaining: number; interestRate: number; status: string }> }>; supporters: Array<{ kind: string; size: number; trust: number; conflict: number; preference: string }>; ticketPolicy: { standardPrice: number; familyPrice: number; premiumPrice: number; seasonTicket: number } | null; academy: { teamId: string; coachingQuality: number; players: Array<{ id: string; name: string; age: number; position: string; ability: number; potential: number; readiness: number; pathway: string; focus: string; minutes: number }>; recentMatches: Array<{ id: string; round: number; opponent: string; status: string; goalsFor: number | null; goalsAgainst: number | null; performance: number | null }> } | null; identity: { declared: string[]; observed: Record<string, number>; alignment: number; credibility: number; drivers: string[] } | null; sponsorOffers: Array<{ id: string; sponsor: string; category: string; guaranteed: number; bonus: number; durationDays: number; namingRights: boolean; expiresDay: number; ethics: number }>; sponsorContracts: Array<{ id: string; sponsor: string; category: string; guaranteed: number; bonus: number; endDay: number; namingRights: boolean; status: string }> };
+  livingWorld?: {
+    criticalStory: { id: string; headline: string; summary: string; phase: string; severity: string; pack: string; nextDueDay: number | null; canRespond: boolean } | null;
+    stories: Array<{ id: string; headline: string; summary: string; phase: string; severity: string; pack: string; status: string; nextDueDay: number | null }>;
+    actors: Array<{ id: string; kind: string; name: string; personality: string; trust: number; respect: number; influence: number; alternatives: string[] }>;
+    topics: Array<{ id: string; title: string; relevance: number; sentiment: number; momentum: number; status: string; lastPostDay: number }>;
+    supporterCouncil: { score: number; stance: string };
+    compliance: Array<{ id: string; kind: string; status: string; exposure: number; expiresDay: number | null; investigationId: string | null; investigationStatus: string | null }>;
+    reputation: { sporting: number; financial: number; people: number; negotiation: number; public: number; ethical: number; overall: number; archetypes: string[]; drivers: string[] } | null;
+    profile: { private: true; seasons: number; trophies: number; completedTransfers: number; academyGraduates: number; stadiumProjects: number; achievements: number };
+  };
   season: { number: number; currentRound: number; status: string; table: Array<{ position: number; clubId: string; clubName: string; logo: string | null; played: number; wins: number; draws: number; losses: number; goalsFor: number; goalsAgainst: number; points: number; expectedPoints: number; performance: number; isManaged: boolean }> } | null;
   legacyArchiveAvailable: boolean;
 }

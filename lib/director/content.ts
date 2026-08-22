@@ -134,5 +134,11 @@ export const ACHIEVEMENTS = {
   firstDay: { key: "FIRST_DAY", title: "Klíče od kanceláře", description: "Dokončil jsi první den ve funkci klubového ředitele.", rarity: "COMMON" },
   cleanHands: { key: "CLEAN_HANDS", title: "Čisté ruce", description: "Odmítl jsi první zákulisní zkratku.", rarity: "RARE" },
   supporterVoice: { key: "SUPPORTER_VOICE", title: "Klub naslouchá", description: "Upřednostnil jsi vztah s fanoušky před okamžitým výnosem.", rarity: "UNCOMMON" },
+  trustedMandate: { key: "TRUSTED_MANDATE", title: "Mandát s důvěrou", description: "Rada, veřejnost i fanoušci současně důvěřují vedení klubu.", rarity: "RARE" },
+  academyPathway: { key: "ACADEMY_PATHWAY", title: "Cesta je otevřená", description: "První odchovanec akademie se stal členem seniorského kádru.", rarity: "UNCOMMON" },
+  stadiumLegacy: { key: "STADIUM_LEGACY", title: "Dědictví z betonu", description: "Dokončil jsi první vícefázový stadionový projekt.", rarity: "EPIC" },
+  transparentRepair: { key: "TRANSPARENT_REPAIR", title: "Důvěra se opravuje činy", description: "Compliance problém byl uzavřen transparentní nápravou.", rarity: "RARE" },
+  championDirector: { key: "CHAMPION_DIRECTOR", title: "Ředitel mistrů", description: "Klub pod tvým vedením dokončil sezonu na prvním místě.", rarity: "LEGENDARY" },
+  paperTrail: { key: "PAPER_TRAIL", title: "Stopa zůstává", description: "Hraniční rozhodnutí se později vrátilo jako skutečné prověření.", rarity: "SECRET" },
 } as const;
 
