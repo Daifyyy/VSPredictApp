@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/authUser";
 import { allowRequest, tooMany } from "@/lib/rateLimit";
-import { advanceDirectorDay, createDirectorWorld, getDirectorWorld, isDirectorLeagueAllowed, markDirectorAchievementsSeen, openDirectorNegotiation, resolveDirectorEvent, startDirectorProject, submitDirectorOffer } from "@/lib/director/dal";
+import { advanceDirectorDay, createDirectorWorld, getDirectorWorld, isDirectorLeagueAllowed, manageDirectorCoach, manageDirectorStaff, markDirectorAchievementsSeen, openDirectorCoachNegotiation, openDirectorNegotiation, openDirectorTransferCase, resolveDirectorEvent, resolveDirectorSportMeeting, rolloverDirectorSeason, startDirectorProject, submitDirectorCoachOffer, submitDirectorOffer, submitDirectorTransferOffer, updateDirectorPlayer, updateDirectorSportPolicy } from "@/lib/director/dal";
 
 const commandSchema = z.discriminatedUnion("action", [
   z.object({
@@ -10,11 +10,21 @@ const commandSchema = z.discriminatedUnion("action", [
     directorName: z.string().trim().min(2).max(50), ethicsMode: z.enum(["OFF", "REALISTIC", "EXTENDED"]).default("REALISTIC"),
   }),
   z.object({ action: z.literal("advance") }),
+  z.object({ action: z.literal("rollover_season") }),
   z.object({ action: z.literal("ack_achievements") }),
   z.object({ action: z.literal("open_negotiation"), playerId: z.string().cuid() }),
   z.object({ action: z.literal("submit_offer"), negotiationId: z.string().cuid(), upfront: z.number().int().min(0).max(1_000_000_000), installments: z.number().int().min(0).max(1_000_000_000), bonuses: z.number().int().min(0).max(1_000_000_000), sellOn: z.number().min(0).max(35), weeklyWage: z.number().int().min(100).max(10_000_000), years: z.number().int().min(1).max(6), promisedRole: z.enum(["STARTER", "ROTATION", "SQUAD"]) }),
   z.object({ action: z.literal("start_project"), kind: z.enum(["ATMOSPHERE", "COMMERCIAL", "ACADEMY"]) }),
   z.object({ action: z.literal("resolve_event"), eventId: z.string().cuid(), choiceKey: z.string().min(1).max(40) }),
+  z.object({ action: z.literal("coach_action"), command: z.enum(["SUPPORT", "WARN", "SHARED_AUTHORITY", "DIRECTOR_AUTHORITY", "DISMISS"]) }),
+  z.object({ action: z.literal("staff_action"), staffId: z.string().cuid(), command: z.enum(["HIRE", "FIRE"]) }),
+  z.object({ action: z.literal("open_coach_negotiation"), candidateId: z.string().cuid() }),
+  z.object({ action: z.literal("submit_coach_offer"), negotiationId: z.string().cuid(), weeklyWage: z.number().int().min(1000).max(1_000_000), years: z.number().int().min(1).max(6), transferAuthority: z.enum(["DIRECTOR", "CONSULT", "COACH"]), transferVeto: z.boolean(), youthTarget: z.number().min(0).max(.5), minimumPatienceDays: z.number().int().min(7).max(120) }),
+  z.object({ action: z.literal("player_action"), playerId: z.string().cuid(), command: z.enum(["LIST", "UNLIST", "RENEW"]), role: z.enum(["STARTER", "ROTATION", "SQUAD"]).optional() }),
+  z.object({ action: z.literal("open_transfer_case"), playerId: z.string().cuid(), kind: z.enum(["PERMANENT", "LOAN"]).default("PERMANENT") }),
+  z.object({ action: z.literal("submit_transfer_offer"), caseId: z.string().cuid(), upfront: z.number().int().min(0).max(1_000_000_000), installments: z.number().int().min(0).max(1_000_000_000), bonuses: z.number().int().min(0).max(1_000_000_000), sellOn: z.number().min(0).max(35), loanFee: z.number().int().min(0).max(1_000_000_000).default(0), optionFee: z.number().int().min(0).max(1_000_000_000).optional(), weeklyWage: z.number().int().min(100).max(10_000_000), years: z.number().int().min(1).max(6), promisedRole: z.enum(["STARTER", "ROTATION", "SQUAD"]) }),
+  z.object({ action: z.literal("update_sport_policy"), desiredStyle: z.enum(["BALANCED", "POSSESSION", "HIGH_PRESS", "TRANSITION", "DEEP_BLOCK"]), youthPreference: z.number().min(0).max(1), rotationLevel: z.number().min(0).max(1), trainingIntensity: z.number().min(0).max(1), healthRiskTolerance: z.number().min(0).max(1), phasePriorities: z.record(z.string(), z.number().min(0).max(100)) }),
+  z.object({ action: z.literal("resolve_sport_meeting"), meetingId: z.string().cuid(), choice: z.enum(["SUPPORT", "REQUEST_PRIORITY", "INSIST_MANDATE"]) }),
 ]);
 
 export async function GET() {
@@ -41,10 +51,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ world }, { status: 201 });
     }
     if (parsed.data.action === "advance") return NextResponse.json({ world: await advanceDirectorDay(user) });
+    if (parsed.data.action === "rollover_season") return NextResponse.json({ world: await rolloverDirectorSeason(user) });
     if (parsed.data.action === "ack_achievements") return NextResponse.json({ world: await markDirectorAchievementsSeen(user) });
     if (parsed.data.action === "open_negotiation") return NextResponse.json({ world: await openDirectorNegotiation(user, parsed.data.playerId) });
     if (parsed.data.action === "submit_offer") return NextResponse.json({ world: await submitDirectorOffer(user, parsed.data.negotiationId, parsed.data) });
     if (parsed.data.action === "start_project") return NextResponse.json({ world: await startDirectorProject(user, parsed.data.kind) });
+    if (parsed.data.action === "coach_action") return NextResponse.json({ world: await manageDirectorCoach(user, parsed.data.command) });
+    if (parsed.data.action === "staff_action") return NextResponse.json({ world: await manageDirectorStaff(user, parsed.data.staffId, parsed.data.command) });
+    if (parsed.data.action === "open_coach_negotiation") return NextResponse.json({ world: await openDirectorCoachNegotiation(user, parsed.data.candidateId) });
+    if (parsed.data.action === "submit_coach_offer") return NextResponse.json({ world: await submitDirectorCoachOffer(user, parsed.data.negotiationId, parsed.data) });
+    if (parsed.data.action === "player_action") return NextResponse.json({ world: await updateDirectorPlayer(user, parsed.data.playerId, parsed.data.command, parsed.data.role) });
+    if (parsed.data.action === "open_transfer_case") return NextResponse.json({ world: await openDirectorTransferCase(user, parsed.data.playerId, parsed.data.kind) });
+    if (parsed.data.action === "submit_transfer_offer") return NextResponse.json({ world: await submitDirectorTransferOffer(user, parsed.data.caseId, parsed.data) });
+    if (parsed.data.action === "update_sport_policy") return NextResponse.json({ world: await updateDirectorSportPolicy(user, parsed.data) });
+    if (parsed.data.action === "resolve_sport_meeting") return NextResponse.json({ world: await resolveDirectorSportMeeting(user, parsed.data.meetingId, parsed.data.choice) });
     return NextResponse.json({ world: await resolveDirectorEvent(user, parsed.data.eventId, parsed.data.choiceKey) });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Herní příkaz selhal.";

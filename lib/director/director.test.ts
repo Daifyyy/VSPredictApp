@@ -37,8 +37,8 @@ describe("director world", () => {
       stadiumAttendance: .72, stadiumCondition: 65, stadiumAtmosphere: 60, stadiumCommercial: 45,
       academyLevel: 2, trainingLevel: 2, medicalLevel: 2, scoutingLevel: 2,
       infrastructure: {}, financeHistory: [], createdAt: start, updatedAt: start,
-      players: generatePlayers(source, 67, start).map((player, index) => ({ ...player, id: `${id}-p${index}`, clubId: id, scoutMin: null, scoutMax: null, appearances: 0, minutes: 0, createdAt: start, updatedAt: start })),
-      coaches: [{ ...generateCoach(source, 67, start), id: `${id}-coach`, clubId: id, promises: [], createdAt: start, updatedAt: start }],
+      players: generatePlayers(source, 67, start).map((player, index) => ({ ...player, id: `${id}-p${index}`, clubId: id, scoutMin: null, scoutMax: null, appearances: 0, minutes: 0, agentId: null, transferStatus: "AVAILABLE", createdAt: start, updatedAt: start })),
+      coaches: [{ ...generateCoach(source, 67, start), id: `${id}-coach`, clubId: id, promises: [], personality: "PRAGMATIC", reputation: 60, ambition: 60, interferenceTolerance: 50, preferredRoles: [], mandate: {}, status: "ACTIVE", createdAt: start, updatedAt: start }],
     });
     const awayTeam = { ...team, id: 88, name: "Away FC", short: "AFC", attack: 1.4, defense: 1.2 };
     const input = { seed: 1234, day: 8, round: 1, home: makeClub("home", team, true), away: makeClub("away", awayTeam, false) };

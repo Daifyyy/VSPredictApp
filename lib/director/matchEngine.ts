@@ -1,62 +1,45 @@
-import type { DirectorCoach, DirectorClub, DirectorPlayer } from "@prisma/client";
+import type { DirectorClub } from "@prisma/client";
 import { matchLambdas, simulateMatch } from "@/lib/game/simulate";
 import type { GameTeam } from "@/lib/game/types";
 import { clamp, hashSeed, seeded } from "./random";
+import { defaultSportingPolicy, normalizePolicy, phaseMatchup, prepareSportingPlan, type SportingCoach, type SportingPlan, type SportingPlayer, type SportingPolicy } from "./sporting";
 
-type ClubWithSquad = DirectorClub & { players: DirectorPlayer[]; coaches: DirectorCoach[] };
+type ClubWithSquad = DirectorClub & { players: SportingPlayer[]; coaches: SportingCoach[] };
+type Appearance = { playerId: string; role: string; started: boolean; minutes: number; performance: number; load: number; injuryDays: number; substitutionReason: string | null };
 
-function squadStrength(club: ClubWithSquad) {
-  const eleven = selectedLineup(club);
-  const coach = club.coaches[0];
-  const weighted = eleven.reduce((sum, player) => sum + player.ability * 0.72 + player.form * 0.1 + player.fitness * 0.1 + player.mentality * 0.08, 0) / Math.max(1, eleven.length);
-  const coachFit = coach ? (coach.matchManagement + coach.adaptability) / 2 : 50;
-  return clamp(weighted * 0.82 + coachFit * 0.08 + club.cohesion * 0.06 + club.morale * 0.04, 30, 92);
+function strength(club: ClubWithSquad, plan: SportingPlan) {
+  const ids = new Set(plan.lineup.map((x) => x.playerId)); const players = club.players.filter((x) => ids.has(x.id)); const coach = club.coaches.find((x) => x.status === "ACTIVE") ?? club.coaches[0];
+  const quality = players.reduce((s, p) => s + p.ability * .68 + p.form * .08 + p.fitness * .08 + p.mentality * .08, 0) / Math.max(1, players.length);
+  const roleFit = plan.lineup.reduce((s, p) => s + p.roleFit, 0) / Math.max(1, plan.lineup.length);
+  return clamp(quality * .86 + roleFit * .06 + club.cohesion * .04 + club.morale * .02 + (coach?.matchManagement ?? 50) * .02, 30, 92);
 }
 
-function selectedLineup(club: ClubWithSquad) {
-  const scored = club.players.filter((player) => player.injuryDays <= 0).sort((a, b) => {
-    const scoreA = a.ability * .72 + a.form * .1 + a.fitness * .1 + a.mentality * .08;
-    const scoreB = b.ability * .72 + b.form * .1 + b.fitness * .1 + b.mentality * .08;
-    return scoreB - scoreA;
-  });
-  const formation = (club.coaches[0]?.formation ?? "4-3-3").split("-").map(Number).filter(Number.isFinite);
-  const quotas = { GK: 1, DEF: formation[0] ?? 4, MID: formation.length > 3 ? formation.slice(1, -1).reduce((sum, item) => sum + item, 0) : formation[1] ?? 3, ATT: formation.at(-1) ?? 3 };
-  const groups = { GK: ["GK"], DEF: ["CB", "LB", "RB", "FB"], MID: ["DM", "CM", "AM"], ATT: ["LW", "RW", "W", "ST"] };
-  const picked: typeof scored = [];
-  for (const key of Object.keys(groups) as Array<keyof typeof groups>) picked.push(...scored.filter((player) => groups[key].includes(player.position) && !picked.includes(player)).slice(0, quotas[key]));
-  picked.push(...scored.filter((player) => !picked.includes(player)).slice(0, 11 - picked.length));
-  return picked.slice(0, 11);
+function gameTeam(club: ClubWithSquad, teamStrength: number, plan: SportingPlan): GameTeam {
+  const ids = new Set(plan.lineup.map((x) => x.playerId)); const players = club.players.filter((x) => ids.has(x.id)); const scale = teamStrength / 62;
+  const attackFit = players.reduce((s, p) => s + p.creation * .45 + p.finishing * .4 + p.ballSkill * .15, 0) / Math.max(1, players.length) / 60;
+  const defenseFit = players.reduce((s, p) => s + p.defending * .58 + p.physical * .27 + p.mentality * .15, 0) / Math.max(1, players.length) / 60;
+  return { id: club.externalTeamId, name: club.name, short: club.shortName, color: club.primaryColor, logo: club.logo ?? undefined, attack: clamp(club.baseAttack * scale * clamp(attackFit, .78, 1.24), .35, 3.1), defense: clamp(club.baseDefense / Math.max(.65, scale * clamp(defenseFit, .78, 1.24)), .35, 3.1), homeBoost: 1.12 };
 }
 
-function asGameTeam(club: ClubWithSquad, strength: number): GameTeam {
-  const scale = strength / 62;
-  const lineup = selectedLineup(club);
-  const attackingFit = lineup.reduce((sum, player) => sum + player.creation * .45 + player.finishing * .4 + player.ballSkill * .15, 0) / Math.max(1, lineup.length) / 60;
-  const defensiveFit = lineup.reduce((sum, player) => sum + player.defending * .58 + player.physical * .27 + player.mentality * .15, 0) / Math.max(1, lineup.length) / 60;
-  return { id: club.externalTeamId, name: club.name, short: club.shortName, color: club.primaryColor, logo: club.logo ?? undefined, attack: clamp(club.baseAttack * scale * clamp(attackingFit, .78, 1.24), 0.35, 3.1), defense: clamp(club.baseDefense / Math.max(.65, scale * clamp(defensiveFit, .78, 1.24)), 0.35, 3.1), homeBoost: 1.12 };
+function playerAppearances(club: ClubWithSquad, plan: SportingPlan, rand: () => number, intensity: number): Appearance[] {
+  const output: Appearance[] = []; const changes = Math.min(plan.bench.length, 3 + (rand() > .62 ? 1 : 0)); const offMinutes = plan.lineup.map((_, i) => i < changes ? 58 + Math.floor(rand() * 24) : 90);
+  plan.lineup.forEach((entry, i) => { const p = club.players.find((x) => x.id === entry.playerId)!; const hazard = clamp(.004 + Math.max(0, 76 - p.fitness) * .0012 + intensity * .00008, .003, .055); const injuryDays = rand() < hazard ? 4 + Math.floor(rand() * 18) : 0; output.push({ playerId: p.id, role: entry.role, started: true, minutes: offMinutes[i], performance: clamp(entry.roleFit * .42 + p.ability * .4 + p.form * .1 + (rand() - .5) * 12, 25, 95), load: offMinutes[i] / 90 * (22 + intensity * .18), injuryDays, substitutionReason: injuryDays ? "INJURY" : offMinutes[i] < 90 ? "TACTICAL_OR_LOAD" : null }); });
+  for (let i = 0; i < changes; i++) { const entry = plan.bench[i]; const p = club.players.find((x) => x.id === entry.playerId)!; const minutes = 90 - offMinutes[i]; output.push({ playerId: p.id, role: entry.role, started: false, minutes, performance: clamp(entry.roleFit * .42 + p.ability * .4 + p.form * .1 + (rand() - .5) * 12, 25, 95), load: minutes / 90 * (22 + intensity * .18), injuryDays: 0, substitutionReason: "TACTICAL_OR_LOAD" }); }
+  return output;
 }
 
-export function simulateDirectorMatch(input: { seed: number; day: number; round: number; home: ClubWithSquad; away: ClubWithSquad }) {
-  const rand = seeded(hashSeed(input.seed, input.day, input.round, "director-match-v1"));
-  const homeLineup = selectedLineup(input.home); const awayLineup = selectedLineup(input.away);
-  const homeStrength = squadStrength(input.home); const awayStrength = squadStrength(input.away);
-  const homeTeam = asGameTeam(input.home, homeStrength); const awayTeam = asGameTeam(input.away, awayStrength);
-  const [homeXg, awayXg] = matchLambdas(homeTeam, awayTeam);
-  const result = simulateMatch(homeTeam, awayTeam, { attack: 1, concede: 1 }, { attack: 1, concede: 1 }, rand);
-  const events: Array<{ minute: number; type: string; text: string }> = [];
-  for (let i = 0; i < result.homeGoals; i++) events.push({ minute: 5 + Math.floor(rand() * 84), type: "GOAL", text: `Gól · ${input.home.name}` });
-  for (let i = 0; i < result.awayGoals; i++) events.push({ minute: 5 + Math.floor(rand() * 84), type: "GOAL", text: `Gól · ${input.away.name}` });
-  const chances = Math.max(3, Math.round(homeXg + awayXg + rand() * 3));
-  for (let i = 0; i < chances; i++) { const team = rand() < homeXg / Math.max(.1, homeXg + awayXg) ? input.home : input.away; events.push({ minute: 3 + Math.floor(rand() * 86), type: "CHANCE", text: `Velká šance · ${team.name}` }); }
-  if (rand() < .52) events.push({ minute: 20 + Math.floor(rand() * 65), type: "TACTIC", text: `${input.home.coaches[0]?.name ?? "Trenér domácích"} upravuje strukturu hry.` });
-  if (rand() < .52) events.push({ minute: 20 + Math.floor(rand() * 65), type: "TACTIC", text: `${input.away.coaches[0]?.name ?? "Trenér hostů"} reaguje změnou tempa.` });
-  const cards = 2 + Math.floor(rand() * 5);
-  for (let i = 0; i < cards; i++) { const team = rand() < .5 ? input.home : input.away; events.push({ minute: 10 + Math.floor(rand() * 80), type: "CARD", text: `Žlutá karta · ${team.name}` }); }
-  events.sort((a, b) => a.minute - b.minute);
-  const managedHome = input.home.isManaged;
-  const gf = managedHome ? result.homeGoals : result.awayGoals; const ga = managedHome ? result.awayGoals : result.homeGoals;
-  const xgf = managedHome ? homeXg : awayXg; const xga = managedHome ? awayXg : homeXg;
-  const headline = gf > ga ? "Trenérův plán přinesl výsledek" : gf < ga ? "Výsledek odkryl slabá místa kádru" : "Vyrovnaný zápas bez rozhodující převahy";
-  const summary = xgf > xga + .35 ? `Tým vytvořil kvalitnější šance (${xgf.toFixed(2)}–${xga.toFixed(2)} xG), výsledek ale ovlivnila i koncovka.` : xga > xgf + .35 ? `Soupeř měl výraznější šance (${xga.toFixed(2)} xG). Vedení by mělo s trenérem probrat strukturu bez míče.` : `Rozdíl xG byl malý (${xgf.toFixed(2)}–${xga.toFixed(2)}). Jednotlivý výsledek není důvodem měnit dlouhodobý plán.`;
-  return { homeGoals: result.homeGoals, awayGoals: result.awayGoals, homeXg, awayXg, homeStrength, awayStrength, homeLineupIds: homeLineup.map((item) => item.id), awayLineupIds: awayLineup.map((item) => item.id), timeline: events, coachReport: { headline, summary } };
+export function simulateDirectorMatch(input: { seed: number; day: number; round: number; home: ClubWithSquad; away: ClubWithSquad; homePolicy?: Partial<SportingPolicy>; awayPolicy?: Partial<SportingPolicy> }) {
+  const rand = seeded(hashSeed(input.seed, input.day, input.round, "director-match-v4")); const homeCoach = input.home.coaches.find((x) => x.status === "ACTIVE") ?? input.home.coaches[0]; const awayCoach = input.away.coaches.find((x) => x.status === "ACTIVE") ?? input.away.coaches[0];
+  if (!homeCoach || !awayCoach) throw new Error("Zápas nelze připravit bez hlavního trenéra.");
+  const homePolicy = normalizePolicy(input.homePolicy ?? {}, defaultSportingPolicy(homeCoach.philosophy)); const awayPolicy = normalizePolicy(input.awayPolicy ?? {}, defaultSportingPolicy(awayCoach.philosophy));
+  const homePlan = prepareSportingPlan({ players: input.home.players, coach: homeCoach, policy: homePolicy, opponentStrength: (input.away.baseAttack + 1 / Math.max(.2, input.away.baseDefense)) * 22, seed: input.seed, day: input.day });
+  const awayPlan = prepareSportingPlan({ players: input.away.players, coach: awayCoach, policy: awayPolicy, opponentStrength: (input.home.baseAttack + 1 / Math.max(.2, input.home.baseDefense)) * 22, seed: input.seed, day: input.day });
+  const matchup = phaseMatchup(homePlan, awayPlan); const homeStrength = strength(input.home, homePlan); const awayStrength = strength(input.away, awayPlan); const homeTeam = gameTeam(input.home, homeStrength, homePlan); const awayTeam = gameTeam(input.away, awayStrength, awayPlan);
+  const homeAdj = { attack: matchup.homeAttack, concede: matchup.awayAttack }; const awayAdj = { attack: matchup.awayAttack, concede: matchup.homeAttack }; const [homeXg, awayXg] = matchLambdas(homeTeam, awayTeam, homeAdj, awayAdj); const result = simulateMatch(homeTeam, awayTeam, homeAdj, awayAdj, rand);
+  const shotsHome = Math.max(4, Math.round(homeXg * 5.3 + matchup.tempo * .045 + rand() * 3)); const shotsAway = Math.max(3, Math.round(awayXg * 5.3 + matchup.tempo * .04 + rand() * 3)); const foulsHome = Math.max(5, Math.round(16 - homePlan.phases.DISCIPLINE * .09 + matchup.tempo * .07 + rand() * 3)); const foulsAway = Math.max(5, Math.round(16 - awayPlan.phases.DISCIPLINE * .09 + matchup.tempo * .07 + rand() * 3)); const cardsHome = Math.max(0, Math.round(foulsHome * (.12 + (100 - homePlan.phases.DISCIPLINE) / 850) + rand() - .5)); const cardsAway = Math.max(0, Math.round(foulsAway * (.12 + (100 - awayPlan.phases.DISCIPLINE) / 850) + rand() - .5));
+  const timeline: Array<{ minute: number; type: string; text: string }> = []; for (let i = 0; i < result.homeGoals; i++) timeline.push({ minute: 5 + Math.floor(rand() * 84), type: "GOAL", text: `Gól · ${input.home.name}` }); for (let i = 0; i < result.awayGoals; i++) timeline.push({ minute: 5 + Math.floor(rand() * 84), type: "GOAL", text: `Gól · ${input.away.name}` });
+  for (const [club, plan] of [[input.home, homePlan], [input.away, awayPlan]] as const) timeline.push({ minute: 50 + Math.floor(rand() * 25), type: "TACTIC", text: `${club.coaches.find((x) => x.status === "ACTIVE")?.name}: reakce v oblasti ${plan.weaknesses[0]?.split(":")[0]?.toLowerCase() ?? "tempa"}.` }); for (const [club, count] of [[input.home, cardsHome], [input.away, cardsAway]] as const) for (let i = 0; i < count; i++) timeline.push({ minute: 10 + Math.floor(rand() * 80), type: "CARD", text: `Žlutá karta · ${club.name}` });
+  const homeAppearances = playerAppearances(input.home, homePlan, rand, matchup.tempo); const awayAppearances = playerAppearances(input.away, awayPlan, rand, matchup.tempo); for (const item of [...homeAppearances, ...awayAppearances].filter((x) => !x.started)) timeline.push({ minute: 90 - item.minutes, type: "SUB", text: `Střídání · nový hráč dostává ${item.minutes} minut` }); timeline.sort((a, b) => a.minute - b.minute);
+  const managedHome = input.home.isManaged; const gf = managedHome ? result.homeGoals : result.awayGoals; const ga = managedHome ? result.awayGoals : result.homeGoals; const xgf = managedHome ? homeXg : awayXg; const xga = managedHome ? awayXg : homeXg; const managedPlan = managedHome ? homePlan : awayPlan; const headline = gf > ga ? "Trenérův plán přinesl výsledek" : gf < ga ? "Výsledek odkryl slabá místa plánu" : "Vyrovnaný zápas bez rozhodující převahy"; const longTermSignal = Math.abs(xgf - xga) < .25 ? "Výkon byl vyrovnaný; jeden výsledek nemění dlouhodobé hodnocení." : xgf > xga ? "Tvorba šancí potvrzuje vhodnost základního směru." : `Opakuje se slabina ${managedPlan.weaknesses[0]?.split(":")[0]?.toLowerCase() ?? "bez míče"}.`;
+  return { homeGoals: result.homeGoals, awayGoals: result.awayGoals, homeXg, awayXg, homeStrength, awayStrength, homeLineupIds: homePlan.lineup.map((item) => item.playerId), awayLineupIds: awayPlan.lineup.map((item) => item.playerId), homePlan, awayPlan, homeAppearances, awayAppearances, timeline, phaseStats: { ...matchup, home: { shots: shotsHome, shotsOnTarget: Math.round(shotsHome * .39), fouls: foulsHome, cards: cardsHome, corners: Math.max(1, Math.round(shotsHome * .38)) }, away: { shots: shotsAway, shotsOnTarget: Math.round(shotsAway * .39), fouls: foulsAway, cards: cardsAway, corners: Math.max(1, Math.round(shotsAway * .38)) } }, coachReport: { headline, plan: managedPlan.reasons, execution: `${managedHome ? matchup.possessionHome : matchup.possessionAway}% držení · xG ${xgf.toFixed(2)}:${xga.toFixed(2)}`, quality: xgf > xga + .3 ? "lepší tvorba šancí" : xga > xgf + .3 ? "soupeř vytvořil kvalitnější šance" : "vyrovnaná kvalita šancí", finishingLuck: (gf - ga) - (xgf - xga), reactions: "Trenér využil střídání podle únavy a vývoje skóre.", longTermSignal, summary: longTermSignal } };
 }

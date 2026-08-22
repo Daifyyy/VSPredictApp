@@ -13,6 +13,8 @@ import { DIRECTOR_WORLD_VERSION, MAX_BANKED_STEPS, type DirectorChoice, type Dir
 import { simulateDirectorMatch } from "./matchEngine";
 import { commitmentState, describeDrivers, diminishingMagnitude, effectAppliedTotal, effectValue, weightedForm } from "./causal";
 import { roundRobinSchedule, tableRows } from "./season";
+import { boardReview, coachEvaluation, informationQuality, playerExpectation, STAFF_ROLES, targetMinuteShare, transferOfferUtility, transferWindow } from "./people";
+import { defaultSportingPolicy, meetingDecision, normalizePolicy, PHASES, roleScores, trainingUpdate, type SportingStyle } from "./sporting";
 
 const CAREER_INCLUDE = {
   clubs: { include: { players: true, coaches: true }, orderBy: { name: "asc" as const } },
@@ -29,6 +31,21 @@ const CAREER_INCLUDE = {
   seasons: { include: { standings: true }, orderBy: { number: "desc" as const }, take: 1 },
   needs: { where: { status: "OPEN" }, orderBy: { urgency: "desc" as const }, take: 30 },
   causalLogs: { orderBy: [{ dayIndex: "desc" as const }, { importance: "desc" as const }], take: 60 },
+  agents: true,
+  expectations: true,
+  squadGroups: true,
+  staff: true,
+  transferCases: { include: { offers: { orderBy: { round: "asc" as const } }, registration: true }, orderBy: { updatedAt: "desc" as const }, take: 40 },
+  registrations: true,
+  coachCandidates: { orderBy: { reputation: "desc" as const }, take: 12 },
+  coachNegotiations: { orderBy: { updatedAt: "desc" as const }, take: 12 },
+  objectives: true,
+  boardReviews: { orderBy: { dayIndex: "desc" as const }, take: 12 },
+  jobOffers: { orderBy: { createdAt: "desc" as const }, take: 12 },
+  sportPolicies: true,
+  sportMeetings: { orderBy: { createdAt: "desc" as const }, take: 24 },
+  matchPlans: { orderBy: { createdAt: "desc" as const }, take: 40 },
+  playerAppearances: { orderBy: { createdAt: "desc" as const }, take: 300 },
 } satisfies Prisma.DirectorCareerInclude;
 
 type LoadedCareer = Prisma.DirectorCareerGetPayload<{ include: typeof CAREER_INCLUDE }>;
@@ -62,12 +79,13 @@ function asChoices(value: Prisma.JsonValue): DirectorChoice[] {
 }
 
 async function upgradeCausalWorld(tx: Prisma.TransactionClient, career: LoadedCareer) {
-  if (career.version >= DIRECTOR_WORLD_VERSION && career.seasons.length) return;
+  if (career.version >= 2 && career.seasons.length) return;
   const schedule = roundRobinSchedule(career.clubs.map((item) => item.id));
   await tx.directorMatch.deleteMany({ where: { careerId: career.id, status: "SCHEDULED" } });
   await tx.directorMatch.createMany({ data: schedule.map((match) => ({ careerId: career.id, ...match })), skipDuplicates: true });
   let season = career.seasons[0];
   if (!season) season = await tx.directorSeason.create({ data: { careerId: career.id, number: 1, endDay: Math.max(...schedule.map((item) => item.scheduledDay)) + 7, rules: { pointsWin: 3, pointsDraw: 1 } }, include: { standings: true } });
+  await tx.directorMatch.updateMany({ where: { careerId: career.id, seasonId: null }, data: { seasonId: season.id } });
   await tx.directorStanding.createMany({ data: career.clubs.map((club) => ({ seasonId: season.id, clubId: club.id })), skipDuplicates: true });
   const managed = career.clubs.find((item) => item.isManaged)!;
   await tx.directorRelationship.createMany({ data: [
@@ -77,7 +95,103 @@ async function upgradeCausalWorld(tx: Prisma.TransactionClient, career: LoadedCa
     { careerId: career.id, actorType: "MEDIA", actorName: "Kluboví novináři", trust: career.mediaCredibility, respect: 52, alignment: 45, priorities: { transparency: .8 } },
   ], skipDuplicates: true });
   await tx.directorCausalLog.create({ data: { careerId: career.id, dayIndex: career.dayIndex, sourceType: "MIGRATION", category: "WORLD", headline: "Svět přešel na kauzální model", explanation: "Dosavadní výsledky zůstaly zachované. Nové vlivy, závazky a finance se sledují od tohoto dne.", importance: 3 } });
-  await tx.directorCareer.update({ where: { id: career.id }, data: { version: DIRECTOR_WORLD_VERSION } });
+  await tx.directorCareer.update({ where: { id: career.id }, data: { version: 2 } });
+}
+
+const PERSON_NAMES = ["Martin Vacek", "Petr Holub", "Tomáš Urban", "Jan Mareš", "Lukáš Černý", "David Král", "Ondřej Bartoš", "Michal Kříž", "Roman Jelínek", "Viktor Blažek", "Marek Doležal", "Adam Procházka"];
+const PERSONALITIES = ["PRAGMATIC", "AMBITIOUS", "LOYAL", "HARD_NEGOTIATOR", "ANALYTICAL"];
+
+function seasonRules(endDay: number) {
+  const middle = Math.max(28, Math.floor(endDay / 2));
+  return { pointsWin: 3, pointsDraw: 1, transferWindows: [{ name: "Hlavní přestupní okno", start: 0, end: 24 }, { name: "Zimní přestupní okno", start: middle - 7, end: middle + 7 }] };
+}
+
+async function upgradePeopleWorld(tx: Prisma.TransactionClient, career: LoadedCareer) {
+  if (career.version >= 3) return;
+  const season = career.seasons[0];
+  const rand = seeded(hashSeed(career.worldSeed, "people-v3"));
+  if (season) {
+    await tx.directorSeason.update({ where: { id: season.id }, data: { rules: seasonRules(season.endDay) } });
+    await tx.directorMatch.updateMany({ where: { careerId: career.id, seasonId: null }, data: { seasonId: season.id } });
+  }
+
+  const agents = await Promise.all(Array.from({ length: Math.max(8, Math.ceil(career.clubs.length * 1.5)) }, async (_, index) => tx.directorAgent.create({ data: {
+    careerId: career.id, name: PERSON_NAMES[index % PERSON_NAMES.length], personality: PERSONALITIES[index % PERSONALITIES.length],
+    ambition: 40 + rand() * 50, negotiation: 42 + rand() * 50, loyalty: 35 + rand() * 55,
+    priorities: { wage: .35 + rand() * .35, role: .25 + rand() * .3, ambition: .2 + rand() * .3 },
+  } })));
+
+  for (const club of career.clubs) {
+    const coach = club.coaches[0];
+    if (coach) await tx.directorCoach.update({ where: { id: coach.id }, data: {
+      personality: PERSONALITIES[Math.floor(rand() * PERSONALITIES.length)], reputation: clamp((coach.matchManagement + coach.manManagement) / 2), ambition: 45 + rand() * 45,
+      interferenceTolerance: 35 + rand() * 50, preferredRoles: ["CB", "CM", "ST"], mandate: { budget: club.transferBudget, philosophy: coach.philosophy, youthTarget: .12, transferAuthority: coach.transferAuthority, veto: coach.transferVeto, minimumPatienceDays: 24 },
+    } });
+    for (const player of club.players) {
+      const agent = agents[Math.floor(rand() * agents.length)];
+      await tx.directorPlayer.update({ where: { id: player.id }, data: { agentId: agent.id } });
+      await tx.directorPlayerExpectation.create({ data: { careerId: career.id, playerId: player.id, expectedRole: player.promisedRole, targetMinuteShare: targetMinuteShare(player.promisedRole), wageSatisfaction: 48 + rand() * 38, ambition: 40 + rand() * 50, willingness: 62 + rand() * 30 } });
+    }
+    const leaders = club.players.slice().sort((a, b) => b.mentality - a.mentality).slice(0, 4).map((item) => item.id);
+    const young = club.players.filter((item) => item.age <= 22).slice(0, 7).map((item) => item.id);
+    await tx.directorSquadGroup.createMany({ data: [
+      { careerId: career.id, clubId: club.id, kind: "LEADERS", name: "Lídři kabiny", memberIds: leaders, influence: 72 },
+      { careerId: career.id, clubId: club.id, kind: "YOUTH", name: "Mladé jádro", memberIds: young, influence: 42 },
+    ], skipDuplicates: true });
+    for (const [index, role] of STAFF_ROLES.entries()) await tx.directorStaff.create({ data: {
+      careerId: career.id, clubId: club.id, role, name: PERSON_NAMES[(index + club.name.length) % PERSON_NAMES.length], ability: clamp(42 + club.tier * 3 + rand() * 32), personality: PERSONALITIES[(index + 2) % PERSONALITIES.length], weeklyWage: Math.round(900 + rand() * 2600), workload: 28 + rand() * 35, relationship: 52 + rand() * 28, contractUntil: new Date(Date.UTC(career.gameDate.getUTCFullYear() + 2, 5, 30)),
+    } });
+  }
+
+  for (let index = 0; index < 6; index++) await tx.directorCoachCandidate.create({ data: {
+    careerId: career.id, name: PERSON_NAMES[(index + 4) % PERSON_NAMES.length], personality: PERSONALITIES[index % PERSONALITIES.length], reputation: 45 + rand() * 42, ambition: 48 + rand() * 45, philosophy: ["CONTROL", "PRESS", "TRANSITION", "BALANCED"][index % 4], formation: ["4-3-3", "4-2-3-1", "3-4-2-1"][index % 3], youthDevelopment: 42 + rand() * 48, manManagement: 45 + rand() * 45, matchManagement: 45 + rand() * 45, wageDemand: Math.round(7000 + rand() * 18000),
+  } });
+  for (const [index, role] of STAFF_ROLES.entries()) await tx.directorStaff.create({ data: { careerId: career.id, clubId: null, role, name: PERSON_NAMES[(index + 8) % PERSON_NAMES.length], ability: 55 + rand() * 35, personality: PERSONALITIES[(index + 1) % PERSONALITIES.length], weeklyWage: Math.round(1200 + rand() * 3200), workload: 0, relationship: 50, contractUntil: new Date(Date.UTC(career.gameDate.getUTCFullYear() + 2, 5, 30)), status: "CANDIDATE" } });
+  const managed = career.clubs.find((item) => item.isManaged)!;
+  if (season) await tx.directorSeasonObjective.createMany({ data: [
+    { careerId: career.id, seasonId: season.id, clubId: managed.id, kind: "SPORTING", target: Math.max(1, Math.ceil(career.clubs.length * .55)), weight: .5, explanation: "Umístění odpovídající síle a rozpočtu klubu." },
+    { careerId: career.id, seasonId: season.id, clubId: managed.id, kind: "FINANCE", target: 0, weight: .25, explanation: "Udržet kladnou hotovost po odečtení splatných závazků." },
+    { careerId: career.id, seasonId: season.id, clubId: managed.id, kind: "ACADEMY", target: 900, weight: .15, explanation: "Dát mladým hráčům měřitelný prostor v soutěžních utkáních." },
+    { careerId: career.id, seasonId: season.id, clubId: managed.id, kind: "INFRASTRUCTURE", target: 1, weight: .1, explanation: "Dokončit alespoň jeden smysluplný klubový projekt." },
+  ], skipDuplicates: true });
+  await tx.directorCausalLog.create({ data: { careerId: career.id, dayIndex: career.dayIndex, sourceType: "MIGRATION", category: "WORLD", headline: "Klubový svět získal vlastní aktéry a trh", explanation: "Trenéři, hráči, agenti a zaměstnanci mají od tohoto dne vlastní očekávání, alternativy a paměť. Dosavadní výsledky a finance zůstaly beze změny.", importance: 3 } });
+  await tx.directorCareer.update({ where: { id: career.id }, data: { version: 3 } });
+}
+
+async function upgradeSportingWorld(tx: Prisma.TransactionClient, career: LoadedCareer) {
+  if (career.version >= 4) return;
+  await tx.directorSportPolicy.createMany({ data: career.clubs.map((club) => {
+    const coach = club.coaches.find((item) => item.status === "ACTIVE") ?? club.coaches[0];
+    const policy = defaultSportingPolicy(coach?.philosophy);
+    return { careerId: career.id, clubId: club.id, desiredStyle: policy.desiredStyle, youthPreference: policy.youthPreference, rotationLevel: policy.rotationLevel, trainingIntensity: policy.trainingIntensity, healthRiskTolerance: policy.healthRiskTolerance, phasePriorities: policy.phasePriorities, updatedDay: career.dayIndex };
+  }), skipDuplicates: true });
+  for (const player of career.clubs.flatMap((club) => club.players)) {
+    await tx.directorPlayer.update({ where: { id: player.id }, data: { tacticalFamiliarity: roleScores(player), acuteLoad: 20, chronicLoad: 25, matchReadiness: Math.min(100, player.fitness * .92 + player.morale * .08), healthRisk: Math.max(2, (100 - player.fitness) * .22) } });
+  }
+  await tx.directorCausalLog.create({ data: { careerId: career.id, dayIndex: career.dayIndex, sourceType: "MIGRATION", category: "SPORT", headline: "Sportovní provoz přešel na model v4", explanation: "Budoucí zápasy nově používají trenérské plány, role, šest fází hry, střídání a skutečné vytížení. Již odehrané výsledky zůstaly beze změny.", importance: 4 } });
+  await tx.directorCareer.update({ where: { id: career.id }, data: { version: 4 } });
+}
+
+async function runAiTransferActivity(tx: Prisma.TransactionClient, career: LoadedCareer, day: number) {
+  const buyers = career.clubs.filter((item) => !item.isManaged && item.players.length < 27 && item.cashBalance > item.weeklyWages * 10).sort((a, b) => b.transferBudget - a.transferBudget);
+  const buyer = buyers.length ? buyers[day % buyers.length] : null;
+  if (!buyer) return;
+  const need = career.needs.filter((item) => item.clubId === buyer.id && item.status === "OPEN").sort((a, b) => b.urgency - a.urgency)[0];
+  if (!need || need.urgency < 55) return;
+  const target = career.clubs.filter((item) => item.id !== buyer.id && !item.isManaged && item.players.length > 18).flatMap((seller) => seller.players.filter((player) => player.position === need.target && player.transferStatus !== "AGREED").map((player) => ({ seller, player }))).filter((item) => item.player.marketValue <= buyer.transferBudget * 1.2).sort((a, b) => b.player.potential / Math.max(1, b.player.marketValue) - a.player.potential / Math.max(1, a.player.marketValue))[0];
+  if (!target) return;
+  const rand = seeded(hashSeed(career.worldSeed, day, buyer.id, target.player.id, "ai-market"));
+  const terms = { upfront: Math.round(target.player.marketValue * (.84 + rand() * .25)), installments: Math.round(target.player.marketValue * (.08 + rand() * .16)), bonuses: Math.round(target.player.marketValue * .07), sellOn: 8, loanFee: 0, weeklyWage: Math.round(target.player.weeklyWage * (1.12 + rand() * .2)), years: target.player.age < 29 ? 4 : 2, promisedRole: "ROTATION" };
+  const result = transferOfferUtility({ marketValue: target.player.marketValue, ...terms, offeredWage: terms.weeklyWage, offeredYears: terms.years, importance: target.player.promisedRole === "STARTER" ? 1 : .45, sellerCashPressure: target.seller.cashBalance < target.seller.weeklyWages * 8 ? 1 : .15, replacementDifficulty: target.seller.players.filter((item) => item.position === target.player.position && item.id !== target.player.id).length < 2 ? .9 : .3, rivalry: 0, currentWage: target.player.weeklyWage, targetYears: target.player.age < 28 ? 4 : 2, roleFit: .9, clubAmbitionFit: 1 });
+  const item = await tx.directorTransferCase.create({ data: { careerId: career.id, playerId: target.player.id, sellingClubId: target.seller.id, buyingClubId: buyer.id, initiatedBy: "AI", status: result.accepted ? "AGREED" : "REJECTED", playerAgreement: result.player >= .98 ? "AGREED" : "REJECTED", agreedDay: result.accepted ? day : null } });
+  await tx.directorTransferOffer.create({ data: { caseId: item.id, round: 1, submittedByClubId: buyer.id, ...terms, sellerUtility: result.seller, playerUtility: result.player, response: result.reason } });
+  if (!result.accepted) return;
+  const window = transferWindow(day, career.seasons[0]?.rules);
+  if (window.registrationDay === null) return;
+  await tx.directorTransferCase.update({ where: { id: item.id }, data: { registrationDay: window.registrationDay } });
+  await tx.directorRegistration.create({ data: { careerId: career.id, caseId: item.id, playerId: target.player.id, fromClubId: target.seller.id, toClubId: buyer.id, effectiveDay: window.registrationDay } });
+  await tx.directorClub.update({ where: { id: buyer.id }, data: { cashBalance: { decrement: terms.upfront }, transferBudget: { decrement: Math.min(buyer.transferBudget, terms.upfront) } } });
+  await tx.directorClub.update({ where: { id: target.seller.id }, data: { cashBalance: { increment: terms.upfront } } });
 }
 
 async function loadActive(user: CurrentUser): Promise<LoadedCareer | null> {
@@ -91,8 +205,18 @@ async function loadActive(user: CurrentUser): Promise<LoadedCareer | null> {
 export async function getDirectorWorld(user: CurrentUser): Promise<DirectorDTO | null> {
   let career = await loadActive(user);
   if (!career) return null;
-  if (career.version < DIRECTOR_WORLD_VERSION || !career.seasons.length) {
+  if (career.version < 2 || !career.seasons.length) {
     await prisma.$transaction((tx) => upgradeCausalWorld(tx, career!), { timeout: 30_000 });
+    career = await loadActive(user);
+    if (!career) return null;
+  }
+  if (career.version < 3) {
+    await prisma.$transaction((tx) => upgradePeopleWorld(tx, career!), { timeout: 30_000 });
+    career = await loadActive(user);
+    if (!career) return null;
+  }
+  if (career.version < DIRECTOR_WORLD_VERSION) {
+    await prisma.$transaction((tx) => upgradeSportingWorld(tx, career!), { timeout: 30_000 });
     career = await loadActive(user);
     if (!career) return null;
   }
@@ -124,7 +248,7 @@ export async function createDirectorWorld(input: {
     const career = await tx.directorCareer.create({
       data: {
         userId: input.user.id, ownerEmail: ownerKey(input.user), name: input.directorName,
-        version: DIRECTOR_WORLD_VERSION, leagueId: input.leagueId, leagueName: meta.name,
+        version: 2, leagueId: input.leagueId, leagueName: meta.name,
         country: meta.country, worldSeed: seed, gameDate: startDate, ethicsMode: input.ethicsMode,
         identityTags: ["nové vedení"],
       },
@@ -161,6 +285,7 @@ export async function createDirectorWorld(input: {
     await tx.directorMatch.createMany({ data: schedule.map((match) => ({ careerId: career.id, ...match })) });
     const season = await tx.directorSeason.create({ data: { careerId: career.id, number: 1, endDay: Math.max(...schedule.map((item) => item.scheduledDay)) + 7, rules: { pointsWin: 3, pointsDraw: 1, relegationPlaces: Math.min(3, Math.max(1, Math.floor(createdClubs.length / 6))) } } });
     await tx.directorStanding.createMany({ data: createdClubs.map((item) => ({ seasonId: season.id, clubId: item.id })) });
+    await tx.directorMatch.updateMany({ where: { careerId: career.id, seasonId: null }, data: { seasonId: season.id } });
     await tx.directorRelationship.createMany({ data: [
       { careerId: career.id, actorType: "BOARD", actorName: "Klubová rada", trust: 65, respect: 58, alignment: 55, priorities: { finance: .7, results: .65 } },
       { careerId: career.id, actorType: "COACH", actorName: "Hlavní trenér", trust: 65, respect: 62, alignment: 58, priorities: { squad: .8, authority: .6 } },
@@ -179,9 +304,8 @@ export async function createDirectorWorld(input: {
     return career.id;
   }, { timeout: 30_000 });
 
-  const created = await prisma.directorCareer.findUniqueOrThrow({ where: { id: createdId }, include: CAREER_INCLUDE });
-  const legacy = await prisma.gameSave.findUnique({ where: { email: ownerKey(input.user) }, select: { email: true } });
-  return toDTO(created, Boolean(legacy));
+  void createdId;
+  return (await getDirectorWorld(input.user))!;
 }
 
 export async function resolveDirectorEvent(user: CurrentUser, eventId: string, choiceKey: string): Promise<DirectorDTO> {
@@ -234,8 +358,13 @@ export async function resolveDirectorEvent(user: CurrentUser, eventId: string, c
 }
 
 export async function advanceDirectorDay(user: CurrentUser): Promise<DirectorDTO> {
-  const active = await loadActive(user);
+  let active = await loadActive(user);
   if (!active) throw new Error("Aktivní kariéra nebyla nalezena.");
+  if (active.version < DIRECTOR_WORLD_VERSION) {
+    await getDirectorWorld(user);
+    active = await loadActive(user);
+    if (!active) throw new Error("Aktivní kariéra nebyla nalezena.");
+  }
   const blocking = active.events.find((event) => event.status === "OPEN" && asChoices(event.choices).length > 0);
   if (blocking) throw new Error(`Nejdřív rozhodni: ${blocking.title}`);
   const now = new Date();
@@ -256,6 +385,25 @@ export async function advanceDirectorDay(user: CurrentUser): Promise<DirectorDTO
     const club = clubs.find((item) => item.isManaged)!;
     const coach = club.coaches[0];
     const player = club.players[(nextDay * 7) % club.players.length];
+    const sportPolicies = await tx.directorSportPolicy.findMany({ where: { careerId: active.id } });
+    for (const team of clubs) {
+      const coachForPolicy = team.coaches.find((item) => item.status === "ACTIVE") ?? team.coaches[0];
+      const stored = sportPolicies.find((item) => item.clubId === team.id);
+      const policy = normalizePolicy(stored ? { desiredStyle: stored.desiredStyle as SportingStyle, youthPreference: stored.youthPreference, rotationLevel: stored.rotationLevel, trainingIntensity: stored.trainingIntensity, healthRiskTolerance: stored.healthRiskTolerance, phasePriorities: stored.phasePriorities as Record<(typeof PHASES)[number], number> } : {}, defaultSportingPolicy(coachForPolicy?.philosophy));
+      for (const squadPlayer of team.players) {
+        const update = trainingUpdate(squadPlayer, policy, nextDay, active.worldSeed);
+        await tx.directorPlayer.update({ where: { id: squadPlayer.id }, data: update });
+        Object.assign(squadPlayer, update);
+      }
+    }
+    const upcomingManaged = active.matches.find((match) => match.status === "SCHEDULED" && match.scheduledDay > nextDay && match.scheduledDay <= nextDay + 2 && (match.homeClubId === club.id || match.awayClubId === club.id));
+    if (upcomingManaged) {
+      const existingMeeting = await tx.directorSportMeeting.findFirst({ where: { careerId: active.id, matchId: upcomingManaged.id, status: "OPEN" } });
+      if (!existingMeeting) {
+        const managedPolicy = sportPolicies.find((item) => item.clubId === club.id); const priority = PHASES.slice().sort((a, b) => Number((managedPolicy?.phasePriorities as Record<string, number> | undefined)?.[b] ?? 50) - Number((managedPolicy?.phasePriorities as Record<string, number> | undefined)?.[a] ?? 50))[0];
+        await tx.directorSportMeeting.create({ data: { careerId: active.id, clubId: club.id, matchId: upcomingManaged.id, coachId: coach?.id, kind: "PRE_MATCH", trigger: "IMPORTANT_FIXTURE", title: "Předzápasová sportovní porada", briefing: `Trenér připravuje plán na další soutěžní zápas. Dlouhodobá priorita klubu je ${priority.toLowerCase()}.`, recommendation: { phase: priority, action: "KEEP_PLAN" }, createdDay: nextDay, dueDay: upcomingManaged.scheduledDay } });
+      }
+    }
 
     const activeEffects = await tx.directorCausalEffect.findMany({ where: { careerId: active.id, status: "ACTIVE", startDay: { lte: nextDay } } });
     const causalDelta = { boardTrust: 0, publicTrust: 0, mediaCredibility: 0, fanTrust: 0, coachTrust: 0 };
@@ -295,9 +443,22 @@ export async function advanceDirectorDay(user: CurrentUser): Promise<DirectorDTO
 
     if (nextDay % 7 === 0) {
       for (const item of clubs) {
-        await tx.directorClub.update({ where: { id: item.id }, data: { cashBalance: item.cashBalance - item.weeklyWages } });
-        await tx.directorLedgerEntry.create({ data: { careerId: active.id, clubId: item.id, dayIndex: nextDay, category: "WAGES", direction: "OUT", amount: item.weeklyWages, sourceType: "PAYROLL", description: "Týdenní mzdy hráčů a sportovního úseku" } });
+        const staffWages = active.staff.filter((staff) => staff.clubId === item.id && staff.status === "ACTIVE").reduce((sum, staff) => sum + staff.weeklyWage, 0);
+        const payroll = item.weeklyWages + staffWages;
+        await tx.directorClub.update({ where: { id: item.id }, data: { cashBalance: item.cashBalance - payroll } });
+        await tx.directorLedgerEntry.create({ data: { careerId: active.id, clubId: item.id, dayIndex: nextDay, category: "WAGES", direction: "OUT", amount: payroll, sourceType: "PAYROLL", description: "Týdenní mzdy hráčů a sportovního úseku" } });
       }
+    }
+
+    const pendingRegistrations = await tx.directorRegistration.findMany({ where: { careerId: active.id, status: "PENDING", effectiveDay: { lte: nextDay } }, include: { transferCase: true, player: true } });
+    for (const registration of pendingRegistrations) {
+      const destination = clubs.find((item) => item.id === registration.toClubId);
+      const source = clubs.find((item) => item.id === registration.fromClubId);
+      if (!destination || !source || destination.players.length >= 28 || source.players.length <= 18) continue;
+      await tx.directorPlayer.update({ where: { id: registration.playerId }, data: { clubId: destination.id, transferStatus: "AVAILABLE", cohesion: 35 } });
+      await tx.directorRegistration.update({ where: { id: registration.id }, data: { status: "REGISTERED", registeredAt: now } });
+      await tx.directorTransferCase.update({ where: { id: registration.caseId }, data: { status: "COMPLETED" } });
+      await tx.directorCausalLog.create({ data: { careerId: active.id, dayIndex: nextDay, sourceType: "REGISTRATION", sourceId: registration.id, category: "TRANSFER", headline: `${registration.player.firstName} ${registration.player.lastName} byl registrován`, explanation: "Dohoda vstoupila v účinnost po otevření registračního období. Přestup mění mzdy, hloubku kádru a sehranost obou klubů.", targetType: "PLAYER", targetId: registration.playerId, importance: 3 } });
     }
 
     if (nextDay % 7 === 0) {
@@ -318,6 +479,8 @@ export async function advanceDirectorDay(user: CurrentUser): Promise<DirectorDTO
       }
     }
 
+    if (nextDay % 7 === 0) await runAiTransferActivity(tx, active, nextDay);
+
     for (const project of active.projects.filter((item) => item.status === "ACTIVE" && item.finishDay <= nextDay)) {
       const effects = project.effects as { atmosphere?: number; commercial?: number; academy?: number; cash?: number; fanTrust?: number; publicTrust?: number };
       await tx.directorProject.update({ where: { id: project.id }, data: { status: "COMPLETED", completedAt: now } });
@@ -337,10 +500,17 @@ export async function advanceDirectorDay(user: CurrentUser): Promise<DirectorDTO
       const home = clubs.find((item) => item.id === dueMatch.homeClubId);
       const away = clubs.find((item) => item.id === dueMatch.awayClubId);
       if (home && away) {
-        const played = simulateDirectorMatch({ seed: active.worldSeed, day: nextDay, round: dueMatch.round, home, away });
-        await tx.directorMatch.update({ where: { id: dueMatch.id }, data: { status: "PLAYED", homeGoals: played.homeGoals, awayGoals: played.awayGoals, homeXg: played.homeXg, awayXg: played.awayXg, homeStrength: played.homeStrength, awayStrength: played.awayStrength, timeline: played.timeline, coachReport: played.coachReport, playedAt: now } });
-        await tx.directorPlayer.updateMany({ where: { id: { in: [...played.homeLineupIds, ...played.awayLineupIds] } }, data: { appearances: { increment: 1 }, minutes: { increment: 90 }, fitness: { decrement: 7 } } });
-        for (const [team, lineupIds] of [[home, played.homeLineupIds], [away, played.awayLineupIds]] as const) {
+        const storedHomePolicy = sportPolicies.find((item) => item.clubId === home.id);
+        const storedAwayPolicy = sportPolicies.find((item) => item.clubId === away.id);
+        const policyForMatch = (stored: typeof storedHomePolicy, teamId: string) => { if (!stored) return undefined; const priorities = { ...(stored.phasePriorities as Record<(typeof PHASES)[number], number>) }; const meeting = active.sportMeetings.find((item) => item.matchId === dueMatch.id && item.clubId === teamId && item.status === "RESOLVED"); const response = meeting?.response as { phaseDelta?: number } | null; const recommendation = meeting?.recommendation as { phase?: (typeof PHASES)[number] } | null; if (response?.phaseDelta && recommendation?.phase && PHASES.includes(recommendation.phase)) priorities[recommendation.phase] = clamp((priorities[recommendation.phase] ?? 50) + response.phaseDelta, 0, 100); return { ...stored, desiredStyle: stored.desiredStyle as SportingStyle, phasePriorities: priorities }; };
+        const played = simulateDirectorMatch({ seed: active.worldSeed, day: nextDay, round: dueMatch.round, home, away, homePolicy: policyForMatch(storedHomePolicy, home.id), awayPolicy: policyForMatch(storedAwayPolicy, away.id) });
+        await tx.directorMatch.update({ where: { id: dueMatch.id }, data: { status: "PLAYED", engineVersion: 4, homeGoals: played.homeGoals, awayGoals: played.awayGoals, homeXg: played.homeXg, awayXg: played.awayXg, homeStrength: played.homeStrength, awayStrength: played.awayStrength, timeline: played.timeline, phaseStats: played.phaseStats, coachReport: played.coachReport, playedAt: now } });
+        for (const [side, team, plan] of [["HOME", home, played.homePlan], ["AWAY", away, played.awayPlan]] as const) await tx.directorMatchPlan.create({ data: { careerId: active.id, matchId: dueMatch.id, clubId: team.id, coachId: team.coaches.find((item) => item.status === "ACTIVE")?.id, side, formation: plan.formation, mentality: plan.mentality, lineup: plan.lineup as unknown as Prisma.InputJsonValue, bench: plan.bench as unknown as Prisma.InputJsonValue, roles: Object.fromEntries(plan.lineup.map((item) => [item.playerId, item.role])), phaseProfile: plan.phases, selectionReasons: plan.reasons, weaknesses: plan.weaknesses, confidence: plan.confidence, createdDay: nextDay, lockedAt: now } });
+        for (const [team, appearances] of [[home, played.homeAppearances], [away, played.awayAppearances]] as const) for (const appearance of appearances) {
+          await tx.directorPlayerAppearance.create({ data: { careerId: active.id, matchId: dueMatch.id, clubId: team.id, ...appearance } });
+          await tx.directorPlayer.update({ where: { id: appearance.playerId }, data: { appearances: { increment: 1 }, minutes: { increment: appearance.minutes }, acuteLoad: { increment: appearance.load }, fitness: { decrement: appearance.load * .16 }, injuryDays: appearance.injuryDays || undefined } });
+        }
+        for (const [team, lineupIds] of [] as unknown as ReadonlyArray<readonly [typeof home, string[]]>) {
           const injuryRandom = seeded(hashSeed(active.worldSeed, nextDay, dueMatch.id, team.id, "injury"));
           const averageFitness = team.players.filter((item) => lineupIds.includes(item.id)).reduce((sum, item) => sum + item.fitness, 0) / Math.max(1, lineupIds.length);
           const hazard = clamp(.018 + Math.max(0, 82 - averageFitness) * .0015 - team.medicalLevel * .0015, .006, .065);
@@ -379,6 +549,38 @@ export async function advanceDirectorDay(user: CurrentUser): Promise<DirectorDTO
       const form = weightedForm(inputs);
       const recentPoints = inputs.slice(-5).reduce((sum, item) => sum + item.points, 0);
       await tx.directorClub.update({ where: { id: item.id }, data: { currentForm: form, morale: clamp(item.morale * .88 + 7 + recentPoints * .28), cohesion: clamp(item.cohesion + (recent.length ? .35 : .1)) } });
+    }
+
+    const managedMatches = allMatches.filter((item) => item.status === "PLAYED" && (item.homeClubId === club.id || item.awayClubId === club.id)).length;
+    for (const expectation of active.expectations) {
+      const squadPlayer = clubs.flatMap((item) => item.players).find((item) => item.id === expectation.playerId);
+      if (!squadPlayer) continue;
+      const owner = clubs.find((item) => item.players.some((candidate) => candidate.id === squadPlayer.id));
+      const teamMatches = owner?.isManaged ? managedMatches : allMatches.filter((item) => item.status === "PLAYED" && (item.homeClubId === owner?.id || item.awayClubId === owner?.id)).length;
+      const result = playerExpectation({ promisedRole: expectation.expectedRole, appearances: squadPlayer.appearances, minutes: squadPlayer.minutes, availableTeamMatches: teamMatches, injuryDays: squadPlayer.injuryDays, currentStage: expectation.escalationStage, morale: squadPlayer.morale });
+      await tx.directorPlayerExpectation.update({ where: { id: expectation.id }, data: { actualMinuteShare: result.actualShare, escalationStage: result.nextStage, status: result.status, reasons: [result.reason], lastEvaluatedDay: nextDay } });
+      if (result.moraleDelta) await tx.directorPlayer.update({ where: { id: squadPlayer.id }, data: { morale: clamp(squadPlayer.morale + result.moraleDelta), transferStatus: result.nextStage >= 4 ? "REQUESTED_TRANSFER" : squadPlayer.transferStatus } });
+      if (owner?.isManaged && result.nextStage > expectation.escalationStage && result.nextStage >= 2) await tx.directorCausalLog.create({ data: { careerId: active.id, dayIndex: nextDay, sourceType: "PLAYER_EXPECTATION", sourceId: expectation.id, category: "SQUAD", headline: `${squadPlayer.firstName} ${squadPlayer.lastName}: ${result.status === "TRANSFER_REQUEST" ? "žádost o přestup" : "nespokojenost s rolí"}`, explanation: result.reason, targetType: "PLAYER", targetId: squadPlayer.id, importance: result.nextStage >= 4 ? 3 : 2 } });
+    }
+
+    const activeSeason = await tx.directorSeason.findFirst({ where: { careerId: active.id, status: "ACTIVE" }, orderBy: { number: "desc" } });
+    if (activeSeason) {
+      const managedRow = rows.find((item) => item.clubId === club.id);
+      const position = Math.max(1, rows.findIndex((item) => item.clubId === club.id) + 1);
+      const liabilities = await tx.directorLedgerEntry.aggregate({ where: { careerId: active.id, clubId: club.id, status: "PENDING", direction: "OUT" }, _sum: { amount: true } });
+      const youthMinutes = club.players.filter((item) => item.age <= 21).reduce((sum, item) => sum + item.minutes, 0);
+      const projectCount = await tx.directorProject.count({ where: { careerId: active.id, clubId: club.id, status: "COMPLETED" } });
+      const objectiveValues: Record<string, number> = { SPORTING: position, FINANCE: club.cashBalance - (liabilities._sum.amount ?? 0), ACADEMY: youthMinutes, INFRASTRUCTURE: projectCount };
+      for (const objective of active.objectives.filter((item) => item.seasonId === activeSeason.id)) {
+        const value = objectiveValues[objective.kind] ?? 0;
+        const fulfilled = objective.kind === "SPORTING" ? value <= objective.target : value >= objective.target;
+        await tx.directorSeasonObjective.update({ where: { id: objective.id }, data: { progress: value, status: fulfilled ? "ON_TRACK" : nextDay >= activeSeason.endDay * .75 ? "AT_RISK" : "TRACKING" } });
+      }
+      const reviewKind = nextDay === Math.floor((activeSeason.startDay + activeSeason.endDay) / 2) ? "MIDSEASON" : nextDay === Math.floor(activeSeason.endDay * .75) ? "WINTER" : null;
+      if (reviewKind && managedRow) {
+        const review = boardReview({ position, clubs: clubs.length, expectedPosition: Math.ceil(clubs.length * .55), expectedPoints: managedRow.expectedPoints, actualPoints: managedRow.points, cash: club.cashBalance, liabilities: liabilities._sum.amount ?? 0, youthMinutes, academyTarget: 900, completedProjects: projectCount });
+        await tx.directorBoardReview.upsert({ where: { seasonId_clubId_kind: { seasonId: activeSeason.id, clubId: club.id, kind: reviewKind } }, create: { careerId: active.id, seasonId: activeSeason.id, clubId: club.id, kind: reviewKind, dayIndex: nextDay, ...review, explanation: [`Výsledky a výkony: ${Math.round(review.sporting)}/100`, `Finance: ${Math.round(review.finance)}/100`, `Akademie: ${Math.round(review.academy)}/100`] }, update: {} });
+      }
     }
 
     const commitments = await tx.directorCommitment.findMany({ where: { careerId: active.id, status: { in: ["TRACKING", "ON_TRACK", "AT_RISK"] } } });
@@ -503,6 +705,214 @@ export async function startDirectorProject(user: CurrentUser, kind: "ATMOSPHERE"
   return (await getDirectorWorld(user))!;
 }
 
+export async function manageDirectorCoach(user: CurrentUser, command: "SUPPORT" | "WARN" | "SHARED_AUTHORITY" | "DIRECTOR_AUTHORITY" | "DISMISS") {
+  const active = await loadActive(user);
+  if (!active) throw new Error("Aktivní kariéra nebyla nalezena.");
+  const club = active.clubs.find((item) => item.isManaged)!;
+  const coach = club.coaches.find((item) => item.status === "ACTIVE") ?? club.coaches[0];
+  if (!coach) throw new Error("Klub nemá aktivního trenéra.");
+  await prisma.$transaction(async (tx) => {
+    if (command === "DISMISS") {
+      const severance = coach.weeklyWage * Math.max(4, coach.severanceMonths * 4);
+      if (club.cashBalance < severance) throw new Error("Klub nemá hotovost na odstupné trenéra.");
+      await tx.directorCoach.update({ where: { id: coach.id }, data: { status: "DISMISSED", relationship: clamp(coach.relationship - 35) } });
+      await tx.directorClub.update({ where: { id: club.id }, data: { cashBalance: { decrement: severance } } });
+      await tx.directorLedgerEntry.create({ data: { careerId: active.id, clubId: club.id, dayIndex: active.dayIndex, category: "COACH_SEVERANCE", direction: "OUT", amount: severance, sourceType: "COACH", sourceId: coach.id, description: `Odstupné po odvolání trenéra ${coach.name}` } });
+    } else {
+      const authority = command === "SHARED_AUTHORITY" ? "CONSULT" : command === "DIRECTOR_AUTHORITY" ? "DIRECTOR" : coach.transferAuthority;
+      const relationship = clamp(coach.relationship + (command === "SUPPORT" ? 4 : command === "WARN" ? -6 : command === "SHARED_AUTHORITY" ? 1 : -3));
+      await tx.directorCoach.update({ where: { id: coach.id }, data: { transferAuthority: authority, relationship } });
+    }
+    await tx.directorCausalLog.create({ data: { careerId: active.id, dayIndex: active.dayIndex, sourceType: "COACH_DECISION", sourceId: coach.id, category: "COACH", headline: command === "DISMISS" ? `${coach.name} byl odvolán` : `Mandát trenéra byl upraven`, explanation: command === "SUPPORT" ? "Veřejná podpora posílila důvěru, současně zvýšila odpovědnost za dohodnuté cíle." : command === "WARN" ? "Varování zvýšilo tlak na výsledky a kabinu; jeho dopad závisí na vztahu a oprávněnosti kritiky." : command === "DISMISS" ? "Odvolání vytvořilo odstupné, nejistotu v kabině a nutnost výběru nástupce." : "Rozdělení přestupních pravomocí se změnilo; trenér bude další rozhodnutí posuzovat podle původního mandátu.", targetType: "COACH", targetId: coach.id, importance: command === "DISMISS" ? 4 : 2 } });
+  });
+  return (await getDirectorWorld(user))!;
+}
+
+export async function updateDirectorPlayer(user: CurrentUser, playerId: string, command: "LIST" | "UNLIST" | "RENEW", role?: "STARTER" | "ROTATION" | "SQUAD") {
+  const active = await loadActive(user);
+  if (!active) throw new Error("Aktivní kariéra nebyla nalezena.");
+  const club = active.clubs.find((item) => item.isManaged)!;
+  const player = club.players.find((item) => item.id === playerId);
+  if (!player) throw new Error("Hráč nepatří do řízeného klubu.");
+  if (command === "RENEW") {
+    const expectation = active.expectations.find((item) => item.playerId === player.id);
+    const agent = active.agents.find((item) => item.id === player.agentId);
+    const wage = Math.round(player.weeklyWage * (1.08 + (agent?.ambition ?? 55) / 500));
+    const bonus = wage * 8;
+    if (club.cashBalance < bonus) throw new Error("Klub nemá hotovost na podpisový bonus.");
+    await prisma.$transaction([
+      prisma.directorPlayer.update({ where: { id: player.id }, data: { weeklyWage: wage, promisedRole: role ?? player.promisedRole, contractUntil: new Date(Date.UTC(active.gameDate.getUTCFullYear() + 3, 5, 30)), morale: { increment: 4 } } }),
+      prisma.directorPlayerExpectation.update({ where: { playerId: player.id }, data: { expectedRole: role ?? player.promisedRole, targetMinuteShare: targetMinuteShare(role ?? player.promisedRole), wageSatisfaction: clamp((expectation?.wageSatisfaction ?? 55) + 18), willingness: clamp((expectation?.willingness ?? 65) + 12), escalationStage: 0, status: "SETTLED" } }),
+      prisma.directorClub.update({ where: { id: club.id }, data: { cashBalance: { decrement: bonus }, weeklyWages: { increment: wage - player.weeklyWage } } }),
+      prisma.directorLedgerEntry.create({ data: { careerId: active.id, clubId: club.id, dayIndex: active.dayIndex, category: "SIGNING_BONUS", direction: "OUT", amount: bonus, sourceType: "PLAYER_CONTRACT", sourceId: player.id, description: `Podpisový bonus: ${player.firstName} ${player.lastName}` } }),
+    ]);
+  } else await prisma.directorPlayer.update({ where: { id: player.id }, data: { transferStatus: command === "LIST" ? "LISTED" : "AVAILABLE" } });
+  return (await getDirectorWorld(user))!;
+}
+
+export async function openDirectorTransferCase(user: CurrentUser, playerId: string, kind: "PERMANENT" | "LOAN") {
+  const active = await loadActive(user);
+  if (!active) throw new Error("Aktivní kariéra nebyla nalezena.");
+  const buyer = active.clubs.find((item) => item.isManaged)!;
+  const seller = active.clubs.find((item) => item.players.some((player) => player.id === playerId));
+  if (!seller || seller.id === buyer.id) throw new Error("Hráč není pro příchozí jednání dostupný.");
+  const existing = active.transferCases.find((item) => item.playerId === playerId && item.buyingClubId === buyer.id && item.status === "OPEN");
+  if (!existing) await prisma.directorTransferCase.create({ data: { careerId: active.id, playerId, sellingClubId: seller.id, buyingClubId: buyer.id, kind, initiatedBy: "USER" } });
+  return (await getDirectorWorld(user))!;
+}
+
+export async function submitDirectorTransferOffer(user: CurrentUser, caseId: string, offer: { upfront: number; installments: number; bonuses: number; sellOn: number; loanFee: number; optionFee?: number; weeklyWage: number; years: number; promisedRole: string }) {
+  const active = await loadActive(user);
+  if (!active) throw new Error("Aktivní kariéra nebyla nalezena.");
+  const transferCase = active.transferCases.find((item) => item.id === caseId && item.status === "OPEN");
+  if (!transferCase) throw new Error("Přestupní jednání už není otevřené.");
+  const seller = active.clubs.find((item) => item.id === transferCase.sellingClubId)!;
+  const buyer = active.clubs.find((item) => item.id === transferCase.buyingClubId)!;
+  const player = seller.players.find((item) => item.id === transferCase.playerId)!;
+  const expectation = active.expectations.find((item) => item.playerId === player.id);
+  if (offer.upfront > buyer.cashBalance || [offer.upfront, offer.installments, offer.bonuses, offer.loanFee, offer.weeklyWage].some((item) => item < 0)) throw new Error("Nabídka překračuje finanční možnosti klubu.");
+  const need = active.needs.find((item) => item.clubId === buyer.id && item.target === player.position);
+  const result = transferOfferUtility({ marketValue: player.marketValue, ...offer, offeredWage: offer.weeklyWage, offeredYears: offer.years, importance: player.promisedRole === "STARTER" ? 1 : .45, sellerCashPressure: seller.cashBalance < seller.weeklyWages * 8 ? 1 : .15, replacementDifficulty: seller.players.filter((item) => item.position === player.position && item.id !== player.id).length < 2 ? .9 : .3, rivalry: 0, currentWage: player.weeklyWage, targetYears: player.age < 28 ? 4 : 2, roleFit: offer.promisedRole === (expectation?.expectedRole ?? player.promisedRole) || offer.promisedRole === "STARTER" ? 1 : .55, clubAmbitionFit: clamp((buyer.baseAttack + 1 / buyer.baseDefense) / (seller.baseAttack + 1 / seller.baseDefense), .65, 1.15) });
+  const round = transferCase.offers.length + 1;
+  const response = result.accepted ? "Přijato: " + result.reason : result.reason;
+  await prisma.$transaction(async (tx) => {
+    await tx.directorTransferOffer.create({ data: { caseId, round, submittedByClubId: buyer.id, ...offer, sellerUtility: result.seller, playerUtility: result.player, response } });
+    if (!result.accepted) return;
+    const season = active.seasons[0];
+    const window = transferWindow(active.dayIndex, season?.rules);
+    const effectiveDay = window.registrationDay;
+    if (effectiveDay === null) throw new Error("V sezonních pravidlech chybí další registrační období.");
+    await tx.directorTransferCase.update({ where: { id: caseId }, data: { status: "AGREED", playerAgreement: "AGREED", agreedDay: active.dayIndex, registrationDay: effectiveDay } });
+    await tx.directorRegistration.create({ data: { careerId: active.id, caseId, playerId: player.id, fromClubId: seller.id, toClubId: buyer.id, effectiveDay } });
+    await tx.directorPlayer.update({ where: { id: player.id }, data: { transferStatus: "AGREED", weeklyWage: offer.weeklyWage, promisedRole: offer.promisedRole, contractUntil: new Date(Date.UTC(active.gameDate.getUTCFullYear() + offer.years, 5, 30)) } });
+    await tx.directorClub.update({ where: { id: buyer.id }, data: { cashBalance: { decrement: offer.upfront }, transferBudget: { decrement: Math.min(buyer.transferBudget, offer.upfront) } } });
+    await tx.directorClub.update({ where: { id: seller.id }, data: { cashBalance: { increment: offer.upfront } } });
+    await tx.directorLedgerEntry.create({ data: { careerId: active.id, clubId: buyer.id, dayIndex: active.dayIndex, category: "TRANSFER", direction: "OUT", amount: offer.upfront, sourceType: "TRANSFER_CASE", sourceId: caseId, description: `Garantovaná platba za ${player.firstName} ${player.lastName}` } });
+    if (need) await tx.directorClubNeed.update({ where: { id: need.id }, data: { status: "ADDRESSED" } });
+  });
+  return (await getDirectorWorld(user))!;
+}
+
+export async function manageDirectorStaff(user: CurrentUser, staffId: string, command: "HIRE" | "FIRE") {
+  const active = await loadActive(user);
+  if (!active) throw new Error("Aktivní kariéra nebyla nalezena.");
+  const club = active.clubs.find((item) => item.isManaged)!;
+  const staff = active.staff.find((item) => item.id === staffId);
+  if (!staff) throw new Error("Zaměstnanec nebyl nalezen.");
+  if (command === "HIRE") {
+    if (staff.status !== "CANDIDATE" || staff.clubId) throw new Error("Kandidát už není dostupný.");
+    const current = active.staff.find((item) => item.clubId === club.id && item.role === staff.role && item.status === "ACTIVE");
+    const compensation = current ? current.weeklyWage * 8 : 0;
+    if (club.cashBalance < compensation) throw new Error("Klub nemá hotovost na personální změnu.");
+    await prisma.$transaction(async (tx) => {
+      if (current) await tx.directorStaff.update({ where: { id: current.id }, data: { status: "DISMISSED", clubId: null } });
+      await tx.directorStaff.update({ where: { id: staff.id }, data: { status: "ACTIVE", clubId: club.id, relationship: 62, workload: 25 } });
+      if (compensation) await tx.directorClub.update({ where: { id: club.id }, data: { cashBalance: { decrement: compensation } } });
+      await tx.directorCausalLog.create({ data: { careerId: active.id, dayIndex: active.dayIndex, sourceType: "STAFF", sourceId: staff.id, category: "STAFF", headline: `${staff.name} přebírá oddělení ${staff.role}`, explanation: "Personální změna upraví přesnost a nejistotu konkrétních podkladů. Sama o sobě nepřidává sportovní bonus.", targetType: "CLUB", targetId: club.id, importance: 2 } });
+    });
+  } else {
+    if (staff.clubId !== club.id || staff.status !== "ACTIVE") throw new Error("Lze propustit pouze aktivního zaměstnance klubu.");
+    const compensation = staff.weeklyWage * 8;
+    await prisma.$transaction([prisma.directorStaff.update({ where: { id: staff.id }, data: { status: "CANDIDATE", clubId: null, relationship: { decrement: 20 } } }), prisma.directorClub.update({ where: { id: club.id }, data: { cashBalance: { decrement: compensation } } }), prisma.directorLedgerEntry.create({ data: { careerId: active.id, clubId: club.id, dayIndex: active.dayIndex, category: "STAFF_SEVERANCE", direction: "OUT", amount: compensation, sourceType: "STAFF", sourceId: staff.id, description: `Odstupné: ${staff.name}` } })]);
+  }
+  return (await getDirectorWorld(user))!;
+}
+
+export async function openDirectorCoachNegotiation(user: CurrentUser, candidateId: string) {
+  const active = await loadActive(user);
+  if (!active) throw new Error("Aktivní kariéra nebyla nalezena.");
+  const club = active.clubs.find((item) => item.isManaged)!;
+  const candidate = active.coachCandidates.find((item) => item.id === candidateId && item.status === "AVAILABLE");
+  if (!candidate) throw new Error("Trenér už není dostupný.");
+  const existing = active.coachNegotiations.find((item) => item.candidateId === candidateId && item.status === "OPEN");
+  if (!existing) await prisma.directorCoachNegotiation.create({ data: { careerId: active.id, clubId: club.id, candidateId, proposedTerms: { weeklyWage: candidate.wageDemand, years: 3, transferAuthority: "CONSULT", transferVeto: false, youthTarget: .12, minimumPatienceDays: 24 } } });
+  return (await getDirectorWorld(user))!;
+}
+
+export async function submitDirectorCoachOffer(user: CurrentUser, negotiationId: string, terms: { weeklyWage: number; years: number; transferAuthority: string; transferVeto: boolean; youthTarget: number; minimumPatienceDays: number }) {
+  const active = await loadActive(user);
+  if (!active) throw new Error("Aktivní kariéra nebyla nalezena.");
+  const negotiation = active.coachNegotiations.find((item) => item.id === negotiationId && item.status === "OPEN");
+  const candidate = active.coachCandidates.find((item) => item.id === negotiation?.candidateId);
+  const club = active.clubs.find((item) => item.isManaged)!;
+  if (!negotiation || !candidate) throw new Error("Trenérské jednání není otevřené.");
+  const authorityFit = terms.transferAuthority === "COACH" ? 1.08 : terms.transferAuthority === "CONSULT" ? 1 : .82;
+  const wageFit = terms.weeklyWage / Math.max(1, candidate.wageDemand);
+  const patienceFit = Math.min(1.1, terms.minimumPatienceDays / 24);
+  const score = wageFit * .55 + authorityFit * .25 + patienceFit * .12 + (terms.transferVeto ? .08 : 0);
+  const accepted = score >= 1 && terms.years >= 2;
+  const round = negotiation.round + 1;
+  const patience = negotiation.patience - 1;
+  const response = accepted ? "Kandidát přijal sportovní mandát i smluvní podmínky." : wageFit < .95 ? "Požadovaná mzda neodpovídá reputaci a alternativám kandidáta." : authorityFit < .9 ? "Kandidát požaduje větší vliv na skladbu kádru." : "Mandát je blízko dohodě, ale kandidát žádá větší jistotu času a cílů.";
+  const history = Array.isArray(negotiation.history) ? negotiation.history : [];
+  await prisma.$transaction(async (tx) => {
+    await tx.directorCoachNegotiation.update({ where: { id: negotiation.id }, data: { round, patience: Math.max(0, patience), status: accepted ? "ACCEPTED" : patience <= 0 ? "REJECTED" : "OPEN", proposedTerms: terms, response, history: [...history, { round, terms, response }] as Prisma.InputJsonValue } });
+    if (!accepted) return;
+    const current = club.coaches.find((item) => item.status === "ACTIVE");
+    if (current) await tx.directorCoach.update({ where: { id: current.id }, data: { status: "DISMISSED" } });
+    await tx.directorCoach.create({ data: { clubId: club.id, name: candidate.name, philosophy: candidate.philosophy, formation: candidate.formation, adaptability: 60, youthDevelopment: candidate.youthDevelopment, manManagement: candidate.manManagement, matchManagement: candidate.matchManagement, relationship: 64, transferAuthority: terms.transferAuthority, transferVeto: terms.transferVeto, contractUntil: new Date(Date.UTC(active.gameDate.getUTCFullYear() + terms.years, 5, 30)), weeklyWage: terms.weeklyWage, personality: candidate.personality, reputation: candidate.reputation, ambition: candidate.ambition, interferenceTolerance: terms.transferAuthority === "DIRECTOR" ? 38 : 65, preferredRoles: ["CB", "CM", "ST"], mandate: { budget: club.transferBudget, philosophy: candidate.philosophy, youthTarget: terms.youthTarget, transferAuthority: terms.transferAuthority, veto: terms.transferVeto, minimumPatienceDays: terms.minimumPatienceDays } } });
+    await tx.directorCoachCandidate.update({ where: { id: candidate.id }, data: { status: "HIRED" } });
+  });
+  return (await getDirectorWorld(user))!;
+}
+
+export async function rolloverDirectorSeason(user: CurrentUser): Promise<DirectorDTO> {
+  const active = await loadActive(user);
+  if (!active) throw new Error("Aktivní kariéra nebyla nalezena.");
+  const season = active.seasons[0];
+  if (!season || season.status !== "ACTIVE") throw new Error("Aktivní sezona nebyla nalezena.");
+  if (active.matches.some((item) => item.seasonId === season.id && item.status === "SCHEDULED")) throw new Error("Sezonu lze uzavřít až po odehrání celého rozpisu.");
+  const managed = active.clubs.find((item) => item.isManaged)!;
+  const rows = [...season.standings].sort((a, b) => b.points - a.points || (b.goalsFor - b.goalsAgainst) - (a.goalsFor - a.goalsAgainst));
+  const managedRow = rows.find((item) => item.clubId === managed.id)!;
+  const position = rows.findIndex((item) => item.clubId === managed.id) + 1;
+  const liabilities = active.ledger.filter((item) => item.status === "PENDING" && item.direction === "OUT").reduce((sum, item) => sum + item.amount, 0);
+  const youthMinutes = managed.players.filter((item) => item.age <= 21).reduce((sum, item) => sum + item.minutes, 0);
+  const review = boardReview({ position, clubs: active.clubs.length, expectedPosition: Math.ceil(active.clubs.length * .55), expectedPoints: managedRow.expectedPoints, actualPoints: managedRow.points, cash: managed.cashBalance, liabilities, youthMinutes, academyTarget: 900, completedProjects: active.projects.filter((item) => item.status === "COMPLETED").length });
+  const nextNumber = season.number + 1;
+  await prisma.$transaction(async (tx) => {
+    const existing = await tx.directorSeason.findUnique({ where: { careerId_number: { careerId: active.id, number: nextNumber } } });
+    if (existing) return;
+    await tx.directorBoardReview.upsert({ where: { seasonId_clubId_kind: { seasonId: season.id, clubId: managed.id, kind: "FINAL" } }, create: { careerId: active.id, seasonId: season.id, clubId: managed.id, kind: "FINAL", dayIndex: active.dayIndex, ...review, explanation: [`Sportovní hodnocení ${Math.round(review.sporting)}/100`, `Finance ${Math.round(review.finance)}/100`, `Akademie ${Math.round(review.academy)}/100`] }, update: {} });
+    await tx.directorSeason.update({ where: { id: season.id }, data: { status: "COMPLETED", completedAt: new Date() } });
+    const reward = Math.round(250_000 + (active.clubs.length - position + 1) * 85_000);
+    await tx.directorClub.update({ where: { id: managed.id }, data: { cashBalance: { increment: reward }, transferBudget: { increment: Math.round(reward * .55) } } });
+    await tx.directorLedgerEntry.create({ data: { careerId: active.id, clubId: managed.id, dayIndex: active.dayIndex, category: "SEASON_REWARD", direction: "IN", amount: reward, sourceType: "SEASON", sourceId: season.id, description: `Odměna za ${position}. místo` } });
+    await tx.directorPlayer.updateMany({ where: { club: { careerId: active.id } }, data: { age: { increment: 1 }, appearances: 0, minutes: 0, form: 50 } });
+    const schedule = roundRobinSchedule(active.clubs.map((item) => item.id));
+    const startDay = active.dayIndex + 7;
+    const endDay = startDay + Math.max(...schedule.map((item) => item.scheduledDay)) + 7;
+    const next = await tx.directorSeason.create({ data: { careerId: active.id, number: nextNumber, startDay, endDay, rules: seasonRules(endDay) } });
+    await tx.directorStanding.createMany({ data: active.clubs.map((item) => ({ seasonId: next.id, clubId: item.id })) });
+    await tx.directorMatch.createMany({ data: schedule.map((item) => ({ careerId: active.id, seasonId: next.id, ...item, scheduledDay: startDay + item.scheduledDay })) });
+    await tx.directorSeasonObjective.createMany({ data: [
+      { careerId: active.id, seasonId: next.id, clubId: managed.id, kind: "SPORTING", target: Math.max(1, Math.ceil(active.clubs.length * .5)), weight: .5, explanation: "Umístění relativně k síle a minulému výsledku klubu." },
+      { careerId: active.id, seasonId: next.id, clubId: managed.id, kind: "FINANCE", target: 0, weight: .25, explanation: "Kladná hotovost po odečtení splatných závazků." },
+      { careerId: active.id, seasonId: next.id, clubId: managed.id, kind: "ACADEMY", target: 1000, weight: .15, explanation: "Soutěžní minuty hráčů do 21 let." },
+      { careerId: active.id, seasonId: next.id, clubId: managed.id, kind: "INFRASTRUCTURE", target: 1, weight: .1, explanation: "Dokončený dlouhodobý projekt." },
+    ] });
+    await tx.directorCausalLog.create({ data: { careerId: active.id, dayIndex: active.dayIndex, sourceType: "SEASON", sourceId: season.id, category: "CAREER", headline: `Sezona ${season.number} uzavřena: ${position}. místo`, explanation: `Rada oddělila sportovní výsledek, finance, akademii a infrastrukturu. Nový rozpis i rozpočty byly vytvořeny právě jednou.`, targetType: "CAREER", targetId: active.id, importance: 4 } });
+    if (review.outcome === "DISMISSAL") {
+      await tx.directorCareer.update({ where: { id: active.id }, data: { boardTrust: clamp(active.boardTrust - 25), identityTags: [...asStringArray(active.identityTags), "odvolán radou"] } });
+      for (const candidate of active.clubs.filter((item) => !item.isManaged).sort((a, b) => Math.abs(a.tier - managed.tier) - Math.abs(b.tier - managed.tier)).slice(0, 3)) await tx.directorJobOffer.create({ data: { careerId: active.id, clubId: candidate.id, expiresDay: active.dayIndex + 14, terms: { transferBudget: candidate.transferBudget, expectation: candidate.boardExpectation } } });
+    }
+  }, { timeout: 30_000 });
+  return (await getDirectorWorld(user))!;
+}
+
+export async function updateDirectorSportPolicy(user: CurrentUser, input: { desiredStyle: SportingStyle; youthPreference: number; rotationLevel: number; trainingIntensity: number; healthRiskTolerance: number; phasePriorities: Record<string, number> }) {
+  const active = await loadActive(user); if (!active) throw new Error("Aktivní kariéra nebyla nalezena."); const club = active.clubs.find((item) => item.isManaged); if (!club) throw new Error("Řízený klub chybí.");
+  const policy = normalizePolicy({ ...input, phasePriorities: input.phasePriorities as Record<(typeof PHASES)[number], number> });
+  await prisma.$transaction(async (tx) => { await tx.directorSportPolicy.upsert({ where: { careerId_clubId: { careerId: active.id, clubId: club.id } }, create: { careerId: active.id, clubId: club.id, ...policy, updatedDay: active.dayIndex }, update: { ...policy, version: { increment: 1 }, updatedDay: active.dayIndex } }); await tx.directorCausalLog.create({ data: { careerId: active.id, dayIndex: active.dayIndex, sourceType: "SPORT_POLICY", category: "SPORT", headline: "Sportovní politika byla upravena", explanation: "Jde o dlouhodobé zadání trenérovi, nikoliv o přímý taktický pokyn. Dopad vznikne přes jeho plán, vhodnost kádru a mandát.", targetType: "CLUB", targetId: club.id, importance: 2 } }); });
+  return (await getDirectorWorld(user))!;
+}
+
+export async function resolveDirectorSportMeeting(user: CurrentUser, meetingId: string, choice: "SUPPORT" | "REQUEST_PRIORITY" | "INSIST_MANDATE") {
+  const active = await loadActive(user); if (!active) throw new Error("Aktivní kariéra nebyla nalezena."); const meeting = active.sportMeetings.find((item) => item.id === meetingId && item.status === "OPEN"); if (!meeting) throw new Error("Sportovní porada již není otevřená."); const club = active.clubs.find((item) => item.id === meeting.clubId)!; const coach = club.coaches.find((item) => item.id === meeting.coachId) ?? club.coaches.find((item) => item.status === "ACTIVE")!; const recommendation = meeting.recommendation as { phase?: string }; const policy = active.sportPolicies.find((item) => item.clubId === club.id); const aligned = Number((policy?.phasePriorities as Record<string, number> | undefined)?.[recommendation.phase ?? ""] ?? 50) >= 55; const decision = meetingDecision({ choice, coach, aligned, seed: active.worldSeed });
+  await prisma.$transaction(async (tx) => { await tx.directorSportMeeting.update({ where: { id: meeting.id }, data: { status: "RESOLVED", resolution: decision.outcome, response: { choice, ...decision }, resolvedDay: active.dayIndex, resolvedAt: new Date() } }); await tx.directorCoach.update({ where: { id: coach.id }, data: { relationship: clamp(coach.relationship + decision.relationshipDelta) } }); await tx.directorCausalLog.create({ data: { careerId: active.id, dayIndex: active.dayIndex, sourceType: "SPORT_MEETING", sourceId: meeting.id, category: "SPORT", headline: `Porada: ${decision.outcome.toLowerCase()}`, explanation: decision.explanation, targetType: "COACH", targetId: coach.id, importance: 2 } }); });
+  return (await getDirectorWorld(user))!;
+}
+
 async function unlock(tx: Prisma.TransactionClient, careerId: string, item: { key: string; title: string; description: string; rarity: string }) {
   await tx.directorAchievement.upsert({ where: { careerId_key: { careerId, key: item.key } }, create: { careerId, ...item }, update: {} });
 }
@@ -510,22 +920,27 @@ async function unlock(tx: Prisma.TransactionClient, careerId: string, item: { ke
 function toDTO(career: LoadedCareer, legacyArchiveAvailable: boolean): DirectorDTO {
   const club = career.clubs.find((item) => item.isManaged);
   if (!club) throw new Error("Kariéra nemá přiřazený klub.");
-  const coach = club.coaches[0] ?? null;
+  const coach = club.coaches.find((item) => item.status === "ACTIVE") ?? null;
   const season = career.seasons[0] ?? null;
   const standings = season ? [...season.standings].sort((a, b) => b.points - a.points || (b.goalsFor - b.goalsAgainst) - (a.goalsFor - a.goalsAgainst) || b.goalsFor - a.goalsFor) : [];
   const pendingLedger = career.ledger.filter((item) => item.status === "PENDING");
+  const managedRow = standings.find((item) => item.clubId === club.id);
+  const playedMatches = Math.max(1, managedRow?.played ?? 0);
+  const coachScore = coachEvaluation({ pointsPerMatch: (managedRow?.points ?? 0) / playedMatches, expectedPointsPerMatch: (managedRow?.expectedPoints ?? 0) / playedMatches, squadUtilization: club.players.filter((item) => item.appearances > 0).length / Math.max(1, club.players.length), youthMinuteShare: club.players.filter((item) => item.age <= 21).reduce((sum, item) => sum + item.minutes, 0) / Math.max(1, club.players.reduce((sum, item) => sum + item.minutes, 0)), morale: club.morale, philosophyFit: coach ? clamp((coach.adaptability + club.cohesion) / 2) : 0 });
+  const windowState = transferWindow(career.dayIndex, season?.rules);
   return {
     career: { id: career.id, name: career.name, version: career.version, gameDate: career.gameDate.toISOString(), dayIndex: career.dayIndex, availableSteps: effectiveSteps(career), reputation: career.reputation, boardTrust: career.boardTrust, publicTrust: career.publicTrust, mediaCredibility: career.mediaCredibility, ethicsMode: career.ethicsMode, identityTags: asStringArray(career.identityTags) },
     club: { id: club.id, name: club.name, shortName: club.shortName, logo: club.logo, primaryColor: club.primaryColor, leagueName: career.leagueName, cashBalance: club.cashBalance, transferBudget: club.transferBudget, wageBudget: club.wageBudget, weeklyWages: club.weeklyWages, fanTrust: club.fanTrust, morale: club.morale, cohesion: club.cohesion, form: club.currentForm, stadium: { name: club.stadiumName, capacity: club.stadiumCapacity, attendance: club.stadiumAttendance, condition: club.stadiumCondition, atmosphere: club.stadiumAtmosphere, commercial: club.stadiumCommercial }, facilities: { academy: club.academyLevel, training: club.trainingLevel, medical: club.medicalLevel, scouting: club.scoutingLevel } },
-    coach: coach ? { id: coach.id, name: coach.name, philosophy: coach.philosophy, formation: coach.formation, adaptability: coach.adaptability, youthDevelopment: coach.youthDevelopment, manManagement: coach.manManagement, matchManagement: coach.matchManagement, relationship: coach.relationship, transferAuthority: coach.transferAuthority, transferVeto: coach.transferVeto, contractUntil: coach.contractUntil.toISOString(), weeklyWage: coach.weeklyWage } : null,
-    players: club.players.sort((a, b) => b.ability - a.ability).map((item) => ({ id: item.id, name: `${item.firstName} ${item.lastName}`, position: item.position, archetype: item.archetype, personality: item.personality, age: item.age, ability: item.ability, potential: item.potential, form: item.form, fitness: item.fitness, morale: item.morale, injuryDays: item.injuryDays, contractUntil: item.contractUntil.toISOString(), weeklyWage: item.weeklyWage, marketValue: item.marketValue, promisedRole: item.promisedRole })),
+    coach: coach ? { id: coach.id, name: coach.name, philosophy: coach.philosophy, formation: coach.formation, adaptability: coach.adaptability, youthDevelopment: coach.youthDevelopment, manManagement: coach.manManagement, matchManagement: coach.matchManagement, relationship: coach.relationship, transferAuthority: coach.transferAuthority, transferVeto: coach.transferVeto, contractUntil: coach.contractUntil.toISOString(), weeklyWage: coach.weeklyWage, personality: coach.personality, reputation: coach.reputation, ambition: coach.ambition, mandate: coach.mandate && typeof coach.mandate === "object" && !Array.isArray(coach.mandate) ? coach.mandate as Record<string, unknown> : {}, evaluation: coachScore } : null,
+    players: club.players.sort((a, b) => b.ability - a.ability).map((item) => { const expectation = career.expectations.find((entry) => entry.playerId === item.id); const agent = career.agents.find((entry) => entry.id === item.agentId); const reason = expectation && Array.isArray(expectation.reasons) && typeof expectation.reasons[0] === "string" ? expectation.reasons[0] : null; const roles = roleScores(item); return { id: item.id, name: `${item.firstName} ${item.lastName}`, position: item.position, archetype: item.archetype, personality: item.personality, age: item.age, ability: item.ability, potential: item.potential, form: item.form, fitness: item.fitness, morale: item.morale, injuryDays: item.injuryDays, contractUntil: item.contractUntil.toISOString(), weeklyWage: item.weeklyWage, marketValue: item.marketValue, promisedRole: item.promisedRole, transferStatus: item.transferStatus, tacticalRoles: Object.entries(roles).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([role, fit]) => ({ role, fit })), load: { acute: item.acuteLoad, chronic: item.chronicLoad, readiness: item.matchReadiness, healthRisk: item.healthRisk }, expectation: expectation ? { expectedRole: expectation.expectedRole, targetMinuteShare: expectation.targetMinuteShare, actualMinuteShare: expectation.actualMinuteShare, status: expectation.status, escalationStage: expectation.escalationStage, willingness: expectation.willingness, reason } : null, agent: agent ? { name: agent.name, personality: agent.personality } : null }; }),
     events: career.events.map((item) => ({ id: item.id, category: item.category, severity: item.severity, title: item.title, body: item.body, reason: eventReason(item.category), stakes: eventStakes(item.category), dueDay: item.dueDay, choices: asChoices(item.choices) })),
     pulse: career.pulsePosts.map((item) => ({ id: item.id, authorType: item.authorType, authorName: item.authorName, tone: item.tone, body: item.body, topic: item.topic, trust: item.trust, reach: item.reach, dayIndex: item.dayIndex })),
     achievements: career.achievements.map((item) => ({ id: item.id, key: item.key, title: item.title, description: item.description, rarity: item.rarity as DirectorDTO["achievements"][number]["rarity"], unlockedAt: item.unlockedAt.toISOString(), seen: Boolean(item.seenAt) })),
     matches: career.matches.map((match) => {
       const home = career.clubs.find((item) => item.id === match.homeClubId)!;
       const away = career.clubs.find((item) => item.id === match.awayClubId)!;
-      return { id: match.id, round: match.round, scheduledDay: match.scheduledDay, status: match.status, homeName: home?.name ?? "Domácí", awayName: away?.name ?? "Hosté", homeLogo: home?.logo ?? null, awayLogo: away?.logo ?? null, homeGoals: match.homeGoals, awayGoals: match.awayGoals, homeXg: match.homeXg, awayXg: match.awayXg, timeline: Array.isArray(match.timeline) ? match.timeline as unknown as DirectorDTO["matches"][number]["timeline"] : [], coachReport: match.coachReport && typeof match.coachReport === "object" && !Array.isArray(match.coachReport) ? match.coachReport as DirectorDTO["matches"][number]["coachReport"] : {} };
+      const plan = career.matchPlans.find((item) => item.matchId === match.id && item.clubId === club.id); const lineup = plan && Array.isArray(plan.lineup) ? plan.lineup as unknown as NonNullable<DirectorDTO["matches"][number]["plan"]>["lineup"] : [];
+      return { id: match.id, round: match.round, scheduledDay: match.scheduledDay, status: match.status, homeName: home?.name ?? "Domácí", awayName: away?.name ?? "Hosté", homeLogo: home?.logo ?? null, awayLogo: away?.logo ?? null, homeGoals: match.homeGoals, awayGoals: match.awayGoals, homeXg: match.homeXg, awayXg: match.awayXg, engineVersion: match.engineVersion, phaseStats: match.phaseStats && typeof match.phaseStats === "object" && !Array.isArray(match.phaseStats) ? match.phaseStats as Record<string, unknown> : {}, plan: plan ? { formation: plan.formation, mentality: plan.mentality, confidence: plan.confidence, lineup, reasons: asStringArray(plan.selectionReasons), weaknesses: asStringArray(plan.weaknesses) } : null, timeline: Array.isArray(match.timeline) ? match.timeline as unknown as DirectorDTO["matches"][number]["timeline"] : [], coachReport: match.coachReport && typeof match.coachReport === "object" && !Array.isArray(match.coachReport) ? match.coachReport as DirectorDTO["matches"][number]["coachReport"] : {} };
     }),
     marketTargets: career.clubs.filter((item) => !item.isManaged).flatMap((item) => item.players.map((player) => ({ player, club: item }))).sort((a, b) => b.player.potential - a.player.potential).slice(0, 12).map(({ player, club: owner }) => {
       const uncertainty = Math.max(3, 12 - club.scoutingLevel * 1.5);
@@ -536,6 +951,19 @@ function toDTO(career: LoadedCareer, legacyArchiveAvailable: boolean): DirectorD
       const target = seller?.players.find((player) => player.id === item.playerId);
       return { id: item.id, playerId: item.playerId, playerName: target ? `${target.firstName} ${target.lastName}` : "Hráč", clubName: seller?.name ?? "Klub", status: item.status, round: item.round, patience: item.patience, referenceValue: item.referenceValue, response: item.response };
     }),
+    people: {
+      transferWindow: { open: windowState.open, name: windowState.current?.name ?? null, nextDay: windowState.next?.start ?? null },
+      staff: career.staff.filter((item) => item.clubId === club.id).map((item) => ({ id: item.id, role: item.role, name: item.name, ability: item.ability, workload: item.workload, weeklyWage: item.weeklyWage, relationship: item.relationship, status: item.status, uncertainty: informationQuality(career.staff.filter((staff) => staff.clubId === club.id), item.role as typeof STAFF_ROLES[number]).uncertainty })),
+      staffCandidates: career.staff.filter((item) => item.clubId === null && item.status === "CANDIDATE").map((item) => ({ id: item.id, role: item.role, name: item.name, ability: item.ability, weeklyWage: item.weeklyWage, personality: item.personality })),
+      squadGroups: career.squadGroups.filter((item) => item.clubId === club.id).map((item) => ({ id: item.id, kind: item.kind, name: item.name, influence: item.influence, members: asStringArray(item.memberIds).map((id) => { const player = club.players.find((candidate) => candidate.id === id); return player ? `${player.firstName} ${player.lastName}` : id; }) })),
+      transferCases: career.transferCases.filter((item) => item.buyingClubId === club.id || item.sellingClubId === club.id).map((item) => { const player = career.clubs.flatMap((entry) => entry.players).find((entry) => entry.id === item.playerId); const seller = career.clubs.find((entry) => entry.id === item.sellingClubId); const buyer = career.clubs.find((entry) => entry.id === item.buyingClubId); const latest = item.offers.at(-1); return { id: item.id, playerId: item.playerId, playerName: player ? `${player.firstName} ${player.lastName}` : "Hráč", sellingClub: seller?.name ?? "Klub", buyingClub: buyer?.name ?? "Klub", kind: item.kind, status: item.status, registrationDay: item.registrationDay, response: latest?.response ?? null, round: latest?.round ?? 0 }; }),
+      objectives: career.objectives.filter((item) => item.clubId === club.id && (!season || item.seasonId === season.id)).map((item) => ({ id: item.id, kind: item.kind, target: item.target, progress: item.progress, status: item.status, explanation: item.explanation })),
+      reviews: career.boardReviews.filter((item) => item.clubId === club.id).map((item) => ({ id: item.id, kind: item.kind, overall: item.overall, outcome: item.outcome, dayIndex: item.dayIndex, explanation: asStringArray(item.explanation) })),
+      coachCandidates: career.coachCandidates.map((item) => ({ id: item.id, name: item.name, philosophy: item.philosophy, reputation: item.reputation, ambition: item.ambition, wageDemand: item.wageDemand, status: item.status })),
+      coachNegotiations: career.coachNegotiations.map((item) => ({ id: item.id, candidateName: career.coachCandidates.find((candidate) => candidate.id === item.candidateId)?.name ?? "Kandidát", status: item.status, round: item.round, patience: item.patience, response: item.response })),
+      jobOffers: career.jobOffers.map((item) => ({ id: item.id, clubName: career.clubs.find((clubItem) => clubItem.id === item.clubId)?.name ?? "Klub", status: item.status, expiresDay: item.expiresDay })),
+    },
+    sporting: { policy: (() => { const item = career.sportPolicies.find((entry) => entry.clubId === club.id); return item ? { desiredStyle: item.desiredStyle, youthPreference: item.youthPreference, rotationLevel: item.rotationLevel, trainingIntensity: item.trainingIntensity, healthRiskTolerance: item.healthRiskTolerance, phasePriorities: item.phasePriorities as Record<string, number> } : null; })(), meetings: career.sportMeetings.filter((item) => item.clubId === club.id).map((item) => ({ id: item.id, title: item.title, briefing: item.briefing, trigger: item.trigger, status: item.status, dueDay: item.dueDay, recommendation: item.recommendation as Record<string, unknown>, resolution: item.resolution })) },
     projects: career.projects.map((item) => ({ id: item.id, kind: item.kind, title: item.title, status: item.status, startedDay: item.startedDay, finishDay: item.finishDay, cost: item.cost })),
     influences: career.effects.filter((item) => item.status === "ACTIVE").map((item) => { const value = effectValue({ ...item, decay: item.decay as "NONE" | "LINEAR" | "EXPONENTIAL" }, career.dayIndex); return { id: item.id, sourceLabel: item.sourceLabel, metric: item.metric, direction: item.direction, strength: Math.abs(value) < .5 ? "slabý" : Math.abs(value) < 1.5 ? "mírný" : Math.abs(value) < 3 ? "výrazný" : "silný", confidence: item.confidence >= .8 ? "vysoká" : item.confidence >= .55 ? "střední" : "nízká", explanation: item.explanation, startDay: item.startDay, endDay: item.endDay }; }),
     commitments: career.commitments.map((item) => ({ id: item.id, stakeholderType: item.stakeholderType, title: item.title, status: item.status, dueDay: item.dueDay, progress: item.progress, explanation: item.explanation })),

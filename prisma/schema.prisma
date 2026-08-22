@@ -23,52 +23,52 @@ model ApiCache {
 /// Per-tým per-zápas statistiky (TRVALÁ cache – historická data jsou neměnná).
 /// Přímo odpovídá doménovému typu MatchStat; metriky jako sloupce (xG bývá null).
 model MatchStatCache {
-  teamId           Int
-  fixtureId        Int
-  context          String // "league" | "euro"
-  date             DateTime
-  isHome           Boolean
-  isNeutral        Boolean
-  competitive      Boolean
-  season           Int
-  goalsFor         Int?
-  goalsAgainst     Int?
-  corners          Float?
-  fouls            Float?
-  shots            Float?
-  xg               Float?
+  teamId          Int
+  fixtureId       Int
+  context         String // "league" | "euro"
+  date            DateTime
+  isHome          Boolean
+  isNeutral       Boolean
+  competitive     Boolean
+  season          Int
+  goalsFor        Int?
+  goalsAgainst    Int?
+  corners         Float?
+  fouls           Float?
+  shots           Float?
+  xg              Float?
   /// xG, které tým v zápase INKASOVAL (= xG soupeře). Kvalita obrany bez šumu z toho, kolik
   /// šancí soupeř proměnil – backtest: s ním klesne 1X2 log-loss 1.0191 → 1.0116. Plní se
   /// z téže odpovědi `/fixtures/statistics` (nese oba týmy) → 0 volání navíc.
-  xgAgainst        Float?
-  shotsOnTarget    Float?
-  shotsOffTarget   Float?
-  blockedShots     Float?
-  shotsInsideBox   Float?
-  shotsOutsideBox  Float?
-  offsides         Float?
-  possession       Float?
-  passesTotal      Float?
-  passesAccurate   Float?
-  passAccuracy     Float?
-  yellowCards      Float?
-  redCards         Float?
-  saves            Float?
+  xgAgainst       Float?
+  shotsOnTarget   Float?
+  shotsOffTarget  Float?
+  blockedShots    Float?
+  shotsInsideBox  Float?
+  shotsOutsideBox Float?
+  offsides        Float?
+  possession      Float?
+  passesTotal     Float?
+  passesAccurate  Float?
+  passAccuracy    Float?
+  yellowCards     Float?
+  redCards        Float?
+  saves           Float?
   /// Soupeř v zápase – pro zobrazení loga/jména u „posledních 5 zápasů" formy.
-  opponentId       Int?
-  opponentName     String?
-  opponentLogo     String?
+  opponentId      Int?
+  opponentName    String?
+  opponentLogo    String?
   /// Oficiální předzápasová sestava. Formace a trenér se po zveřejnění nemění, proto jsou
   /// uložené trvale vedle statistik téhož týmového výkonu. Veřejné stránky je pouze čtou.
-  formation        String?
-  coachId          Int?
-  coachName        String?
-  coachPhoto       String?
-  lineupCheckedAt  DateTime?
+  formation       String?
+  coachId         Int?
+  coachName       String?
+  coachPhoto      String?
+  lineupCheckedAt DateTime?
   /// Verze sady metrik. Čte se vše od `MIN_READABLE_CACHE_VERSION` výš; řádky pod prahem
   /// se ignorují a dotáhnou znovu (viz cache.ts).
-  schemaVersion    Int      @default(1)
-  cachedAt         DateTime @default(now())
+  schemaVersion   Int       @default(1)
+  cachedAt        DateTime  @default(now())
 
   @@id([teamId, fixtureId, context])
   @@index([teamId, context, schemaVersion])
@@ -89,14 +89,14 @@ enum Tier {
 
 /// Uživatel (Auth.js). `tier` rozhoduje o PRO funkcích; `proTrialUsed` = spotřebovaný 1× trial.
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
-  tier          Tier      @default(FREE)
-  proTrialUsed  Boolean   @default(false)
-  createdAt     DateTime  @default(now())
+  id                   String    @id @default(cuid())
+  name                 String?
+  email                String?   @unique
+  emailVerified        DateTime?
+  image                String?
+  tier                 Tier      @default(FREE)
+  proTrialUsed         Boolean   @default(false)
+  createdAt            DateTime  @default(now())
   // Stripe předplatné. `tier` zůstává jediným spínačem PRO – tahle pole jsou jen
   // mapování na Stripe (webhook hledá uživatele dle `stripeCustomerId`) + období
   // pro UI. Allowlist PRO_EMAILS je dál nadřazený (řeší session callback v auth.ts).
@@ -104,15 +104,15 @@ model User {
   stripeSubscriptionId String?
   proUntil             DateTime?
 
-  accounts         Account[]
-  sessions         Session[]
-  savedComparisons SavedComparison[]
-  gameSave         GameSave?
-  directorCareers  DirectorCareer[]
-  tips             UserTip[]
-  favoriteLeagues  FavoriteLeague[]
-  favoriteFixtures FavoriteFixture[]
-  pushSubscriptions PushSubscription[]
+  accounts               Account[]
+  sessions               Session[]
+  savedComparisons       SavedComparison[]
+  gameSave               GameSave?
+  directorCareers        DirectorCareer[]
+  tips                   UserTip[]
+  favoriteLeagues        FavoriteLeague[]
+  favoriteFixtures       FavoriteFixture[]
+  pushSubscriptions      PushSubscription[]
   notificationPreference NotificationPreference?
   notificationDeliveries NotificationDelivery[]
 }
@@ -157,57 +157,57 @@ model VerificationToken {
 /// Plní cron na pozadí (predict-upcoming / settle-results); záložka i track-record
 /// jen ČTOU – nikdy se nepočítá živě per request. fixtureId = přirozený klíč.
 model FixturePrediction {
-  fixtureId     Int       @id
-  leagueId      Int
-  season        Int
-  kickoff       DateTime
-  homeTeamId    Int
-  awayTeamId    Int
-  homeName      String
-  awayName      String
-  homeLogo      String
-  awayLogo      String
+  fixtureId                Int       @id
+  leagueId                 Int
+  season                   Int
+  kickoff                  DateTime
+  homeTeamId               Int
+  awayTeamId               Int
+  homeName                 String
+  awayName                 String
+  homeLogo                 String
+  awayLogo                 String
   // Predikce (snapshot modelu v čase výpočtu)
-  available     Boolean
+  available                Boolean
   /// λ PŘED zostřením = základní výstup modelu. Pravděpodobnosti níž z něj jdou
   /// kdykoli přepočítat jinými post-parametry (`npm run reprice`) – proto se ukládá
   /// základ, ne zostřená hodnota.
-  lambdaHome    Float
-  lambdaAway    Float
-  homeWin       Float
-  draw          Float
-  awayWin       Float
-  bttsYes       Float
-  over25        Float
-  lowConfidence Boolean
+  lambdaHome               Float
+  lambdaAway               Float
+  homeWin                  Float
+  draw                     Float
+  awayWin                  Float
+  bttsYes                  Float
+  over25                   Float
+  lowConfidence            Boolean
   /// Připravenost predikce: efektivní vzorek nejslabšího vstupu λ (gate na tipy +
   /// odznak „málo dat" na startu sezóny). 0 = neznámo / řádek z doby před readiness.
-  readinessSample Float   @default(0)
+  readinessSample          Float     @default(0)
   /// Verze modelu = co GENERUJE λ (okna, váhy, xG zpevnění, build týmů). Bump vynuluje
   /// dataset (kalibrace/track-record běží per verzi), proto ho NEbumpuj kvůli ρ/zostření –
   /// ty jsou post-parametry nad λ a přepočítají se (viz `rho`/`sharpen`).
-  modelVersion  Int       @default(1)
+  modelVersion             Int       @default(1)
   /// Datová populace predikce; kalibrace lig, Evropy a reprezentací se nikdy nemíchá.
-  modelContext  String    @default("LEAGUE")
+  modelContext             String    @default("LEAGUE")
   /// Vlastní verze kontextu. Změna evropského sestavení neresetuje ligový vzorek.
-  contextVersion Int      @default(1)
+  contextVersion           Int       @default(1)
   /// Snapshot skutečně publikovaného 1X2 tipu. null = prognóza nesplnila bránu nebo je starší.
-  published1x2Side          String?
-  published1x2Prob          Float?
+  published1x2Side         String?
+  published1x2Prob         Float?
   publicationPolicyVersion Int?
-  publishedAt               DateTime?
+  publishedAt              DateTime?
   /// Post-parametry, kterými byly z λ odvozeny pravděpodobnosti výše (Dixon–Coles ρ,
   /// zostření λ). Umožňují ladit model bez ztráty historie: `npm run reprice` najde
   /// řádky s jinými hodnotami než aktuální konstanty a přepočte je z λ. null = řádek
   /// z doby před zavedením polí (default ρ=−0.13, zostření 1.0).
-  rho           Float?
-  sharpen       Float?
+  rho                      Float?
+  sharpen                  Float?
   /// Platt kalibrace 1X2 (`p' = σ(a·logit(p) + b)`), aplikovaná AŽ na hotové V/R/P
   /// (po ρ+zostření) – oprava tvaru chyby (přesebevědomí na favoritech, viz predict.ts).
   /// Stejný cyklus jako rho/sharpen: post-parametr nad λ, `reprice` ho umí dorovnat.
   /// null = řádek z doby před zavedením (default a=1, b=0 = no-op).
-  calibA        Float?
-  calibB        Float?
+  calibA                   Float?
+  calibB                   Float?
   /// λ ROHŮ a KARET (`lib/picks/corners.ts`, `cards.ts`) pro tentýž zápas. Modely
   /// existovaly, ale volal je JEN backtest – v produkci se nikdy nic neuložilo, takže
   /// jsme na tyhle trhy sbírali kurzy a **neměli je proti čemu měřit** (CLV = otevřená
@@ -217,86 +217,86 @@ model FixturePrediction {
   ///
   /// **Pod `modelVersion` NEPATŘÍ**: verzuje se to, co vyrábí gólovou λ, a bump vynuluje
   /// dataset predikcí. Tyhle sloupce jsou paralelní stopa, ne jiný výpočet 1X2.
-  lambdaCornersHome Float?
-  lambdaCornersAway Float?
-  lambdaCardsHome   Float?
-  lambdaCardsAway   Float?
+  lambdaCornersHome        Float?
+  lambdaCornersAway        Float?
+  lambdaCardsHome          Float?
+  lambdaCardsAway          Float?
   /// Experimentální předzápasový odhad faulů. Bez tržní linie nejde o sázkový signál.
-  lambdaFoulsHome   Float?
-  lambdaFoulsAway   Float?
-  foulModelVersion  Int?
+  lambdaFoulsHome          Float?
+  lambdaFoulsAway          Float?
+  foulModelVersion         Int?
   /// Auditní snapshot počtového modelu. v0 = legacy s disperzí 1,2; v1 = explicitní verze.
-  countModelVersion    Int?
-  cornerVarianceRatio Float?
-  cardVarianceRatio   Float?
+  countModelVersion        Int?
+  cornerVarianceRatio      Float?
+  cardVarianceRatio        Float?
   /// Faktor rozhodčího použitý u karet a velikost vzorku, ze kterého vyšel. `1`/`0`
   /// = rozhodčí se nepromítl (index se v produkci zatím nestaví) – ať je poznat
   /// „neutrální faktor" od „změřeného faktoru, který vyšel 1".
-  refereeFactor     Float?
-  refereeSample     Int?
+  refereeFactor            Float?
+  refereeSample            Int?
   /// Oficiálně delegovaný rozhodčí a audit týmové λ před jeho započtením.
-  refereeName                String?
-  refereeKey                 String?
+  refereeName              String?
+  refereeKey               String?
   /// Původ aktuální delegace (`API` nebo `MANUAL`) a audit ručního zásahu.
-  refereeSource              String?
-  refereeAssignedAt          DateTime?
-  refereeAssignedBy          String?
-  lambdaCardsHomeBeforeRef   Float?
-  lambdaCardsAwayBeforeRef   Float?
+  refereeSource            String?
+  refereeAssignedAt        DateTime?
+  refereeAssignedBy        String?
+  lambdaCardsHomeBeforeRef Float?
+  lambdaCardsAwayBeforeRef Float?
   /// Neměnný point-in-time H2H kontext zachycený před výkopem. Slouží pro budoucí
   /// backtest; do aktuální verze predikčního modelu nevstupuje.
-  h2hSnapshot       Json?
-  h2hSnapshotVersion Int?
-  h2hCapturedAt     DateTime?
-  predictedAt   DateTime  @default(now())
+  h2hSnapshot              Json?
+  h2hSnapshotVersion       Int?
+  h2hCapturedAt            DateTime?
+  predictedAt              DateTime  @default(now())
   // Výsledek (doplní settle cron po odehrání)
-  status        String    @default("NS")
-  homeGoals     Int?
-  awayGoals     Int?
-  settledAt     DateTime?
+  status                   String    @default("NS")
+  homeGoals                Int?
+  awayGoals                Int?
+  settledAt                DateTime?
   // Interní benchmark: predikce API-Footballu (1X2) pro tentýž zápas. Paralelní
   // sloupec na témže řádku → settle skóruje oba modely zadarmo. Nikdy se nevystavuje
   // ve FREE/PRO API, jen pro offline srovnání (scripts/calibrate.ts). Jen klubové ligy.
-  benchAvailable Boolean  @default(false)
-  benchHomeWin   Float?
-  benchDraw      Float?
-  benchAwayWin   Float?
-  benchFetchedAt DateTime?
+  benchAvailable           Boolean   @default(false)
+  benchHomeWin             Float?
+  benchDraw                Float?
+  benchAwayWin             Float?
+  benchFetchedAt           DateTime?
   // Kurzy referenční sázkovky (decimal odds) pro EV/value tipy. Stejný životní cyklus
   // jako benchmark: fetch 1×/zápas, jen klubové ligy, jen blízko výkopu (kurzy jsou
   // pak actionable). Ukládáme syrové kurzy → implied prob i edge se dopočítají čistou
   // funkcí (lib/picks/value.ts), takže přepočet při změně modelu nevyžaduje nový fetch.
-  oddsBookmaker String?
-  oddsHome      Float?
-  oddsDraw      Float?
-  oddsAway      Float?
-  oddsOver25    Float?
-  oddsBtts      Float?
+  oddsBookmaker            String?
+  oddsHome                 Float?
+  oddsDraw                 Float?
+  oddsAway                 Float?
+  oddsOver25               Float?
+  oddsBtts                 Float?
   // Protistrany dvoustranných trhů. `fetchOdds` je stahoval odjakživa, ale zahazovaly se –
   // a bez nich NELZE odmaržovat, takže u Over 2.5 a BTTS nešlo spočítat férovou cenu ani
   // market benchmark. 0 volání API navíc (jsou v téže odpovědi).
-  oddsUnder25   Float?
-  oddsBttsNo    Float?
-  oddsFetchedAt DateTime?
+  oddsUnder25              Float?
+  oddsBttsNo               Float?
+  oddsFetchedAt            DateTime?
   // VŠECH ~13 sázkovek z téže odpovědi (`BookOdds[]` jako JSON). Dřív se 12 z nich
   // zahazovalo a zůstala jediná „preferovaná" – přitom **nejlepší cena napříč knihami
   // byla jediná páka, která v backtestu prokazatelně zabrala** (ROI −7.7 % → −5.2 %,
   // overround 0.11 % vs. 2.99 % u jedné knihy). 0 volání API navíc, jen se nezahazuje
   // to, co už máme. Z toho se čte nejlepší cena (`bestPrice`) i sharp konsenzus
   // (`sharpFair`) – obojí čistou funkcí v `lib/picks/books.ts`.
-  oddsBooks      Json?
-  oddsCloseBooks Json?
+  oddsBooks                Json?
+  oddsCloseBooks           Json?
   // Kandidát na zavírací linii: v posledních 3 h se přepisuje každým bodem řady, takže po
   // výkopu zůstane poslední úspěšný předvýkopový vzorek. Rozdíl proti prvnímu snímku je CLV
   // = jediný ukazatel hrany viditelný hned po výkopu, ne až po stovkách výsledků. Jeden
   // snímek to změřit neumí – nešlo by odlišit „model měl pravdu" od „chytili jsme starší
   // linii". Chybí u zápasů, které cron mezi prvním snímkem a výkopem už nezastihl.
-  oddsCloseHome    Float?
-  oddsCloseDraw    Float?
-  oddsCloseAway    Float?
-  oddsCloseOver25  Float?
-  oddsCloseUnder25 Float?
-  oddsCloseAt      DateTime?
+  oddsCloseHome            Float?
+  oddsCloseDraw            Float?
+  oddsCloseAway            Float?
+  oddsCloseOver25          Float?
+  oddsCloseUnder25         Float?
+  oddsCloseAt              DateTime?
   /// ČASOVÁ ŘADA kurzů (`lib/picks/oddsSeries.ts`): jak se linie hýbala od otevření
   /// k výkopu. Dva snímky výše řeknou *kolik* se hnula, řada *kdy* – a „hnulo se to
   /// hodinu před výkopem" (peníze) je něco jiného než „hned po otevření" (dorovnání).
@@ -306,10 +306,10 @@ model FixturePrediction {
   /// plný snímek každou hodinu po 72 h by dal 2.8 GB/rok proti 500 MB na Neon free tier.
   /// Takhle to vyjde na ~12 MB/rok. Plné knihy zůstávají u dvou snímků, na kterých stojí
   /// EV a CLV. Kadence se zužuje k výkopu (12 h → 3 h → 1 h), délka je stropovaná.
-  oddsSeries   Json?
+  oddsSeries               Json?
   /// Kdy do řady naposled přibyl bod – řídí kadenci (`seriesDue`). Bez toho by se
   /// interval musel dopočítávat z JSON pole při každém běhu cronu.
-  oddsSeriesAt DateTime?
+  oddsSeriesAt             DateTime?
 
   @@index([leagueId, kickoff])
   @@index([status, kickoff])
@@ -323,27 +323,27 @@ model FixturePrediction {
 /// Neměnný předzápasový názor modelu na konkrétní trh. Odděluje tehdejší signál
 /// od pozdějších změn modelu a dovoluje poctivě měřit pohyb k uzavírací linii.
 model MarketSignalSnapshot {
-  id                    String   @id @default(cuid())
-  fixtureId             Int
-  leagueId              Int
-  kickoff               DateTime
-  market                String
-  side                  String
-  line                  Float?
-  modelProbability      Float
-  openMarketProbability Float
+  id                     String    @id @default(cuid())
+  fixtureId              Int
+  leagueId               Int
+  kickoff                DateTime
+  market                 String
+  side                   String
+  line                   Float?
+  modelProbability       Float
+  openMarketProbability  Float
   closeMarketProbability Float?
-  modelContext          String
-  modelVersion          Int
-  contextVersion        Int
-  countModelVersion     Int?
-  policyVersion         Int
-  publishedTip          Boolean  @default(false)
-  openedAt              DateTime
-  closedAt              DateTime?
-  series                Json?
-  sampleAttempts        Int      @default(0)
-  lastSampleAttemptAt   DateTime?
+  modelContext           String
+  modelVersion           Int
+  contextVersion         Int
+  countModelVersion      Int?
+  policyVersion          Int
+  publishedTip           Boolean   @default(false)
+  openedAt               DateTime
+  closedAt               DateTime?
+  series                 Json?
+  sampleAttempts         Int       @default(0)
+  lastSampleAttemptAt    DateTime?
 
   @@unique([fixtureId, market, policyVersion])
   @@index([market, closedAt])
@@ -354,27 +354,27 @@ model MarketSignalSnapshot {
 /// Stav rozhodovacího checklistu zmrazený před výkopem. Řádek se průběžně aktualizuje,
 /// dokud poprvé nevznikne kandidát; ten už se nikdy zpětně nepřepočítává.
 model ChecklistDecisionSnapshot {
-  id                    String   @id @default(cuid())
-  fixtureId             Int
-  leagueId              Int
-  kickoff               DateTime
-  market                String
-  side                  String
-  line                  Float?
-  status                String
-  reason                String
-  modelProbability      Float
-  marketProbability     Float
-  edge                   Float
-  decimalOdds           Float?
-  bookmaker             String?
-  sampleCount           Int
-  modelContext          String
-  modelVersion          Int
-  contextVersion        Int
-  checklistVersion      Int
-  capturedAt            DateTime
-  candidateAt           DateTime?
+  id                String    @id @default(cuid())
+  fixtureId         Int
+  leagueId          Int
+  kickoff           DateTime
+  market            String
+  side              String
+  line              Float?
+  status            String
+  reason            String
+  modelProbability  Float
+  marketProbability Float
+  edge              Float
+  decimalOdds       Float?
+  bookmaker         String?
+  sampleCount       Int
+  modelContext      String
+  modelVersion      Int
+  contextVersion    Int
+  checklistVersion  Int
+  capturedAt        DateTime
+  candidateAt       DateTime?
 
   @@unique([fixtureId, market, checklistVersion])
   @@index([status, kickoff])
@@ -384,38 +384,38 @@ model ChecklistDecisionSnapshot {
 /// Nemenny ucetni zaznam automaticke modelove strategie. Jeden radek = simulovana sazka 1u
 /// podle konkretni verzovane politiky; po prvnim splneni bran se uz nikdy neprepisuje.
 model AutonomousTipSnapshot {
-  id                    String   @id @default(cuid())
-  fixtureId             Int
-  leagueId              Int
-  kickoff               DateTime
-  homeTeamId            Int
-  awayTeamId            Int
-  homeName               String
-  awayName               String
-  homeLogo               String?
-  awayLogo               String?
-  strategy               String
-  policyVersion          Int
-  market                 String
-  side                   String
-  line                   Float?
-  modelProbability       Float
-  marketProbability      Float
-  edge                    Float
-  expectedValue          Float?
-  decimalOdds            Float?
-  bookmaker              String?
-  sampleCount            Int
-  reason                  String
-  stake                   Float    @default(1)
-  modelContext            String
-  modelVersion            Int
-  contextVersion          Int
-  status                  String
-  capturedAt              DateTime
-  qualifiedAt             DateTime?
+  id                       String    @id @default(cuid())
+  fixtureId                Int
+  leagueId                 Int
+  kickoff                  DateTime
+  homeTeamId               Int
+  awayTeamId               Int
+  homeName                 String
+  awayName                 String
+  homeLogo                 String?
+  awayLogo                 String?
+  strategy                 String
+  policyVersion            Int
+  market                   String
+  side                     String
+  line                     Float?
+  modelProbability         Float
+  marketProbability        Float
+  edge                     Float
+  expectedValue            Float?
+  decimalOdds              Float?
+  bookmaker                String?
+  sampleCount              Int
+  reason                   String
+  stake                    Float     @default(1)
+  modelContext             String
+  modelVersion             Int
+  contextVersion           Int
+  status                   String
+  capturedAt               DateTime
+  qualifiedAt              DateTime?
   closingMarketProbability Float?
-  closedAt                DateTime?
+  closedAt                 DateTime?
 
   @@unique([fixtureId, strategy, policyVersion])
   @@index([strategy, modelContext, qualifiedAt])
@@ -440,20 +440,20 @@ model RefereeAssignmentAudit {
 /// Jeden uzavřený zápas v point-in-time historii rozhodčího. Vzniká pouze z již
 /// uložené predikce a MatchStatCache; veřejný request tuto tabulku nikdy neplní.
 model RefereeMatch {
-  fixtureId       Int      @id
-  refereeName     String
-  refereeKey      String
-  leagueId        Int
-  modelContext    String
-  contextVersion  Int
-  kickoff         DateTime
-  fouls           Float?
-  yellowCards     Float
-  redCards        Float
-  actualCards     Float
-  expectedCards   Float
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  fixtureId      Int      @id
+  refereeName    String
+  refereeKey     String
+  leagueId       Int
+  modelContext   String
+  contextVersion Int
+  kickoff        DateTime
+  fouls          Float?
+  yellowCards    Float
+  redCards       Float
+  actualCards    Float
+  expectedCards  Float
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@index([refereeKey, modelContext, kickoff])
   @@index([leagueId, kickoff])
@@ -464,23 +464,23 @@ model RefereeMatch {
 /// in/out strany nesou oba kluby, `clubId` říká, čí pohled to je → jednoznačná bilance.
 /// `feeEur` je best-effort parse z volného textu `type` (často null – API nedává částky).
 model Transfer {
-  id           String   @id // `${clubId}:${playerId}:${dateISO}:${inId|0}:${outId|0}`
-  clubId       Int
-  clubLeagueId Int
-  season       Int
-  playerId     Int
-  playerName   String
-  date         DateTime
-  type         String?
-  feeEur       Float?
+  id             String   @id // `${clubId}:${playerId}:${dateISO}:${inId|0}:${outId|0}`
+  clubId         Int
+  clubLeagueId   Int
+  season         Int
+  playerId       Int
+  playerName     String
+  date           DateTime
+  type           String?
+  feeEur         Float?
   marketValueEur Float?
-  inTeamId     Int?
-  inTeamName   String?
-  inTeamLogo   String?
-  outTeamId    Int?
-  outTeamName  String?
-  outTeamLogo  String?
-  fetchedAt    DateTime @default(now())
+  inTeamId       Int?
+  inTeamName     String?
+  inTeamLogo     String?
+  outTeamId      Int?
+  outTeamName    String?
+  outTeamLogo    String?
+  fetchedAt      DateTime @default(now())
 
   @@index([clubLeagueId, date])
   @@index([clubId])
@@ -517,7 +517,7 @@ model SavedComparison {
 /// Meta zápasu je snapshot (jako SavedComparison), aby výpis nevyžadoval refetch. Výsledek
 /// dotáhne cron settle-tips (join na fixtureId). Jeden tip na trh a zápas.
 model UserTip {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   // Stabilní vlastnický klíč = e-mail účtu (fallback `user:<id>`, kdyby chyběl). Přežije
   // re-login i smazání/přegenerování `User` řádku (reset DB) → tipy se neztratí, jak se
   // stalo dřív s kaskádou na userId. Identita tipů běží přes `email`, ne přes `userId`.
@@ -536,13 +536,13 @@ model UserTip {
   awayName   String
   homeLogo   String?
   awayLogo   String?
-  national   Boolean  @default(false)
+  national   Boolean   @default(false)
   // příležitost: market "win"|"over25"|"btts"; selection dle trhu
   // (win → home|draw|away, over25 → over|under, btts → yes|no). `line` pro over/under.
   market     String
   selection  String
   line       Float?
-  stake      Float    @default(1)
+  stake      Float     @default(1)
   note       String?
   // snapshot kurzu (skrytý při tipování, odhalený u vyhodnocení). null = kurz nebyl k dispozici.
   odds       Float?
@@ -586,88 +586,103 @@ model GameSave {
 model DirectorCareer {
   id               String   @id @default(cuid())
   userId           String
-  ownerEmail        String
-  name              String
-  status            String   @default("ACTIVE")
-  version           Int      @default(1)
-  leagueId          Int
-  leagueName        String
-  country           String
-  managedClubId     String?
-  worldSeed         Int
-  gameDate          DateTime
-  dayIndex          Int      @default(0)
-  availableSteps    Int      @default(1)
-  lastStepGrantAt   DateTime @default(now())
-  reputation        Float    @default(35)
-  boardTrust        Float    @default(65)
-  publicTrust       Float    @default(60)
+  ownerEmail       String
+  name             String
+  status           String   @default("ACTIVE")
+  version          Int      @default(1)
+  leagueId         Int
+  leagueName       String
+  country          String
+  managedClubId    String?
+  worldSeed        Int
+  gameDate         DateTime
+  dayIndex         Int      @default(0)
+  availableSteps   Int      @default(1)
+  lastStepGrantAt  DateTime @default(now())
+  reputation       Float    @default(35)
+  boardTrust       Float    @default(65)
+  publicTrust      Float    @default(60)
   mediaCredibility Float    @default(55)
-  ethicsMode        String   @default("REALISTIC")
-  publicProfile     Boolean  @default(false)
-  identityTags      Json     @default("[]")
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  ethicsMode       String   @default("REALISTIC")
+  publicProfile    Boolean  @default(false)
+  identityTags     Json     @default("[]")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  user         User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  clubs        DirectorClub[]
-  events       DirectorEvent[]
-  pulsePosts   DirectorPulsePost[]
-  achievements DirectorAchievement[]
-  matches      DirectorMatch[]
-  negotiations DirectorNegotiation[]
-  projects     DirectorProject[]
-  effects      DirectorCausalEffect[]
-  commitments  DirectorCommitment[]
-  relationships DirectorRelationship[]
-  ledger       DirectorLedgerEntry[]
-  seasons      DirectorSeason[]
-  needs        DirectorClubNeed[]
-  causalLogs   DirectorCausalLog[]
+  user              User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clubs             DirectorClub[]
+  events            DirectorEvent[]
+  pulsePosts        DirectorPulsePost[]
+  achievements      DirectorAchievement[]
+  matches           DirectorMatch[]
+  negotiations      DirectorNegotiation[]
+  projects          DirectorProject[]
+  effects           DirectorCausalEffect[]
+  commitments       DirectorCommitment[]
+  relationships     DirectorRelationship[]
+  ledger            DirectorLedgerEntry[]
+  seasons           DirectorSeason[]
+  needs             DirectorClubNeed[]
+  causalLogs        DirectorCausalLog[]
+  agents            DirectorAgent[]
+  expectations      DirectorPlayerExpectation[]
+  squadGroups       DirectorSquadGroup[]
+  staff             DirectorStaff[]
+  transferCases     DirectorTransferCase[]
+  registrations     DirectorRegistration[]
+  coachCandidates   DirectorCoachCandidate[]
+  coachNegotiations DirectorCoachNegotiation[]
+  objectives        DirectorSeasonObjective[]
+  boardReviews      DirectorBoardReview[]
+  jobOffers         DirectorJobOffer[]
+  sportPolicies     DirectorSportPolicy[]
+  sportMeetings     DirectorSportMeeting[]
+  matchPlans        DirectorMatchPlan[]
+  playerAppearances DirectorPlayerAppearance[]
 
   @@index([userId, status])
   @@index([ownerEmail, createdAt])
 }
 
 model DirectorClub {
-  id                 String   @id @default(cuid())
-  careerId           String
-  externalTeamId     Int
-  name               String
-  shortName          String
-  logo               String?
-  primaryColor       String
-  isManaged          Boolean  @default(false)
-  tier               Int      @default(1)
-  baseAttack         Float
-  baseDefense        Float
-  currentForm        Float    @default(0)
-  cohesion           Float    @default(60)
-  morale             Float    @default(60)
-  cashBalance        Int
-  transferBudget     Int
-  wageBudget         Int
-  weeklyWages        Int      @default(0)
-  fanTrust           Float    @default(60)
-  boardExpectation   String   @default("STABILITY")
-  stadiumName        String
-  stadiumCapacity    Int
-  stadiumAttendance  Float    @default(0.72)
-  stadiumCondition   Float    @default(65)
-  stadiumAtmosphere  Float    @default(60)
-  stadiumCommercial  Float    @default(45)
-  academyLevel       Int      @default(2)
-  trainingLevel      Int      @default(2)
-  medicalLevel       Int      @default(2)
-  scoutingLevel      Int      @default(2)
+  id                String   @id @default(cuid())
+  careerId          String
+  externalTeamId    Int
+  name              String
+  shortName         String
+  logo              String?
+  primaryColor      String
+  isManaged         Boolean  @default(false)
+  tier              Int      @default(1)
+  baseAttack        Float
+  baseDefense       Float
+  currentForm       Float    @default(0)
+  cohesion          Float    @default(60)
+  morale            Float    @default(60)
+  cashBalance       Int
+  transferBudget    Int
+  wageBudget        Int
+  weeklyWages       Int      @default(0)
+  fanTrust          Float    @default(60)
+  boardExpectation  String   @default("STABILITY")
+  stadiumName       String
+  stadiumCapacity   Int
+  stadiumAttendance Float    @default(0.72)
+  stadiumCondition  Float    @default(65)
+  stadiumAtmosphere Float    @default(60)
+  stadiumCommercial Float    @default(45)
+  academyLevel      Int      @default(2)
+  trainingLevel     Int      @default(2)
+  medicalLevel      Int      @default(2)
+  scoutingLevel     Int      @default(2)
   infrastructure    Json     @default("{}")
-  financeHistory     Json     @default("[]")
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  financeHistory    Json     @default("[]")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
-  players DirectorPlayer[]
-  coaches DirectorCoach[]
+  career    DirectorCareer     @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  players   DirectorPlayer[]
+  coaches   DirectorCoach[]
   standings DirectorStanding[]
 
   @@unique([careerId, externalTeamId])
@@ -675,88 +690,301 @@ model DirectorClub {
 }
 
 model DirectorPlayer {
-  id               String   @id @default(cuid())
-  clubId           String
-  firstName        String
-  lastName         String
-  position         String
-  preferredFoot    String
-  archetype        String
-  personality      String
-  age              Int
-  ability          Float
-  potential        Float
-  ballSkill        Float
-  creation         Float
-  finishing        Float
-  defending        Float
-  physical         Float
-  mentality        Float
-  form             Float    @default(50)
-  fitness          Float    @default(90)
-  morale           Float    @default(60)
-  cohesion         Float    @default(50)
-  injuryDays       Int      @default(0)
-  contractUntil    DateTime
-  weeklyWage       Int
-  marketValue      Int
-  promisedRole     String   @default("SQUAD")
-  appearances      Int      @default(0)
-  minutes          Int      @default(0)
-  scoutMin         Float?
-  scoutMax         Float?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  clubId              String
+  firstName           String
+  lastName            String
+  position            String
+  preferredFoot       String
+  archetype           String
+  personality         String
+  age                 Int
+  ability             Float
+  potential           Float
+  ballSkill           Float
+  creation            Float
+  finishing           Float
+  defending           Float
+  physical            Float
+  mentality           Float
+  form                Float    @default(50)
+  fitness             Float    @default(90)
+  morale              Float    @default(60)
+  cohesion            Float    @default(50)
+  injuryDays          Int      @default(0)
+  contractUntil       DateTime
+  weeklyWage          Int
+  marketValue         Int
+  promisedRole        String   @default("SQUAD")
+  appearances         Int      @default(0)
+  minutes             Int      @default(0)
+  scoutMin            Float?
+  scoutMax            Float?
+  agentId             String?
+  transferStatus      String   @default("AVAILABLE")
+  tacticalFamiliarity Json     @default("{}")
+  acuteLoad           Float    @default(20)
+  chronicLoad         Float    @default(25)
+  matchReadiness      Float    @default(85)
+  healthRisk          Float    @default(10)
+  healthRiskHistory   Json     @default("[]")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
-  club DirectorClub @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  club             DirectorClub               @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  agent            DirectorAgent?             @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  expectation      DirectorPlayerExpectation?
+  transferCases    DirectorTransferCase[]
+  registrations    DirectorRegistration[]
+  matchAppearances DirectorPlayerAppearance[]
 
   @@index([clubId, position])
   @@index([marketValue])
 }
 
 model DirectorCoach {
-  id                 String   @id @default(cuid())
-  clubId             String
-  name               String
-  philosophy         String
-  formation          String
-  adaptability       Float
-  youthDevelopment   Float
-  manManagement      Float
-  matchManagement    Float
-  relationship       Float    @default(65)
-  transferAuthority  String   @default("CONSULT")
-  transferVeto       Boolean  @default(false)
-  contractUntil      DateTime
-  weeklyWage         Int
-  severanceMonths    Int      @default(6)
-  promises           Json     @default("[]")
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  clubId                String
+  name                  String
+  philosophy            String
+  formation             String
+  adaptability          Float
+  youthDevelopment      Float
+  manManagement         Float
+  matchManagement       Float
+  relationship          Float    @default(65)
+  transferAuthority     String   @default("CONSULT")
+  transferVeto          Boolean  @default(false)
+  contractUntil         DateTime
+  weeklyWage            Int
+  severanceMonths       Int      @default(6)
+  promises              Json     @default("[]")
+  personality           String   @default("PRAGMATIC")
+  reputation            Float    @default(50)
+  ambition              Float    @default(60)
+  interferenceTolerance Float    @default(50)
+  preferredRoles        Json     @default("[]")
+  mandate               Json     @default("{}")
+  status                String   @default("ACTIVE")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   club DirectorClub @relation(fields: [clubId], references: [id], onDelete: Cascade)
 
   @@index([clubId])
 }
 
-model DirectorEvent {
+model DirectorAgent {
   id          String   @id @default(cuid())
+  careerId    String
+  name        String
+  personality String
+  ambition    Float
+  negotiation Float
+  loyalty     Float
+  priorities  Json     @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  career  DirectorCareer   @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  players DirectorPlayer[]
+
+  @@index([careerId, name])
+}
+
+model DirectorPlayerExpectation {
+  id                String   @id @default(cuid())
+  careerId          String
+  playerId          String   @unique
+  expectedRole      String
+  targetMinuteShare Float
+  actualMinuteShare Float    @default(0)
+  wageSatisfaction  Float    @default(60)
+  ambition          Float    @default(55)
+  willingness       Float    @default(70)
+  escalationStage   Int      @default(0)
+  status            String   @default("SETTLED")
+  reasons           Json     @default("[]")
+  lastEvaluatedDay  Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  player DirectorPlayer @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, status, escalationStage])
+}
+
+model DirectorSquadGroup {
+  id        String   @id @default(cuid())
+  careerId  String
+  clubId    String
+  kind      String
+  name      String
+  memberIds Json     @default("[]")
+  influence Float    @default(50)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@unique([careerId, clubId, kind, name])
+  @@index([careerId, clubId])
+}
+
+model DirectorStaff {
+  id            String   @id @default(cuid())
+  careerId      String
+  clubId        String?
+  role          String
+  name          String
+  ability       Float
+  personality   String
+  weeklyWage    Int
+  workload      Float    @default(35)
+  relationship  Float    @default(60)
+  contractUntil DateTime
+  status        String   @default("ACTIVE")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, clubId, role])
+  @@index([careerId, status])
+}
+
+model DirectorTransferCase {
+  id              String   @id @default(cuid())
+  careerId        String
+  playerId        String
+  sellingClubId   String
+  buyingClubId    String
+  kind            String   @default("PERMANENT")
+  status          String   @default("OPEN")
+  initiatedBy     String
+  playerAgreement String   @default("PENDING")
+  agreedDay       Int?
+  registrationDay Int?
+  version         Int      @default(1)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  career       DirectorCareer          @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  player       DirectorPlayer          @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  offers       DirectorTransferOffer[]
+  registration DirectorRegistration?
+
+  @@index([careerId, status, updatedAt])
+  @@index([buyingClubId, status])
+  @@index([sellingClubId, status])
+}
+
+model DirectorTransferOffer {
+  id                String   @id @default(cuid())
+  caseId            String
+  round             Int
+  submittedByClubId String
+  upfront           Int      @default(0)
+  installments      Int      @default(0)
+  bonuses           Int      @default(0)
+  sellOn            Float    @default(0)
+  loanFee           Int      @default(0)
+  optionFee         Int?
+  swapPlayerId      String?
+  weeklyWage        Int
+  years             Int
+  promisedRole      String
+  sellerUtility     Float
+  playerUtility     Float
+  response          String
+  createdAt         DateTime @default(now())
+
+  transferCase DirectorTransferCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@unique([caseId, round])
+  @@index([caseId, createdAt])
+}
+
+model DirectorRegistration {
+  id           String    @id @default(cuid())
+  careerId     String
+  caseId       String    @unique
+  playerId     String
+  fromClubId   String
+  toClubId     String
+  effectiveDay Int
+  status       String    @default("PENDING")
+  registeredAt DateTime?
+  createdAt    DateTime  @default(now())
+
+  career       DirectorCareer       @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  transferCase DirectorTransferCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  player       DirectorPlayer       @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, status, effectiveDay])
+}
+
+model DirectorCoachCandidate {
+  id               String   @id @default(cuid())
+  careerId         String
+  name             String
+  personality      String
+  reputation       Float
+  ambition         Float
+  philosophy       String
+  formation        String
+  youthDevelopment Float
+  manManagement    Float
+  matchManagement  Float
+  wageDemand       Int
+  status           String   @default("AVAILABLE")
+  createdAt        DateTime @default(now())
+
+  career       DirectorCareer             @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  negotiations DirectorCoachNegotiation[]
+
+  @@index([careerId, status, reputation])
+}
+
+model DirectorCoachNegotiation {
+  id            String   @id @default(cuid())
+  careerId      String
+  clubId        String
+  candidateId   String
+  status        String   @default("OPEN")
+  round         Int      @default(0)
+  patience      Int      @default(3)
+  proposedTerms Json     @default("{}")
+  history       Json     @default("[]")
+  response      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  career    DirectorCareer         @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  candidate DirectorCoachCandidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, status])
+}
+
+model DirectorEvent {
+  id          String    @id @default(cuid())
   careerId    String
   templateId  String
   category    String
   severity    String
-  status      String   @default("OPEN")
+  status      String    @default("OPEN")
   title       String
-  body        String   @db.Text
+  body        String    @db.Text
   actorKey    String?
-  payload     Json     @default("{}")
-  choices     Json     @default("[]")
+  payload     Json      @default("{}")
+  choices     Json      @default("[]")
   selectedKey String?
   dueDay      Int?
-  memoryTags  Json     @default("[]")
+  memoryTags  Json      @default("[]")
   createdDay  Int
   resolvedDay Int?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
   resolvedAt  DateTime?
 
   career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
@@ -786,15 +1014,15 @@ model DirectorPulsePost {
 }
 
 model DirectorAchievement {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   careerId    String
   key         String
   title       String
   description String
   rarity      String
-  context     Json     @default("{}")
+  context     Json      @default("{}")
   seenAt      DateTime?
-  unlockedAt  DateTime @default(now())
+  unlockedAt  DateTime  @default(now())
 
   career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
 
@@ -803,65 +1031,169 @@ model DirectorAchievement {
 }
 
 model DirectorMatch {
-  id          String   @id @default(cuid())
-  careerId    String
-  round       Int
-  scheduledDay Int
-  homeClubId  String
-  awayClubId  String
-  status      String   @default("SCHEDULED")
-  homeGoals   Int?
-  awayGoals   Int?
-  homeXg      Float?
-  awayXg      Float?
-  homeStrength Float?
-  awayStrength Float?
-  timeline    Json     @default("[]")
-  coachReport Json     @default("{}")
-  playedAt    DateTime?
-  createdAt   DateTime @default(now())
+  id            String    @id @default(cuid())
+  careerId      String
+  seasonId      String?
+  round         Int
+  scheduledDay  Int
+  homeClubId    String
+  awayClubId    String
+  status        String    @default("SCHEDULED")
+  homeGoals     Int?
+  awayGoals     Int?
+  homeXg        Float?
+  awayXg        Float?
+  homeStrength  Float?
+  awayStrength  Float?
+  timeline      Json      @default("[]")
+  coachReport   Json      @default("{}")
+  phaseStats    Json      @default("{}")
+  engineVersion Int       @default(1)
+  playedAt      DateTime?
+  createdAt     DateTime  @default(now())
 
-  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  career      DirectorCareer             @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  season      DirectorSeason?            @relation(fields: [seasonId], references: [id], onDelete: SetNull)
+  plans       DirectorMatchPlan[]
+  appearances DirectorPlayerAppearance[]
 
-  @@unique([careerId, round, homeClubId, awayClubId])
+  @@unique([careerId, seasonId, round, homeClubId, awayClubId])
   @@index([careerId, scheduledDay])
 }
 
-model DirectorNegotiation {
-  id             String   @id @default(cuid())
-  careerId       String
-  playerId       String
-  sellingClubId  String
-  status         String   @default("OPEN")
-  round          Int      @default(0)
-  patience       Int      @default(3)
-  referenceValue Int
-  clubPriorities Json
-  playerPriorities Json
-  lastOffer      Json?
-  response       String?
-  history        Json     @default("[]")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+model DirectorSportPolicy {
+  id                  String   @id @default(cuid())
+  careerId            String
+  clubId              String
+  version             Int      @default(1)
+  desiredStyle        String   @default("BALANCED")
+  youthPreference     Float    @default(0.5)
+  rotationLevel       Float    @default(0.5)
+  trainingIntensity   Float    @default(0.5)
+  healthRiskTolerance Float    @default(0.35)
+  phasePriorities     Json     @default("{}")
+  updatedDay          Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
 
-  @@index([careerId, status])
+  @@unique([careerId, clubId])
+  @@index([careerId, updatedDay])
+}
+
+model DirectorSportMeeting {
+  id             String    @id @default(cuid())
+  careerId       String
+  clubId         String
+  matchId        String?
+  coachId        String?
+  kind           String
+  status         String    @default("OPEN")
+  trigger        String
+  title          String
+  briefing       String
+  recommendation Json      @default("{}")
+  response       Json?
+  resolution     String?
+  createdDay     Int
+  dueDay         Int?
+  resolvedDay    Int?
+  createdAt      DateTime  @default(now())
+  resolvedAt     DateTime?
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, status, dueDay])
+  @@index([matchId])
+}
+
+model DirectorMatchPlan {
+  id               String    @id @default(cuid())
+  careerId         String
+  matchId          String
+  clubId           String
+  coachId          String?
+  side             String
+  formation        String
+  mentality        String
+  lineup           Json
+  bench            Json
+  roles            Json
+  phaseProfile     Json
+  selectionReasons Json
+  weaknesses       Json
+  confidence       Float
+  engineVersion    Int       @default(4)
+  createdDay       Int
+  lockedAt         DateTime?
+  createdAt        DateTime  @default(now())
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  match  DirectorMatch  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, clubId])
+  @@index([careerId, createdDay])
+}
+
+model DirectorPlayerAppearance {
+  id                 String   @id @default(cuid())
+  careerId           String
+  matchId            String
+  playerId           String
+  clubId             String
+  role               String
+  started            Boolean  @default(false)
+  minutes            Int
+  performance        Float?
+  load               Float
+  injuryDays         Int      @default(0)
+  substitutionReason String?
+  createdAt          DateTime @default(now())
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  match  DirectorMatch  @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  player DirectorPlayer @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, playerId])
+  @@index([careerId, playerId])
+}
+
+model DirectorNegotiation {
+  id               String   @id @default(cuid())
+  careerId         String
+  playerId         String
+  sellingClubId    String
+  status           String   @default("OPEN")
+  round            Int      @default(0)
+  patience         Int      @default(3)
+  referenceValue   Int
+  clubPriorities   Json
+  playerPriorities Json
+  lastOffer        Json?
+  response         String?
+  history          Json     @default("[]")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
   @@unique([careerId, playerId, status])
+  @@index([careerId, status])
 }
 
 model DirectorProject {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   careerId    String
   clubId      String
   kind        String
   title       String
-  status      String   @default("ACTIVE")
+  status      String    @default("ACTIVE")
   startedDay  Int
   finishDay   Int
   cost        Int
   effects     Json
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
   completedAt DateTime?
 
   career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
@@ -898,24 +1230,24 @@ model DirectorCausalEffect {
 }
 
 model DirectorCommitment {
-  id          String   @id @default(cuid())
-  careerId    String
-  sourceEventId String?
+  id              String    @id @default(cuid())
+  careerId        String
+  sourceEventId   String?
   stakeholderType String
-  stakeholderId String?
-  title       String
-  metric      String
-  target      Float
-  tolerance   Float    @default(0)
-  baseline    Float?
-  dueDay      Int
-  severity    String   @default("MEDIUM")
-  status      String   @default("TRACKING")
-  progress    Float?
-  explanation String
-  resolvedAt  DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  stakeholderId   String?
+  title           String
+  metric          String
+  target          Float
+  tolerance       Float     @default(0)
+  baseline        Float?
+  dueDay          Int
+  severity        String    @default("MEDIUM")
+  status          String    @default("TRACKING")
+  progress        Float?
+  explanation     String
+  resolvedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
 
@@ -966,57 +1298,120 @@ model DirectorLedgerEntry {
 }
 
 model DirectorSeason {
-  id          String   @id @default(cuid())
-  careerId    String
-  number      Int      @default(1)
-  startDay    Int      @default(0)
-  endDay      Int
-  status      String   @default("ACTIVE")
-  currentRound Int     @default(0)
-  rules       Json     @default("{}")
-  createdAt   DateTime @default(now())
-  completedAt DateTime?
+  id           String    @id @default(cuid())
+  careerId     String
+  number       Int       @default(1)
+  startDay     Int       @default(0)
+  endDay       Int
+  status       String    @default("ACTIVE")
+  currentRound Int       @default(0)
+  rules        Json      @default("{}")
+  createdAt    DateTime  @default(now())
+  completedAt  DateTime?
 
-  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
-  standings DirectorStanding[]
+  career     DirectorCareer            @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  standings  DirectorStanding[]
+  objectives DirectorSeasonObjective[]
+  reviews    DirectorBoardReview[]
+  matches    DirectorMatch[]
 
   @@unique([careerId, number])
 }
 
-model DirectorStanding {
+model DirectorSeasonObjective {
   id          String   @id @default(cuid())
+  careerId    String
   seasonId    String
   clubId      String
-  played      Int      @default(0)
-  wins        Int      @default(0)
-  draws       Int      @default(0)
-  losses      Int      @default(0)
-  goalsFor    Int      @default(0)
-  goalsAgainst Int     @default(0)
-  points      Int      @default(0)
-  expectedPoints Float @default(0)
-  performance Float    @default(0)
+  kind        String
+  target      Float
+  weight      Float
+  progress    Float?
+  status      String   @default("TRACKING")
+  explanation String
+  createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
   season DirectorSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
-  club   DirectorClub @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@unique([seasonId, clubId, kind])
+  @@index([careerId, status])
+}
+
+model DirectorBoardReview {
+  id             String   @id @default(cuid())
+  careerId       String
+  seasonId       String
+  clubId         String
+  kind           String
+  dayIndex       Int
+  sporting       Float
+  finance        Float
+  academy        Float
+  infrastructure Float
+  overall        Float
+  outcome        String
+  explanation    Json     @default("[]")
+  createdAt      DateTime @default(now())
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  season DirectorSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+
+  @@unique([seasonId, clubId, kind])
+  @@index([careerId, dayIndex])
+}
+
+model DirectorJobOffer {
+  id         String   @id @default(cuid())
+  careerId   String
+  clubId     String
+  role       String   @default("DIRECTOR")
+  status     String   @default("OPEN")
+  expiresDay Int
+  terms      Json     @default("{}")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, status, expiresDay])
+}
+
+model DirectorStanding {
+  id             String   @id @default(cuid())
+  seasonId       String
+  clubId         String
+  played         Int      @default(0)
+  wins           Int      @default(0)
+  draws          Int      @default(0)
+  losses         Int      @default(0)
+  goalsFor       Int      @default(0)
+  goalsAgainst   Int      @default(0)
+  points         Int      @default(0)
+  expectedPoints Float    @default(0)
+  performance    Float    @default(0)
+  updatedAt      DateTime @updatedAt
+
+  season DirectorSeason @relation(fields: [seasonId], references: [id], onDelete: Cascade)
+  club   DirectorClub   @relation(fields: [clubId], references: [id], onDelete: Cascade)
 
   @@unique([seasonId, clubId])
   @@index([seasonId, points])
 }
 
 model DirectorClubNeed {
-  id          String   @id @default(cuid())
-  careerId    String
-  clubId      String
-  kind        String
-  target      String
-  urgency     Float
-  reason      String
-  status      String   @default("OPEN")
+  id               String   @id @default(cuid())
+  careerId         String
+  clubId           String
+  kind             String
+  target           String
+  urgency          Float
+  reason           String
+  status           String   @default("OPEN")
   lastEvaluatedDay Int
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
 
@@ -1093,17 +1488,17 @@ model PushSubscription {
 /// První verze notifikací je záměrně malá: připomínka oblíbeného zápasu. Další typy
 /// lze přidat bez změny PushSubscription a bez opětovného povolování zařízení.
 model NotificationPreference {
-  userId          String   @id
-  enabled         Boolean  @default(true)
-  favoriteKickoff Boolean  @default(true)
-  kickoffMinutes  Int      @default(60)
-  publishedPrediction Boolean @default(false)
-  marketMovement      Boolean @default(false)
-  movementThreshold   Int     @default(3)
-  smartFavoriteLeagues Boolean @default(false)
-  halftimeAndFinal    Boolean @default(false)
-  checklistCandidate Boolean @default(false)
-  updatedAt       DateTime @updatedAt
+  userId               String   @id
+  enabled              Boolean  @default(true)
+  favoriteKickoff      Boolean  @default(true)
+  kickoffMinutes       Int      @default(60)
+  publishedPrediction  Boolean  @default(false)
+  marketMovement       Boolean  @default(false)
+  movementThreshold    Int      @default(3)
+  smartFavoriteLeagues Boolean  @default(false)
+  halftimeAndFinal     Boolean  @default(false)
+  checklistCandidate   Boolean  @default(false)
+  updatedAt            DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

@@ -1,4 +1,4 @@
-export const DIRECTOR_WORLD_VERSION = 2;
+export const DIRECTOR_WORLD_VERSION = 4;
 export const MAX_BANKED_STEPS = 3;
 
 export type DirectorSection = "office" | "team" | "market" | "club" | "competitions";
@@ -73,6 +73,11 @@ export interface DirectorDTO {
     transferVeto: boolean;
     contractUntil: string;
     weeklyWage: number;
+    personality: string;
+    reputation: number;
+    ambition: number;
+    mandate: Record<string, unknown>;
+    evaluation: { overall: number; results: number; performances: number; utilization: number; youth: number; dressingRoom: number; philosophy: number };
   } | null;
   players: Array<{
     id: string;
@@ -91,6 +96,11 @@ export interface DirectorDTO {
     weeklyWage: number;
     marketValue: number;
     promisedRole: string;
+    transferStatus: string;
+    tacticalRoles: Array<{ role: string; fit: number }>;
+    load: { acute: number; chronic: number; readiness: number; healthRisk: number };
+    expectation: { expectedRole: string; targetMinuteShare: number; actualMinuteShare: number; status: string; escalationStage: number; willingness: number; reason: string | null } | null;
+    agent: { name: string; personality: string } | null;
   }>;
   events: Array<{
     id: string;
@@ -138,9 +148,28 @@ export interface DirectorDTO {
     awayXg: number | null;
     timeline: Array<{ minute: number; type: string; text: string }>;
     coachReport: { headline?: string; summary?: string };
+    engineVersion?: number;
+    phaseStats?: Record<string, unknown>;
+    plan?: { formation: string; mentality: string; confidence: number; lineup: Array<{ playerId: string; role: string; roleFit: number; reason: string }>; reasons: string[]; weaknesses: string[] } | null;
   }>;
+  sporting?: {
+    policy: { desiredStyle: string; youthPreference: number; rotationLevel: number; trainingIntensity: number; healthRiskTolerance: number; phasePriorities: Record<string, number> } | null;
+    meetings: Array<{ id: string; title: string; briefing: string; trigger: string; status: string; dueDay: number | null; recommendation: Record<string, unknown>; resolution: string | null }>;
+  };
   marketTargets: Array<{ id: string; name: string; club: string; position: string; archetype: string; age: number; estimateMin: number; estimateMax: number; abilityMin: number; abilityMax: number }>;
   negotiations: Array<{ id: string; playerId: string; playerName: string; clubName: string; status: string; round: number; patience: number; referenceValue: number; response: string | null }>;
+  people: {
+    transferWindow: { open: boolean; name: string | null; nextDay: number | null };
+    staff: Array<{ id: string; role: string; name: string; ability: number; workload: number; weeklyWage: number; relationship: number; status: string; uncertainty: string }>;
+    staffCandidates: Array<{ id: string; role: string; name: string; ability: number; weeklyWage: number; personality: string }>;
+    squadGroups: Array<{ id: string; kind: string; name: string; influence: number; members: string[] }>;
+    transferCases: Array<{ id: string; playerId: string; playerName: string; sellingClub: string; buyingClub: string; kind: string; status: string; registrationDay: number | null; response: string | null; round: number }>;
+    objectives: Array<{ id: string; kind: string; target: number; progress: number | null; status: string; explanation: string }>;
+    reviews: Array<{ id: string; kind: string; overall: number; outcome: string; dayIndex: number; explanation: string[] }>;
+    coachCandidates: Array<{ id: string; name: string; philosophy: string; reputation: number; ambition: number; wageDemand: number; status: string }>;
+    coachNegotiations: Array<{ id: string; candidateName: string; status: string; round: number; patience: number; response: string | null }>;
+    jobOffers: Array<{ id: string; clubName: string; status: string; expiresDay: number }>;
+  };
   projects: Array<{ id: string; kind: string; title: string; status: string; startedDay: number; finishDay: number; cost: number }>;
   influences: Array<{ id: string; sourceLabel: string; metric: string; direction: string; strength: string; confidence: string; explanation: string; startDay: number; endDay: number | null }>;
   commitments: Array<{ id: string; stakeholderType: string; title: string; status: string; dueDay: number; progress: number | null; explanation: string }>;
