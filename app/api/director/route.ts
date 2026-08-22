@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getCurrentUser } from "@/lib/authUser";
 import { allowRequest, tooMany } from "@/lib/rateLimit";
-import { advanceDirectorDay, createDirectorWorld, getDirectorWorld, isDirectorLeagueAllowed, manageDirectorCoach, manageDirectorStaff, markDirectorAchievementsSeen, openDirectorCoachNegotiation, openDirectorNegotiation, openDirectorTransferCase, resolveDirectorEvent, resolveDirectorSportMeeting, rolloverDirectorSeason, startDirectorProject, submitDirectorCoachOffer, submitDirectorOffer, submitDirectorTransferOffer, updateDirectorPlayer, updateDirectorSportPolicy } from "@/lib/director/dal";
+import { advanceDirectorDay, createDirectorWorld, getDirectorWorld, isDirectorLeagueAllowed, manageDirectorCoach, manageDirectorStaff, markDirectorAchievementsSeen, openDirectorCoachNegotiation, openDirectorNegotiation, openDirectorTransferCase, resolveDirectorEvent, resolveDirectorSportMeeting, resolveIncomingTransfer, rolloverDirectorSeason, scoutDirectorPlayer, startDirectorProject, submitDirectorCoachOffer, submitDirectorContractOffer, submitDirectorOffer, submitDirectorTransferOffer, updateDirectorPlayer, updateDirectorShortlist, updateDirectorSportPolicy } from "@/lib/director/dal";
 
 const commandSchema = z.discriminatedUnion("action", [
   z.object({
@@ -23,6 +23,10 @@ const commandSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("player_action"), playerId: z.string().cuid(), command: z.enum(["LIST", "UNLIST", "RENEW"]), role: z.enum(["STARTER", "ROTATION", "SQUAD"]).optional() }),
   z.object({ action: z.literal("open_transfer_case"), playerId: z.string().cuid(), kind: z.enum(["PERMANENT", "LOAN"]).default("PERMANENT") }),
   z.object({ action: z.literal("submit_transfer_offer"), caseId: z.string().cuid(), upfront: z.number().int().min(0).max(1_000_000_000), installments: z.number().int().min(0).max(1_000_000_000), bonuses: z.number().int().min(0).max(1_000_000_000), sellOn: z.number().min(0).max(35), loanFee: z.number().int().min(0).max(1_000_000_000).default(0), optionFee: z.number().int().min(0).max(1_000_000_000).optional(), weeklyWage: z.number().int().min(100).max(10_000_000), years: z.number().int().min(1).max(6), promisedRole: z.enum(["STARTER", "ROTATION", "SQUAD"]) }),
+  z.object({ action: z.literal("submit_contract_offer"), negotiationId: z.string().cuid(), weeklyWage: z.number().int().min(100).max(10_000_000), years: z.number().int().min(1).max(6), signingBonus: z.number().int().min(0).max(100_000_000), appearanceBonus: z.number().int().min(0).max(10_000_000), goalBonus: z.number().int().min(0).max(10_000_000), releaseClause: z.number().int().min(0).max(2_000_000_000).optional(), promisedRole: z.enum(["STARTER", "ROTATION", "SQUAD"]), promisedShare: z.number().min(.05).max(1), agentFee: z.number().int().min(0).max(100_000_000) }),
+  z.object({ action: z.literal("scout_player"), playerId: z.string().cuid() }),
+  z.object({ action: z.literal("shortlist"), playerId: z.string().cuid(), command: z.enum(["ADD", "REMOVE"]), priority: z.number().int().min(1).max(3).default(2) }),
+  z.object({ action: z.literal("resolve_incoming_transfer"), caseId: z.string().cuid(), decision: z.enum(["ACCEPT", "REJECT"]) }),
   z.object({ action: z.literal("update_sport_policy"), desiredStyle: z.enum(["BALANCED", "POSSESSION", "HIGH_PRESS", "TRANSITION", "DEEP_BLOCK"]), youthPreference: z.number().min(0).max(1), rotationLevel: z.number().min(0).max(1), trainingIntensity: z.number().min(0).max(1), healthRiskTolerance: z.number().min(0).max(1), phasePriorities: z.record(z.string(), z.number().min(0).max(100)) }),
   z.object({ action: z.literal("resolve_sport_meeting"), meetingId: z.string().cuid(), choice: z.enum(["SUPPORT", "REQUEST_PRIORITY", "INSIST_MANDATE"]) }),
 ]);
@@ -63,6 +67,10 @@ export async function POST(req: Request) {
     if (parsed.data.action === "player_action") return NextResponse.json({ world: await updateDirectorPlayer(user, parsed.data.playerId, parsed.data.command, parsed.data.role) });
     if (parsed.data.action === "open_transfer_case") return NextResponse.json({ world: await openDirectorTransferCase(user, parsed.data.playerId, parsed.data.kind) });
     if (parsed.data.action === "submit_transfer_offer") return NextResponse.json({ world: await submitDirectorTransferOffer(user, parsed.data.caseId, parsed.data) });
+    if (parsed.data.action === "submit_contract_offer") return NextResponse.json({ world: await submitDirectorContractOffer(user, parsed.data.negotiationId, parsed.data) });
+    if (parsed.data.action === "scout_player") return NextResponse.json({ world: await scoutDirectorPlayer(user, parsed.data.playerId) });
+    if (parsed.data.action === "shortlist") return NextResponse.json({ world: await updateDirectorShortlist(user, parsed.data.playerId, parsed.data.command, parsed.data.priority) });
+    if (parsed.data.action === "resolve_incoming_transfer") return NextResponse.json({ world: await resolveIncomingTransfer(user, parsed.data.caseId, parsed.data.decision) });
     if (parsed.data.action === "update_sport_policy") return NextResponse.json({ world: await updateDirectorSportPolicy(user, parsed.data) });
     if (parsed.data.action === "resolve_sport_meeting") return NextResponse.json({ world: await resolveDirectorSportMeeting(user, parsed.data.meetingId, parsed.data.choice) });
     return NextResponse.json({ world: await resolveDirectorEvent(user, parsed.data.eventId, parsed.data.choiceKey) });

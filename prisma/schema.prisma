@@ -609,7 +609,7 @@ model DirectorCareer {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  user              User                        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User                          @relation(fields: [userId], references: [id], onDelete: Cascade)
   clubs             DirectorClub[]
   events            DirectorEvent[]
   pulsePosts        DirectorPulsePost[]
@@ -644,6 +644,12 @@ model DirectorCareer {
   opponentAnalyses  DirectorOpponentAnalysis[]
   medicalReports    DirectorMedicalReport[]
   planReviews       DirectorPlanReview[]
+  scoutingReports   DirectorScoutingReport[]
+  shortlistEntries  DirectorShortlistEntry[]
+  contractTalks     DirectorContractNegotiation[]
+  competingBids     DirectorCompetingBid[]
+  transferPayments  DirectorTransferPayment[]
+  transferClauses   DirectorTransferClause[]
 
   @@index([userId, status])
   @@index([ownerEmail, createdAt])
@@ -658,6 +664,12 @@ model DirectorClub {
   logo              String?
   primaryColor      String
   isManaged         Boolean  @default(false)
+  simulationMode    String   @default("DETAIL")
+  competitionName   String?
+  country           String?
+  reputation        Float    @default(50)
+  marketProfile     Json     @default("{}")
+  reservedCash      Int      @default(0)
   tier              Int      @default(1)
   baseAttack        Float
   baseDefense       Float
@@ -727,6 +739,12 @@ model DirectorPlayer {
   scoutMax            Float?
   agentId             String?
   transferStatus      String   @default("AVAILABLE")
+  owningClubId        String?
+  loanParentClubId    String?
+  loanEndDay          Int?
+  adaptation          Float    @default(70)
+  languageGroup       String   @default("LOCAL")
+  marketInterest      Float    @default(0)
   tacticalFamiliarity Json     @default("{}")
   acuteLoad           Float    @default(20)
   chronicLoad         Float    @default(25)
@@ -874,6 +892,11 @@ model DirectorTransferCase {
   buyingClubId    String
   kind            String   @default("PERMANENT")
   status          String   @default("OPEN")
+  stage           String   @default("CLUB")
+  patience        Int      @default(4)
+  deadlineDay     Int?
+  reservedAmount  Int      @default(0)
+  failureReason   String?
   initiatedBy     String
   playerAgreement String   @default("PENDING")
   agreedDay       Int?
@@ -882,10 +905,14 @@ model DirectorTransferCase {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  career       DirectorCareer          @relation(fields: [careerId], references: [id], onDelete: Cascade)
-  player       DirectorPlayer          @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  offers       DirectorTransferOffer[]
-  registration DirectorRegistration?
+  career        DirectorCareer               @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  player        DirectorPlayer               @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  offers        DirectorTransferOffer[]
+  registration  DirectorRegistration?
+  contractTalk  DirectorContractNegotiation?
+  competingBids DirectorCompetingBid[]
+  payments      DirectorTransferPayment[]
+  clauses       DirectorTransferClause[]
 
   @@index([careerId, status, updatedAt])
   @@index([buyingClubId, status])
@@ -903,6 +930,8 @@ model DirectorTransferOffer {
   sellOn            Float    @default(0)
   loanFee           Int      @default(0)
   optionFee         Int?
+  optionMandatory   Boolean  @default(false)
+  wageShare         Float    @default(1)
   swapPlayerId      String?
   weeklyWage        Int
   years             Int
@@ -916,6 +945,157 @@ model DirectorTransferOffer {
 
   @@unique([caseId, round])
   @@index([caseId, createdAt])
+}
+
+model DirectorContractNegotiation {
+  id            String   @id @default(cuid())
+  careerId      String
+  caseId        String   @unique
+  playerId      String
+  clubId        String
+  status        String   @default("OPEN")
+  round         Int      @default(0)
+  patience      Int      @default(3)
+  deadlineDay   Int
+  agentPosition Json     @default("{}")
+  failureReason String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  career       DirectorCareer          @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  transferCase DirectorTransferCase    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  offers       DirectorContractOffer[]
+
+  @@index([careerId, status, deadlineDay])
+  @@index([playerId, status])
+}
+
+model DirectorContractOffer {
+  id              String   @id @default(cuid())
+  negotiationId   String
+  round           Int
+  weeklyWage      Int
+  years           Int
+  signingBonus    Int      @default(0)
+  appearanceBonus Int      @default(0)
+  goalBonus       Int      @default(0)
+  releaseClause   Int?
+  promisedRole    String
+  promisedShare   Float
+  agentFee        Int      @default(0)
+  playerUtility   Float
+  response        String
+  accepted        Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  negotiation DirectorContractNegotiation @relation(fields: [negotiationId], references: [id], onDelete: Cascade)
+
+  @@unique([negotiationId, round])
+}
+
+model DirectorCompetingBid {
+  id            String   @id @default(cuid())
+  careerId      String
+  caseId        String
+  bidderClubId  String
+  status        String   @default("ACTIVE")
+  upfront       Int
+  guaranteed    Int
+  playerUtility Float
+  expiresDay    Int
+  createdDay    Int
+  createdAt     DateTime @default(now())
+
+  career       DirectorCareer       @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  transferCase DirectorTransferCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@unique([caseId, bidderClubId])
+  @@index([careerId, status, expiresDay])
+}
+
+model DirectorTransferPayment {
+  id          String   @id @default(cuid())
+  careerId    String
+  caseId      String
+  payerClubId String
+  payeeClubId String
+  kind        String
+  amount      Int
+  dueDay      Int?
+  condition   Json?
+  status      String   @default("PENDING")
+  paidDay     Int?
+  createdAt   DateTime @default(now())
+
+  career       DirectorCareer       @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  transferCase DirectorTransferCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, status, dueDay])
+  @@index([caseId, kind])
+}
+
+model DirectorTransferClause {
+  id                String   @id @default(cuid())
+  careerId          String
+  caseId            String
+  playerId          String
+  beneficiaryClubId String
+  kind              String
+  value             Float
+  condition         Json     @default("{}")
+  status            String   @default("ACTIVE")
+  createdAt         DateTime @default(now())
+
+  career       DirectorCareer       @relation(fields: [careerId], references: [id], onDelete: Cascade)
+  transferCase DirectorTransferCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([careerId, playerId, status])
+}
+
+model DirectorScoutingReport {
+  id                    String   @id @default(cuid())
+  careerId              String
+  requestingClubId      String
+  playerId              String
+  dayIndex              Int
+  version               Int      @default(1)
+  abilityMin            Float
+  abilityMax            Float
+  potentialMin          Float
+  potentialMax          Float
+  valueMin              Int
+  valueMax              Int
+  wageMin               Int
+  wageMax               Int
+  tacticalFit           Float
+  personalityConfidence Float
+  completeness          Float
+  expiresDay            Int
+  explanation           Json     @default("[]")
+  createdAt             DateTime @default(now())
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@unique([careerId, requestingClubId, playerId, version])
+  @@index([careerId, requestingClubId, expiresDay])
+}
+
+model DirectorShortlistEntry {
+  id        String   @id @default(cuid())
+  careerId  String
+  clubId    String
+  playerId  String
+  priority  Int      @default(2)
+  status    String   @default("WATCHING")
+  note      String?
+  lastAlert String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  career DirectorCareer @relation(fields: [careerId], references: [id], onDelete: Cascade)
+
+  @@unique([careerId, clubId, playerId])
+  @@index([careerId, clubId, priority])
 }
 
 model DirectorRegistration {
@@ -1534,6 +1714,12 @@ model DirectorClubNeed {
   clubId           String
   kind             String
   target           String
+  desiredRole      String?
+  minAge           Int?
+  maxAge           Int?
+  budgetMin        Int?
+  budgetMax        Int?
+  tacticalFit      Float    @default(50)
   urgency          Float
   reason           String
   status           String   @default("OPEN")

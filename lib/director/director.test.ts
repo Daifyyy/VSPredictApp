@@ -31,6 +31,8 @@ describe("director world", () => {
     const makeClub = (id: string, source: GameTeam, managed: boolean) => ({
       id, careerId: "career", externalTeamId: source.id, name: source.name, shortName: source.short,
       logo: null, primaryColor: source.color, isManaged: managed, tier: 1, baseAttack: source.attack,
+      simulationMode: "DETAIL", competitionName: "Test League", country: "Česko", reputation: 60,
+      marketProfile: {}, reservedCash: 0,
       baseDefense: source.defense, currentForm: 0, cohesion: 62, morale: 64, cashBalance: 1_000_000,
       transferBudget: 200_000, wageBudget: 300_000, weeklyWages: 200_000, fanTrust: 60,
       boardExpectation: "STABILITY", stadiumName: "Stadion", stadiumCapacity: 12000,

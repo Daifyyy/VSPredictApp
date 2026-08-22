@@ -1,4 +1,4 @@
-export const DIRECTOR_WORLD_VERSION = 5;
+export const DIRECTOR_WORLD_VERSION = 6;
 export const MAX_BANKED_STEPS = 3;
 
 export type DirectorSection = "office" | "team" | "market" | "club" | "competitions";
@@ -160,14 +160,15 @@ export interface DirectorDTO {
     medicalAlerts: Array<{ playerId: string; playerName: string; status: string; readiness: number; recurrenceRisk: number; minutesLimit: number | null; returnWindow: string | null; explanation: string }>;
     opponentAnalysis: { opponentName: string; sampleSize: number; predictability: number; uncertainty: number; keyDuels: string[]; explanation: string[] } | null;
   };
-  marketTargets: Array<{ id: string; name: string; club: string; position: string; archetype: string; age: number; estimateMin: number; estimateMax: number; abilityMin: number; abilityMax: number }>;
+  marketTargets: Array<{ id: string; name: string; club: string; country: string | null; competition: string | null; position: string; archetype: string; age: number; estimateMin: number; estimateMax: number; abilityMin: number; abilityMax: number; potentialMin: number; potentialMax: number; wageMin: number; wageMax: number; tacticalFit: number; completeness: number; shortlisted: boolean }>;
   negotiations: Array<{ id: string; playerId: string; playerName: string; clubName: string; status: string; round: number; patience: number; referenceValue: number; response: string | null }>;
   people: {
     transferWindow: { open: boolean; name: string | null; nextDay: number | null };
     staff: Array<{ id: string; role: string; name: string; ability: number; workload: number; weeklyWage: number; relationship: number; status: string; uncertainty: string }>;
     staffCandidates: Array<{ id: string; role: string; name: string; ability: number; weeklyWage: number; personality: string }>;
     squadGroups: Array<{ id: string; kind: string; name: string; influence: number; members: string[] }>;
-    transferCases: Array<{ id: string; playerId: string; playerName: string; sellingClub: string; buyingClub: string; kind: string; status: string; registrationDay: number | null; response: string | null; round: number }>;
+    transferCases: Array<{ id: string; playerId: string; playerName: string; sellingClub: string; buyingClub: string; kind: string; status: string; stage: string; initiatedBy: string; deadlineDay: number | null; registrationDay: number | null; response: string | null; round: number; competingBids: number; failureReason: string | null }>;
+    contractTalks: Array<{ id: string; caseId: string; playerName: string; status: string; round: number; patience: number; deadlineDay: number; response: string | null }>;
     objectives: Array<{ id: string; kind: string; target: number; progress: number | null; status: string; explanation: string }>;
     reviews: Array<{ id: string; kind: string; overall: number; outcome: string; dayIndex: number; explanation: string[] }>;
     coachCandidates: Array<{ id: string; name: string; philosophy: string; reputation: number; ambition: number; wageDemand: number; status: string }>;
@@ -180,6 +181,7 @@ export interface DirectorDTO {
   relationships: Array<{ id: string; actorType: string; actorName: string; trust: number; respect: number; alignment: number; conflicts: number; summary: string }>;
   changes: Array<{ id: string; dayIndex: number; category: string; headline: string; explanation: string; importance: number; sourceType: string; sourceId: string | null }>;
   finances: { receivables: number; liabilities: number; recent: Array<{ id: string; dayIndex: number; category: string; direction: string; amount: number; status: string; description: string }> };
+  market: { needs: Array<{ id: string; position: string; role: string | null; urgency: number; reason: string; budgetMin: number | null; budgetMax: number | null; tacticalFit: number | null }>; shortlist: Array<{ playerId: string; playerName: string; priority: number; status: string; note: string | null; alert: string | null }>; payments: Array<{ id: string; kind: string; amount: number; dueDay: number | null; status: string; direction: string }>; clauses: Array<{ id: string; playerId: string; kind: string; value: number; status: string }>; reservedCash: number; worstProjectedCash: number };
   season: { number: number; currentRound: number; status: string; table: Array<{ position: number; clubId: string; clubName: string; logo: string | null; played: number; wins: number; draws: number; losses: number; goalsFor: number; goalsAgainst: number; points: number; expectedPoints: number; performance: number; isManaged: boolean }> } | null;
   legacyArchiveAvailable: boolean;
 }
