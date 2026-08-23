@@ -4,6 +4,8 @@ import { getCurrentUser } from "@/lib/authUser";
 import { allowRequest, tooMany } from "@/lib/rateLimit";
 import { acceptDirectorSponsor, advanceDirectorDay, createDirectorWorld, financeDirectorProject, getDirectorWorld, isDirectorLeagueAllowed, manageDirectorAcademyPlayer, manageDirectorCoach, manageDirectorStaff, markDirectorAchievementsSeen, openDirectorCoachNegotiation, openDirectorNegotiation, openDirectorTransferCase, publishDirectorStatement, resolveDirectorEvent, resolveDirectorInvestigation, resolveDirectorSportMeeting, resolveIncomingTransfer, rolloverDirectorSeason, scoutDirectorPlayer, startDirectorCapitalProject, startDirectorProject, submitDirectorCoachOffer, submitDirectorContractOffer, submitDirectorOffer, submitDirectorTransferOffer, updateDirectorIdentity, updateDirectorPlayer, updateDirectorShortlist, updateDirectorSportPolicy, updateDirectorTicketPolicy } from "@/lib/director/dal";
 
+export const maxDuration = 60;
+
 const commandSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("create"), leagueId: z.number().int(), teamId: z.number().int(),

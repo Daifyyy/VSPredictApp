@@ -169,11 +169,16 @@ async function upgradePeopleWorld(tx: Prisma.TransactionClient, career: LoadedCa
     await tx.directorMatch.updateMany({ where: { careerId: career.id, seasonId: null }, data: { seasonId: season.id } });
   }
 
-  const agents = await Promise.all(Array.from({ length: Math.max(8, Math.ceil(career.clubs.length * 1.5)) }, async (_, index) => tx.directorAgent.create({ data: {
-    careerId: career.id, name: PERSON_NAMES[index % PERSON_NAMES.length], personality: PERSONALITIES[index % PERSONALITIES.length],
+  await tx.directorAgent.createMany({ data: Array.from({ length: Math.max(8, Math.ceil(career.clubs.length * 1.5)) }, (_, index) => ({
+    careerId: career.id, name: `${PERSON_NAMES[index % PERSON_NAMES.length]} ${Math.floor(index / PERSON_NAMES.length) + 1}`, personality: PERSONALITIES[index % PERSONALITIES.length],
     ambition: 40 + rand() * 50, negotiation: 42 + rand() * 50, loyalty: 35 + rand() * 55,
     priorities: { wage: .35 + rand() * .35, role: .25 + rand() * .3, ambition: .2 + rand() * .3 },
-  } })));
+  })) });
+  const agents = await tx.directorAgent.findMany({ where: { careerId: career.id }, orderBy: { id: "asc" } });
+  const assignments = new Map<string, string[]>();
+  const expectations: Prisma.DirectorPlayerExpectationCreateManyInput[] = [];
+  const squadGroups: Prisma.DirectorSquadGroupCreateManyInput[] = [];
+  const staffMembers: Prisma.DirectorStaffCreateManyInput[] = [];
 
   for (const club of career.clubs) {
     const coach = club.coaches[0];
@@ -183,19 +188,24 @@ async function upgradePeopleWorld(tx: Prisma.TransactionClient, career: LoadedCa
     } });
     for (const player of club.players) {
       const agent = agents[Math.floor(rand() * agents.length)];
-      await tx.directorPlayer.update({ where: { id: player.id }, data: { agentId: agent.id } });
-      await tx.directorPlayerExpectation.create({ data: { careerId: career.id, playerId: player.id, expectedRole: player.promisedRole, targetMinuteShare: targetMinuteShare(player.promisedRole), wageSatisfaction: 48 + rand() * 38, ambition: 40 + rand() * 50, willingness: 62 + rand() * 30 } });
+      assignments.set(agent.id, [...(assignments.get(agent.id) ?? []), player.id]);
+      expectations.push({ careerId: career.id, playerId: player.id, expectedRole: player.promisedRole, targetMinuteShare: targetMinuteShare(player.promisedRole), wageSatisfaction: 48 + rand() * 38, ambition: 40 + rand() * 50, willingness: 62 + rand() * 30 });
     }
     const leaders = club.players.slice().sort((a, b) => b.mentality - a.mentality).slice(0, 4).map((item) => item.id);
     const young = club.players.filter((item) => item.age <= 22).slice(0, 7).map((item) => item.id);
-    await tx.directorSquadGroup.createMany({ data: [
+    squadGroups.push(
       { careerId: career.id, clubId: club.id, kind: "LEADERS", name: "Lídři kabiny", memberIds: leaders, influence: 72 },
       { careerId: career.id, clubId: club.id, kind: "YOUTH", name: "Mladé jádro", memberIds: young, influence: 42 },
-    ], skipDuplicates: true });
-    for (const [index, role] of STAFF_ROLES.entries()) await tx.directorStaff.create({ data: {
+    );
+    for (const [index, role] of STAFF_ROLES.entries()) staffMembers.push({
       careerId: career.id, clubId: club.id, role, name: PERSON_NAMES[(index + club.name.length) % PERSON_NAMES.length], ability: clamp(42 + club.tier * 3 + rand() * 32), personality: PERSONALITIES[(index + 2) % PERSONALITIES.length], weeklyWage: Math.round(900 + rand() * 2600), workload: 28 + rand() * 35, relationship: 52 + rand() * 28, contractUntil: new Date(Date.UTC(career.gameDate.getUTCFullYear() + 2, 5, 30)),
-    } });
+    });
   }
+
+  for (const [agentId, playerIds] of assignments) await tx.directorPlayer.updateMany({ where: { id: { in: playerIds } }, data: { agentId } });
+  await tx.directorPlayerExpectation.createMany({ data: expectations, skipDuplicates: true });
+  await tx.directorSquadGroup.createMany({ data: squadGroups, skipDuplicates: true });
+  await tx.directorStaff.createMany({ data: staffMembers, skipDuplicates: true });
 
   for (let index = 0; index < 6; index++) await tx.directorCoachCandidate.create({ data: {
     careerId: career.id, name: PERSON_NAMES[(index + 4) % PERSON_NAMES.length], personality: PERSONALITIES[index % PERSONALITIES.length], reputation: 45 + rand() * 42, ambition: 48 + rand() * 45, philosophy: ["CONTROL", "PRESS", "TRANSITION", "BALANCED"][index % 4], formation: ["4-3-3", "4-2-3-1", "3-4-2-1"][index % 3], youthDevelopment: 42 + rand() * 48, manManagement: 45 + rand() * 45, matchManagement: 45 + rand() * 45, wageDemand: Math.round(7000 + rand() * 18000),
@@ -219,9 +229,7 @@ async function upgradeSportingWorld(tx: Prisma.TransactionClient, career: Loaded
     const policy = defaultSportingPolicy(coach?.philosophy);
     return { careerId: career.id, clubId: club.id, desiredStyle: policy.desiredStyle, youthPreference: policy.youthPreference, rotationLevel: policy.rotationLevel, trainingIntensity: policy.trainingIntensity, healthRiskTolerance: policy.healthRiskTolerance, phasePriorities: policy.phasePriorities, updatedDay: career.dayIndex };
   }), skipDuplicates: true });
-  for (const player of career.clubs.flatMap((club) => club.players)) {
-    await tx.directorPlayer.update({ where: { id: player.id }, data: { tacticalFamiliarity: roleScores(player), acuteLoad: 20, chronicLoad: 25, matchReadiness: Math.min(100, player.fitness * .92 + player.morale * .08), healthRisk: Math.max(2, (100 - player.fitness) * .22) } });
-  }
+  await tx.directorPlayer.updateMany({ where: { club: { careerId: career.id } }, data: { acuteLoad: 20, chronicLoad: 25, healthRisk: 2 } });
   await tx.directorCausalLog.create({ data: { careerId: career.id, dayIndex: career.dayIndex, sourceType: "MIGRATION", category: "SPORT", headline: "Sportovní provoz přešel na model v4", explanation: "Budoucí zápasy nově používají trenérské plány, role, šest fází hry, střídání a skutečné vytížení. Již odehrané výsledky zůstaly beze změny.", importance: 4 } });
   await tx.directorCareer.update({ where: { id: career.id }, data: { version: 4 } });
 }
@@ -447,7 +455,7 @@ export async function getDirectorWorld(user: CurrentUser): Promise<DirectorDTO |
     if (!career) return null;
   }
   if (career.version < 3) {
-    await prisma.$transaction((tx) => upgradePeopleWorld(tx, career!), { timeout: 30_000 });
+    await prisma.$transaction((tx) => upgradePeopleWorld(tx, career!), { timeout: 60_000 });
     career = await loadActive(user);
     if (!career) return null;
   }
