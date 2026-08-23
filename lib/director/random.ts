@@ -7,6 +7,11 @@ export function hashSeed(...parts: Array<string | number>): number {
   return h >>> 0;
 }
 
+/** Keeps persisted seeds inside PostgreSQL INT4 without changing hashSeed for existing simulations. */
+export function toDatabaseSeed(seed: number): number {
+  return (seed >>> 0) & 0x7fffffff;
+}
+
 export function seeded(seed: number): () => number {
   let a = seed >>> 0;
   return () => {

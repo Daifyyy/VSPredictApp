@@ -8,7 +8,7 @@ import type { CurrentUser } from "@/lib/authUser";
 import type { GameTeam } from "@/lib/game/types";
 import { ACHIEVEMENTS, buildStory, openingStories, pulseForStory } from "./content";
 import { clubEconomy, generateCoach, generatePlayers } from "./generator";
-import { clamp, hashSeed, seeded } from "./random";
+import { clamp, hashSeed, seeded, toDatabaseSeed } from "./random";
 import { DIRECTOR_WORLD_VERSION, MAX_BANKED_STEPS, type DirectorChoice, type DirectorDTO } from "./types";
 import { simulateDirectorMatch } from "./matchEngine";
 import { commitmentState, describeDrivers, diminishingMagnitude, effectAppliedTotal, effectValue, weightedForm } from "./causal";
@@ -497,7 +497,7 @@ export async function createDirectorWorld(input: {
   if (!managed) throw new Error("Vybraný klub ve startovním snapshotu chybí.");
   const startDate = new Date();
   startDate.setUTCHours(12, 0, 0, 0);
-  const seed = hashSeed(input.user.id, input.leagueId, input.teamId, startDate.toISOString().slice(0, 10));
+  const seed = toDatabaseSeed(hashSeed(input.user.id, input.leagueId, input.teamId, startDate.toISOString().slice(0, 10)));
 
   const createdId = await prisma.$transaction(async (tx) => {
     await tx.directorCareer.updateMany({ where: { userId: input.user.id, status: "ACTIVE" }, data: { status: "ARCHIVED" } });
