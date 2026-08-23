@@ -685,6 +685,8 @@ export async function advanceDirectorDay(user: CurrentUser): Promise<DirectorDTO
     }
     for (const transferCase of active.transferCases.filter((item) => item.initiatedBy === "USER" && item.status === "OPEN" && item.stage === "CLUB" && !active.competingBids.some((bid) => bid.caseId === item.id && bid.status === "ACTIVE"))) { const rand = seeded(hashSeed(active.worldSeed, nextDay, transferCase.id, "competing-bid-v6")); if (rand() < .18) { const bidder = clubs.filter((item) => item.id !== transferCase.buyingClubId && item.id !== transferCase.sellingClubId && item.cashBalance > item.weeklyWages * 10).sort((a, b) => b.reputation - a.reputation)[0]; const target = clubs.flatMap((item) => item.players).find((item) => item.id === transferCase.playerId); if (bidder && target) await tx.directorCompetingBid.create({ data: { careerId: active.id, caseId: transferCase.id, bidderClubId: bidder.id, upfront: Math.round(target.marketValue * (.85 + rand() * .25)), guaranteed: Math.round(target.marketValue * (1 + rand() * .2)), playerUtility: .85 + bidder.reputation / 500, expiresDay: nextDay + 4, createdDay: nextDay } }); } }
     await tx.directorCompetingBid.updateMany({ where: { careerId: active.id, status: "ACTIVE", expiresDay: { lt: nextDay } }, data: { status: "EXPIRED" } });
+    const dailyPlayerUpdates: Array<Record<string, unknown>> = [];
+    const dailyMedicalReports: Prisma.DirectorMedicalReportCreateManyInput[] = [];
     for (const team of clubs) {
       const coachForPolicy = team.coaches.find((item) => item.status === "ACTIVE") ?? team.coaches[0];
       const stored = sportPolicies.find((item) => item.clubId === team.id);
@@ -702,11 +704,29 @@ export async function advanceDirectorDay(user: CurrentUser): Promise<DirectorDTO
       const medicalStaff = active.staff.find((item) => item.clubId === team.id && item.role === "MEDICAL" && item.status === "ACTIVE");
       for (const squadPlayer of team.players) {
         const update = trainingUpdate(squadPlayer, { ...policy, trainingIntensity: cycle.intensity }, nextDay, active.worldSeed); const health = medicalState({ injuryDays: squadPlayer.injuryDays, fitness: update.fitness, acuteLoad: update.acuteLoad, chronicLoad: update.chronicLoad, previousStatus: squadPlayer.healthStatus, currentDay: nextDay, medicalInformationQuality: medicalStaff?.ability ?? 35, seed: hashSeed(active.worldSeed, squadPlayer.id) }); const familiarity = evolveRoleFamiliarity({ familiarity: squadPlayer.tacticalFamiliarity as Record<string, number>, minutes: 0, tacticalTraining: cycle.kind === "TACTICAL" });
-        await tx.directorPlayer.update({ where: { id: squadPlayer.id }, data: { ...update, tacticalFamiliarity: familiarity, healthStatus: health.status, healthIssueType: health.issueType, returnWindowMin: health.estimatedMinDay, returnWindowMax: health.estimatedMaxDay, minutesLimit: health.minutesLimit, recurrenceRisk: health.recurrenceRisk } });
-        await tx.directorMedicalReport.upsert({ where: { careerId_playerId_dayIndex: { careerId: active.id, playerId: squadPlayer.id, dayIndex: nextDay } }, create: { careerId: active.id, clubId: team.id, playerId: squadPlayer.id, dayIndex: nextDay, status: health.status, issueType: health.issueType, readiness: health.readiness, recurrenceRisk: health.recurrenceRisk, estimatedMinDay: health.estimatedMinDay, estimatedMaxDay: health.estimatedMaxDay, minutesLimit: health.minutesLimit, uncertainty: health.uncertainty, explanation: health.status === "FIT" ? "Hráč je bez známého omezení." : health.status === "RETURNING" ? "Návrat vyžaduje omezené minuty kvůli riziku recidivy." : "Dostupnost omezuje aktuální zdravotní stav nebo zátěž." }, update: {} });
+        dailyPlayerUpdates.push({ id: squadPlayer.id, ...update, tacticalFamiliarity: familiarity, healthStatus: health.status, healthIssueType: health.issueType, returnWindowMin: health.estimatedMinDay, returnWindowMax: health.estimatedMaxDay, minutesLimit: health.minutesLimit, recurrenceRisk: health.recurrenceRisk });
+        dailyMedicalReports.push({ careerId: active.id, clubId: team.id, playerId: squadPlayer.id, dayIndex: nextDay, status: health.status, issueType: health.issueType, readiness: health.readiness, recurrenceRisk: health.recurrenceRisk, estimatedMinDay: health.estimatedMinDay, estimatedMaxDay: health.estimatedMaxDay, minutesLimit: health.minutesLimit, uncertainty: health.uncertainty, explanation: health.status === "FIT" ? "Hráč je bez známého omezení." : health.status === "RETURNING" ? "Návrat vyžaduje omezené minuty kvůli riziku recidivy." : "Dostupnost omezuje aktuální zdravotní stav nebo zátěž." });
         Object.assign(squadPlayer, update, { tacticalFamiliarity: familiarity, matchReadiness: health.readiness, healthStatus: health.status, minutesLimit: health.minutesLimit, recurrenceRisk: health.recurrenceRisk });
       }
     }
+    if (dailyPlayerUpdates.length) await tx.$executeRaw`
+      UPDATE "DirectorPlayer" AS player SET
+        "acuteLoad" = patch."acuteLoad", "chronicLoad" = patch."chronicLoad",
+        "matchReadiness" = patch."matchReadiness", "healthRisk" = patch."healthRisk",
+        "fitness" = patch.fitness, "tacticalFamiliarity" = patch."tacticalFamiliarity",
+        "healthStatus" = patch."healthStatus", "healthIssueType" = patch."healthIssueType",
+        "returnWindowMin" = patch."returnWindowMin", "returnWindowMax" = patch."returnWindowMax",
+        "minutesLimit" = patch."minutesLimit", "recurrenceRisk" = patch."recurrenceRisk",
+        "updatedAt" = CURRENT_TIMESTAMP
+      FROM jsonb_to_recordset(${JSON.stringify(dailyPlayerUpdates)}::jsonb) AS patch(
+        id text, "acuteLoad" double precision, "chronicLoad" double precision,
+        "matchReadiness" double precision, "healthRisk" double precision, fitness double precision,
+        "tacticalFamiliarity" jsonb, "healthStatus" text, "healthIssueType" text,
+        "returnWindowMin" integer, "returnWindowMax" integer, "minutesLimit" integer,
+        "recurrenceRisk" double precision
+      ) WHERE player.id = patch.id
+    `;
+    await tx.directorMedicalReport.createMany({ data: dailyMedicalReports, skipDuplicates: true });
     const upcomingManaged = active.matches.find((match) => match.status === "SCHEDULED" && match.scheduledDay > nextDay && match.scheduledDay <= nextDay + 2 && (match.homeClubId === club.id || match.awayClubId === club.id));
     if (upcomingManaged) {
       const existingMeeting = await tx.directorSportMeeting.findFirst({ where: { careerId: active.id, matchId: upcomingManaged.id, status: "OPEN" } });
@@ -921,16 +941,35 @@ export async function advanceDirectorDay(user: CurrentUser): Promise<DirectorDTO
     }
 
     const managedMatches = allMatches.filter((item) => item.status === "PLAYED" && (item.homeClubId === club.id || item.awayClubId === club.id)).length;
+    const expectationUpdates: Array<Record<string, unknown>> = [];
+    const expectationPlayerUpdates: Array<Record<string, unknown>> = [];
     for (const expectation of active.expectations) {
       const squadPlayer = clubs.flatMap((item) => item.players).find((item) => item.id === expectation.playerId);
       if (!squadPlayer) continue;
       const owner = clubs.find((item) => item.players.some((candidate) => candidate.id === squadPlayer.id));
       const teamMatches = owner?.isManaged ? managedMatches : allMatches.filter((item) => item.status === "PLAYED" && (item.homeClubId === owner?.id || item.awayClubId === owner?.id)).length;
       const result = playerExpectation({ promisedRole: expectation.expectedRole, appearances: squadPlayer.appearances, minutes: squadPlayer.minutes, availableTeamMatches: teamMatches, injuryDays: squadPlayer.injuryDays, currentStage: expectation.escalationStage, morale: squadPlayer.morale });
-      await tx.directorPlayerExpectation.update({ where: { id: expectation.id }, data: { actualMinuteShare: result.actualShare, escalationStage: result.nextStage, status: result.status, reasons: [result.reason], lastEvaluatedDay: nextDay } });
-      if (result.moraleDelta) await tx.directorPlayer.update({ where: { id: squadPlayer.id }, data: { morale: clamp(squadPlayer.morale + result.moraleDelta), transferStatus: result.nextStage >= 4 ? "REQUESTED_TRANSFER" : squadPlayer.transferStatus } });
+      expectationUpdates.push({ id: expectation.id, actualMinuteShare: result.actualShare, escalationStage: result.nextStage, status: result.status, reasons: [result.reason], lastEvaluatedDay: nextDay });
+      if (result.moraleDelta) expectationPlayerUpdates.push({ id: squadPlayer.id, morale: clamp(squadPlayer.morale + result.moraleDelta), transferStatus: result.nextStage >= 4 ? "REQUESTED_TRANSFER" : squadPlayer.transferStatus });
       if (owner?.isManaged && result.nextStage > expectation.escalationStage && result.nextStage >= 2) await tx.directorCausalLog.create({ data: { careerId: active.id, dayIndex: nextDay, sourceType: "PLAYER_EXPECTATION", sourceId: expectation.id, category: "SQUAD", headline: `${squadPlayer.firstName} ${squadPlayer.lastName}: ${result.status === "TRANSFER_REQUEST" ? "žádost o přestup" : "nespokojenost s rolí"}`, explanation: result.reason, targetType: "PLAYER", targetId: squadPlayer.id, importance: result.nextStage >= 4 ? 3 : 2 } });
     }
+    if (expectationUpdates.length) await tx.$executeRaw`
+      UPDATE "DirectorPlayerExpectation" AS expectation SET
+        "actualMinuteShare" = patch."actualMinuteShare", "escalationStage" = patch."escalationStage",
+        status = patch.status, reasons = patch.reasons, "lastEvaluatedDay" = patch."lastEvaluatedDay",
+        "updatedAt" = CURRENT_TIMESTAMP
+      FROM jsonb_to_recordset(${JSON.stringify(expectationUpdates)}::jsonb) AS patch(
+        id text, "actualMinuteShare" double precision, "escalationStage" integer,
+        status text, reasons jsonb, "lastEvaluatedDay" integer
+      ) WHERE expectation.id = patch.id
+    `;
+    if (expectationPlayerUpdates.length) await tx.$executeRaw`
+      UPDATE "DirectorPlayer" AS player SET morale = patch.morale,
+        "transferStatus" = patch."transferStatus", "updatedAt" = CURRENT_TIMESTAMP
+      FROM jsonb_to_recordset(${JSON.stringify(expectationPlayerUpdates)}::jsonb) AS patch(
+        id text, morale double precision, "transferStatus" text
+      ) WHERE player.id = patch.id
+    `;
 
     const activeSeason = await tx.directorSeason.findFirst({ where: { careerId: active.id, status: "ACTIVE" }, orderBy: { number: "desc" } });
     if (activeSeason) {
@@ -984,7 +1023,7 @@ export async function advanceDirectorDay(user: CurrentUser): Promise<DirectorDTO
       await tx.directorPulsePost.create({ data: { careerId: active.id, dayIndex: nextDay, topic: story.category, relatedType: "EVENT", relatedId: created.id, ...pulse } });
     }
     if (nextDay === 1) await unlock(tx, active.id, ACHIEVEMENTS.firstDay);
-  }, { timeout: 30_000 });
+  }, { timeout: 55_000 });
   return (await getDirectorWorld(user))!;
 }
 
