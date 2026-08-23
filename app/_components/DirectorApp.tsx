@@ -30,14 +30,29 @@ export function DirectorApp({ user }: { user: SessionUser | null }) {
   const [section, setSection] = useState<DirectorSection>("office");
   const [busy, setBusy] = useState(false);
 
+  async function loadWorld(signal?: AbortSignal, attempts = 4) {
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      try {
+        const response = await fetch("/api/director", { cache: "no-store", signal });
+        const data = await response.json().catch(() => ({}));
+        if (response.ok) return data.world as DirectorDTO | null;
+        lastError = new Error(data.error ?? "Kariéru se nepodařilo načíst.");
+      } catch (loadError) {
+        if ((loadError as Error).name === "AbortError") throw loadError;
+        lastError = loadError as Error;
+      }
+      if (attempt < attempts - 1) await new Promise((resolve) => setTimeout(resolve, 900 * (attempt + 1)));
+    }
+    throw lastError ?? new Error("Kariéru se nepodařilo načíst.");
+  }
+
   useEffect(() => {
     if (!user) return;
     const controller = new AbortController();
-    fetch("/api/director", { cache: "no-store", signal: controller.signal })
-      .then(async (response) => ({ response, data: await response.json().catch(() => ({})) }))
-      .then(({ response, data }) => {
-        if (!response.ok) setError(data.error ?? "Kariéru se nepodařilo načíst.");
-        else setWorld(data.world ?? null);
+    loadWorld(controller.signal)
+      .then((loadedWorld) => {
+        setWorld(loadedWorld);
         setLoading(false);
       })
       .catch((fetchError) => {
@@ -51,11 +66,18 @@ export function DirectorApp({ user }: { user: SessionUser | null }) {
 
   async function command(payload: object) {
     setBusy(true); setError(null);
-    const response = await fetch("/api/director", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) setError(data.error ?? "Akci se nepodařilo dokončit.");
-    else setWorld(data.world);
-    setBusy(false);
+    try {
+      const response = await fetch("/api/director", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error ?? "Akci se nepodařilo dokončit.");
+      setWorld(data.world);
+    } catch (commandError) {
+      if ("action" in payload && payload.action === "create") {
+        setError("Dokončuji inicializaci klubového světa…");
+        try { setWorld(await loadWorld(undefined, 5)); setError(null); }
+        catch (recoveryError) { setError((recoveryError as Error).message); }
+      } else setError((commandError as Error).message);
+    } finally { setBusy(false); }
   }
 
   if (!user) return <SignInState />;
