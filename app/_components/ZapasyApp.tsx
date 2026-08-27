@@ -1520,6 +1520,27 @@ function PlayedRow({ fixture }: { fixture: PlayedFixture }) {
           {tip.experimental ? " · experimentální" : ""}
         </div>
       )}
+      {fixture.modelReview && (
+        <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1" aria-label="Stručný audit modelových prognóz">
+          {fixture.modelReview.chips.map((chip) => (
+            <span
+              key={chip.market}
+              title={`${chip.label}: ${chip.value} · ${chip.result}`}
+              className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-medium ${
+                chip.tone === "positive"
+                  ? "border-positive/25 bg-positive/10 text-positive"
+                  : chip.tone === "negative"
+                    ? "border-negative/25 bg-negative/10 text-negative"
+                    : chip.tone === "warning"
+                      ? "border-warning/30 bg-warning/10 text-warning"
+                      : "border-border bg-background text-muted"
+              }`}
+            >
+              {chip.label.replace("Prognóza · ", "")} · {chip.value} · {chip.result}
+            </span>
+          ))}
+        </div>
+      )}
       <KnockoutResult fixture={fixture} />
     </>
   );
@@ -1539,12 +1560,59 @@ function PlayedRow({ fixture }: { fixture: PlayedFixture }) {
         aria-expanded={open}
         className="w-full rounded-lg px-3 py-1 text-left text-[11px] text-muted transition hover:text-foreground"
       >
-        {open ? "▾" : "▸"} Přehled zápasu
+        {open ? "▾" : "▸"} {fixture.modelReview ? "Předzápasový audit" : "Přehled zápasu"}
       </button>
       {/* Panel se montuje až po otevření → fetch se pustí jen na vyžádání. */}
-      {open && <MatchReportPanel match={fixture} />}
+      {open && (
+        <div className="space-y-2">
+          {fixture.modelReview && <ResultModelAudit fixture={fixture} />}
+          <MatchReportPanel match={fixture} />
+        </div>
+      )}
     </li>
   );
+}
+
+function ResultModelAudit({ fixture }: { fixture: PlayedFixture }) {
+  const review = fixture.modelReview!;
+  const pct = (value: number) => `${(value * 100).toFixed(1)} %`;
+  const countRows = [["Rohy", review.counts.corners], ["Karty", review.counts.cards], ["Fauly", review.counts.fouls]] as const;
+  return (
+    <section className="rounded-xl border border-border bg-surface p-3 shadow-sm" aria-label="Předzápasový audit modelu">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div><p className="section-kicker">Původní předzápasový snapshot</p><h3 className="mt-1 text-sm font-semibold text-foreground">Prognóza, skutečnost a trh</h3></div>
+        <span className="rounded-full bg-background px-2 py-1 text-[10px] text-muted">model v{review.modelVersion} · {review.context} · vzorek {review.readinessSample.toFixed(1)}{review.lowConfidence ? " · omezená spolehlivost" : ""}</span>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-3">
+        <AuditMetric label="1X2" value={`${fixture.home.name} ${pct(review.probabilities.home)} · remíza ${pct(review.probabilities.draw)} · ${fixture.away.name} ${pct(review.probabilities.away)}`} />
+        <AuditMetric label="Góly" value={`očekávání ${review.expectedScore.home.toFixed(2)}:${review.expectedScore.away.toFixed(2)} · Over 2,5 ${pct(review.probabilities.over25)}`} />
+        <AuditMetric label="BTTS Ano" value={`${pct(review.probabilities.bttsYes)} · skutečnost ${fixture.homeGoals > 0 && fixture.awayGoals > 0 ? "ano" : "ne"}`} />
+      </div>
+      <div className="mt-2 grid gap-2 sm:grid-cols-3">
+        {countRows.map(([label, item]) => <AuditMetric key={label} label={label} value={item.expected == null ? "model nebyl dostupný" : `model ${item.expected.toFixed(1)} · skutečnost ${item.actual?.toFixed(0) ?? "—"} · chyba ${item.error?.toFixed(1) ?? "—"}`} />)}
+      </div>
+      {review.market.length > 0 && (
+        <details className="mt-3 rounded-lg border border-border bg-background">
+          <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-foreground">Trh a CLV ({review.market.length})</summary>
+          <div className="space-y-1 border-t border-border px-3 py-2 text-xs text-muted">
+            {review.market.map((row, index) => <p key={`${row.market}-${row.side}-${index}`}><span className="font-medium text-foreground">{row.market} · {row.side}{row.line == null ? "" : ` ${row.line}`}</span>{` · otevření ${pct(row.open)}`}{row.close == null ? " · bez srovnatelného čerstvého closingu" : ` · closing ${pct(row.close)} · posun ${(row.movement! * 100).toFixed(1)} p. b.`}</p>)}
+          </div>
+        </details>
+      )}
+      {review.portfolio.length > 0 && (
+        <div className="mt-3 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-xs">
+          <p className="font-semibold text-foreground">Portfolio · zmrazená experimentální simulace 1u</p>
+          {review.portfolio.map((entry) => <p key={`${entry.strategy}-${entry.policyVersion}`} className="mt-1 text-muted">{entry.strategy} v{entry.policyVersion} · kurz {entry.odds?.toFixed(2) ?? "—"} · {entry.hit == null ? "nevyhodnoceno" : entry.hit ? "vyšlo" : "nevyšlo"} · {entry.profit == null ? "zisk —" : `${entry.profit >= 0 ? "+" : ""}${entry.profit.toFixed(2)} j`}</p>)}
+        </div>
+      )}
+      {review.referee.name && <p className="mt-3 text-xs text-muted">Rozhodčí {review.referee.name} · karetní faktor {review.referee.factor?.toFixed(2) ?? "—"} · vzorek {review.referee.sample ?? 0}</p>}
+      <p className="mt-3 text-[10px] leading-4 text-muted">Běžná prognóza není publikovaný tip. Barva pouze porovnává tehdejší modelový výstup se skutečností; u početních modelů je zelená tolerance ±1.</p>
+    </section>
+  );
+}
+
+function AuditMetric({ label, value }: { label: string; value: string }) {
+  return <div className="rounded-lg border border-border bg-background px-3 py-2"><div className="text-[10px] uppercase tracking-wide text-muted">{label}</div><div className="mt-1 text-xs leading-5 text-foreground">{value}</div></div>;
 }
 
 function KnockoutResult({ fixture }: { fixture: PlayedFixture }) {

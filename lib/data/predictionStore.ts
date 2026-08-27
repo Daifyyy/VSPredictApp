@@ -427,11 +427,24 @@ export async function applyResult(
   fixtureId: number,
   status: string,
   homeGoals: number | null,
-  awayGoals: number | null
+  awayGoals: number | null,
+  knockout?: {
+    extraTime: { home: number; away: number } | null;
+    penalty: { home: number; away: number } | null;
+    winnerTeamId: number | null;
+  }
 ): Promise<void> {
   await prisma.fixturePrediction.update({
     where: { fixtureId },
-    data: { status, homeGoals, awayGoals, settledAt: new Date() },
+    data: {
+      status, homeGoals, awayGoals,
+      extraTimeHomeGoals: knockout?.extraTime?.home ?? null,
+      extraTimeAwayGoals: knockout?.extraTime?.away ?? null,
+      penaltyHomeGoals: knockout?.penalty?.home ?? null,
+      penaltyAwayGoals: knockout?.penalty?.away ?? null,
+      winnerTeamId: knockout?.winnerTeamId ?? null,
+      settledAt: new Date(),
+    },
   });
 }
 

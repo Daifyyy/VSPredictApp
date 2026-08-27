@@ -11,6 +11,7 @@ import {
   getCompareNationalTeamFromFixture,
   getCompareNationalHomeAwayTeamFromFixture,
   getLeagueCountBaseline,
+  cacheFinishedFixtureStats,
 } from "./realRepository";
 import {
   DEFAULT_CORNER_BASELINE,
@@ -42,7 +43,7 @@ import {
   fetchOdds,
   FINISHED_STATUSES,
 } from "./apiFootball";
-import { fullTimeGoals } from "./fixtures";
+import { fullTimeGoals, knockoutResult } from "./fixtures";
 import {
   upsertPrediction,
   getUnsettledPredictions,
@@ -59,6 +60,7 @@ import {
   parseSeries,
   seriesPointFrom,
   snapshotPlan,
+  snapshotPriority,
 } from "@/lib/picks/oddsSeries";
 import {
   appendMarketSignalPoints,
@@ -79,7 +81,6 @@ import { MODEL_CONTEXT_VERSION, modelContextForLeague } from "./modelContext";
 import { getRefereeProfile, ingestRefereeHistory } from "./refereeStore";
 import { normalizeRefereeName, type RefereeEstimate } from "@/lib/picks/cards";
 import { FOUL_MODEL_VERSION, predictFouls } from "@/lib/picks/fouls";
-import { captureChecklistDecisions } from "./checklistStore";
 import { captureAutonomousPortfolio, closeAutonomousPortfolio } from "./autonomousPortfolioStore";
 
 /**
@@ -198,6 +199,8 @@ export interface PredictUpcomingResult {
    * `errors: 24` (vypršel API klíč). Bez toho vypadají oba v logu identicky.
    */
   errors: number;
+  eligible24h: number;
+  ready24h: number;
 }
 
 /**
@@ -300,6 +303,8 @@ export async function runPredictUpcoming(
   let covered = 0;
   let stopped = false;
   let errors = 0;
+  let eligible24h = 0;
+  let ready24h = 0;
   for (const leagueId of queue) {
     if (Date.now() >= deadline) {
       stopped = true;
@@ -358,6 +363,8 @@ export async function runPredictUpcoming(
     };
     for (const f of upcoming) {
       fixtures++;
+      const within24h = new Date(f.fixture.date).getTime() <= Date.now() + 24 * 60 * 60_000;
+      if (within24h) eligible24h++;
       try {
         const [home, away] = await Promise.all([
           buildSide(f.teams.home),
@@ -443,6 +450,7 @@ export async function runPredictUpcoming(
           h2hCapturedAt: h2hCapturedAt.toISOString(),
         });
         predicted++;
+        if (within24h) ready24h++;
 
         // Interní benchmark: predikce API-Footballu (1X2) na týž řádek. Jen klubové
         // ligy (reprezentace API predikce nemá), jen 1× za život zápasu (drží náklady
@@ -480,7 +488,7 @@ export async function runPredictUpcoming(
       }
     }
   }
-  return { leagues: queue.length, covered, fixtures, predicted, stopped, errors };
+  return { leagues: queue.length, covered, fixtures, predicted, stopped, errors, eligible24h, ready24h };
 }
 
 /**
@@ -498,7 +506,8 @@ export async function runPredictUpcoming(
  * skoro zadarmo (pár desítek malých řádků ze selectu) a chrání před tím, aby při
  * nabitém víkendu zůstal konec seznamu bez prvního snímku. Reálně je „due" ~16/hod.
  */
-const SNAPSHOT_LIMIT = 120;
+const SNAPSHOT_LIMIT = 40;
+const SNAPSHOT_SCAN_LIMIT = 500;
 
 /**
  * **Snímky kurzů** – otevírací, zavírací a body **časové řady** pro zápasy v okně.
@@ -544,6 +553,7 @@ export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
   checklistCandidates: number;
   checklistNotifications: number;
   autonomousCandidates: number;
+  remaining: number;
 }> {
   const now = new Date();
   const candidates = await fixturesNeedingOdds({
@@ -552,8 +562,19 @@ export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
     leagueIds: [...PREDICTION_LEAGUES, ...EURO_CUP_PREDICTION_LEAGUES],
     now,
     lookaheadHours: ODDS_LOOKAHEAD_HOURS,
-    limit,
+    limit: SNAPSHOT_SCAN_LIMIT,
   });
+
+  const planned = candidates
+    .map((item) => ({ item, plan: snapshotPlan(item, now, ODDS_CLOSING_HOURS) }))
+    .filter((entry) => entry.plan.fetch)
+    .sort((a, b) => {
+      const minsA = (a.item.kickoff.getTime() - now.getTime()) / 60_000;
+      const minsB = (b.item.kickoff.getTime() - now.getTime()) / 60_000;
+      return snapshotPriority(a.plan, minsA) - snapshotPriority(b.plan, minsB) || minsA - minsB;
+    });
+  const queue = planned.slice(0, limit);
+  const remaining = Math.max(0, planned.length - queue.length);
 
   let open = 0;
   let close = 0;
@@ -562,16 +583,14 @@ export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
   let errors = 0;
   let due = 0;
   let withBooks = 0;
-  let checklistCandidates = 0;
-  let checklistNotifications = 0;
+  const checklistCandidates = 0;
+  const checklistNotifications = 0;
   let autonomousCandidates = 0;
   const coverage = emptyCoverage();
 
-  for (const item of candidates) {
+  for (const { item, plan } of queue) {
     // Čisté rozhodnutí: co se má z tohohle zápasu udělat. Zápas, který nepotřebuje nic,
     // se kvóty ani nedotkne.
-    const plan = snapshotPlan(item, now, ODDS_CLOSING_HOURS);
-    if (!plan.fetch) continue;
     due++;
     try {
       // JEDEN fetch pro všechny tři účely – `/odds` vrací všechno naráz, takže
@@ -614,20 +633,12 @@ export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
         }
         await appendMarketSignalPoints(item.fixtureId, odds.books ?? [], now);
       }
-      const candidates = await captureChecklistDecisions(item.fixtureId, odds.books ?? [], now);
       autonomousCandidates += await captureAutonomousPortfolio(item.fixtureId, odds.books ?? [], now);
       // Kandidat muze poprve vzniknout prave v zaviracim bode; nejdriv jej zmrazime a az
       // potom k nemu pripojime srovnatelne uzavreni stejne strany/linie.
       if (plan.close) await closeAutonomousPortfolio(item.fixtureId, odds.books ?? [], now);
-      checklistCandidates += candidates.length;
-      if (candidates.length) {
-        // Dynamický import drží offline kalibrační/backtest skripty nezávislé na Next-only
-        // Web Push vrstvě (`server-only`). Načte se pouze v kurzovém cronu, když kandidát vznikne.
-        const { sendChecklistCandidateNotifications } = await import("@/lib/push");
-        const notification = await sendChecklistCandidateNotifications(candidates);
-        checklistNotifications += notification.sent;
-        errors += notification.errors;
-      }
+      // Checklist v2 pouze vysvětluje stejné brány jako portfolio. Nevytváří vlastní
+      // účetní výběr ani push; v1 zůstává v DB jako neměnný historický archiv.
     } catch (e) {
       errors++;
       logError("snapshot-odds", e, { fixtureId: item.fixtureId, plan });
@@ -644,19 +655,25 @@ export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
       { withBooks, coverage }
     );
   }
-  return { due, open, close, series, empty, errors, withBooks, coverage, missingMarkets, checklistCandidates, checklistNotifications, autonomousCandidates };
+  return { due, open, close, series, empty, errors, withBooks, coverage, missingMarkets, checklistCandidates, checklistNotifications, autonomousCandidates, remaining };
 }
 
 /** Dotáhne výsledky u predikcí, jejichž zápas už proběhl (batch po 20 ID). */
 export async function runSettleResults(): Promise<{
   pending: number;
   settled: number;
+  statsSaved: number;
+  statsMissing: number;
+  statsErrors: number;
   /** Kolik dávek po 20 se nepodařilo stáhnout (viz `errors` u ostatních běhů). */
   errors: number;
 }> {
   const pending = await getUnsettledPredictions();
   let settled = 0;
   let errors = 0;
+  let statsSaved = 0;
+  let statsMissing = 0;
+  let statsErrors = 0;
   for (let i = 0; i < pending.length; i += 20) {
     const chunk = pending.slice(i, i + 20);
     let fixtures;
@@ -677,11 +694,20 @@ export async function runSettleResults(): Promise<{
         f.fixture.id,
         f.fixture.status.short,
         ft?.home ?? null,
-        ft?.away ?? null
+        ft?.away ?? null,
+        knockoutResult(f)
       );
       settled++;
+      try {
+        const cached = await cacheFinishedFixtureStats(f);
+        if (cached === "fetched" || cached === "cached") statsSaved++;
+        else statsMissing++;
+      } catch (error) {
+        statsErrors++;
+        logError("predictions.runSettleResults.statistics", error, { fixtureId: f.fixture.id });
+      }
     }
     await ingestRefereeHistory(fixtures);
   }
-  return { pending: pending.length, settled, errors };
+  return { pending: pending.length, settled, statsSaved, statsMissing, statsErrors, errors: errors + statsErrors };
 }

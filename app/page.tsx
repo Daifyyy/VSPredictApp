@@ -6,6 +6,7 @@ import { mergeTips } from "@/lib/picks/results";
 import { connection } from "next/server";
 import { logError } from "@/lib/logError";
 import type { FixtureDay } from "@/lib/types";
+import { getResultModelReviews, mergeResultModelReviews } from "@/lib/data/resultModelReviews";
 
 export const metadata: Metadata = {
   title: "Fotbalové zápasy dnes a tento týden",
@@ -57,7 +58,15 @@ export default async function Home() {
     logError("page.home.data", error);
   }
   // Náš tip je **překryv** nad odehraným zápasem, ne podmínka jeho zobrazení.
-  const days = mergeTips(rawDays, results);
+  const withTips = mergeTips(rawDays, results);
+  const reviewIds = withTips.flatMap((day) => day.played.map((fixture) => fixture.fixtureId));
+  let days = withTips;
+  try {
+    days = mergeResultModelReviews(withTips, await getResultModelReviews(reviewIds));
+  } catch (error) {
+    // Modelový audit je obohacení. Výpadek DB nesmí skrýt samotné výsledky.
+    logError("page.home.model-reviews", error);
+  }
 
   return (
     <div className="flex-1">

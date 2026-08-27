@@ -104,6 +104,14 @@ export interface SnapshotPlan {
   series: boolean;
 }
 
+/** Menší číslo = dřívější zpracování v omezené serverless dávce. */
+export function snapshotPriority(plan: SnapshotPlan, minutesToKickoff: number): number {
+  if (plan.close && minutesToKickoff <= RELIABLE_CLOSE_MAX_MINUTES) return 0;
+  if (minutesToKickoff <= 6 * 60) return 1;
+  if (plan.open) return 2;
+  return 3;
+}
+
 export interface SnapshotState {
   kickoff: Date;
   oddsFetchedAt: Date | null;

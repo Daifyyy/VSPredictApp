@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Metric } from "@/lib/types";
 import { schedule } from "./rateLimiter";
+import { countApiCall } from "@/lib/apiUsage";
 
 /**
  * Klient API-Football v3 (přímé API api-sports.io, hlavička x-apisports-key).
@@ -51,6 +52,7 @@ async function doFetch<T>(
   params: Record<string, string | number>,
   schema: z.ZodType<T>
 ): Promise<T> {
+  countApiCall();
   const url = new URL(`${BASE_URL}${path}`);
   for (const [k, v] of Object.entries(params)) {
     url.searchParams.set(k, String(v));

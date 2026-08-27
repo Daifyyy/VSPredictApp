@@ -100,6 +100,7 @@ import {
   getConfederation,
   isEuroCupLeague,
   isNationalLeague,
+  isNationalTournamentLeague,
   isNeutralNationalLeague,
   leagueDisplayName,
   teamLogoUrl,
@@ -1469,6 +1470,30 @@ function buildMatchStat(
     metrics,
     opponent: { id: opp.id, name: opp.name, logoUrl: opp.logo },
   };
+}
+
+/**
+ * Doplní neměnné pozápasové statistiky během settlementu. Jeden API request vrací
+ * obě strany a oba řádky se uloží společně; existující úplná cache znamená 0 volání.
+ */
+export async function cacheFinishedFixtureStats(f: ApiFixture): Promise<"cached" | "fetched" | "missing"> {
+  const existing = await getCachedFixtureStats(f.fixture.id);
+  if (existing.has(f.teams.home.id) && existing.has(f.teams.away.id)) return "cached";
+  const stats = await fetchFixtureStatistics(f.fixture.id);
+  const homeRaw = stats.find((row) => row.team.id === f.teams.home.id) ?? null;
+  const awayRaw = stats.find((row) => row.team.id === f.teams.away.id) ?? null;
+  if (!homeRaw && !awayRaw) return "missing";
+  const context: MatchContext = isEuroCupLeague(f.league.id)
+    ? "euro"
+    : isNationalTournamentLeague(f.league.id) ? "national" : "league";
+  const isNeutral = isNeutralNationalLeague(f.league.id) ||
+    (isEuroCupLeague(f.league.id) && /(?:^|\s)final(?:\s|$)/i.test(f.league.round ?? ""));
+  const opts = { competitive: true, isNeutral };
+  await Promise.all([
+    saveMatchStats(f.teams.home.id, context, [buildMatchStat(f, f.teams.home.id, homeRaw, awayRaw, opts)]),
+    saveMatchStats(f.teams.away.id, context, [buildMatchStat(f, f.teams.away.id, awayRaw, homeRaw, opts)]),
+  ]);
+  return "fetched";
 }
 
 // ---- Pomocné ----

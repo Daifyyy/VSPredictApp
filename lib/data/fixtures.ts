@@ -199,6 +199,21 @@ export function fullTimeGoals(
   return { home, away };
 }
 
+/** Bezpečně známý konečný kontext vyřazovacího zápasu vedle výsledku po 90 minutách. */
+export function knockoutResult(f: ApiFixture) {
+  const pair = (value: { home?: number | null; away?: number | null } | null | undefined) =>
+    typeof value?.home === "number" && typeof value.away === "number"
+      ? { home: value.home, away: value.away } : null;
+  const extraTime = f.fixture.status.short === "AET" || f.fixture.status.short === "PEN"
+    ? pair(f.score?.extratime) : null;
+  const penalty = f.fixture.status.short === "PEN" ? pair(f.score?.penalty) : null;
+  const deciding = penalty && penalty.home !== penalty.away ? penalty
+    : extraTime && extraTime.home !== extraTime.away ? extraTime : null;
+  const winnerTeamId = !deciding ? null
+    : deciding.home > deciding.away ? f.teams.home.id : f.teams.away.id;
+  return { extraTime, penalty, winnerTeamId };
+}
+
 /**
  * Vybere „poslední kolo" (nejnovější skupina odehraných zápasů) nebo „příští kolo"
  * (nejbližší skupina nadcházejících) z ligou vrácené sady zápasů – Tabulky. API nemá

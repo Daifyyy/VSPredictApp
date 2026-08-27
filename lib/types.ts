@@ -300,6 +300,52 @@ export interface FixtureTip {
   policyVersion: number;
 }
 
+export type ModelReviewTone = "positive" | "warning" | "negative" | "neutral";
+
+export interface ModelReviewChip {
+  market: "1X2" | "OVER_25" | "BTTS" | "CORNERS" | "CARDS" | "FOULS";
+  label: string;
+  value: string;
+  result: string;
+  tone: ModelReviewTone;
+}
+
+/** Neměnný předzápasový audit připojený dávkově k odehranému fixture. */
+export interface PlayedModelReview {
+  chips: ModelReviewChip[];
+  probabilities: { home: number; draw: number; away: number; over25: number; bttsYes: number };
+  expectedScore: { home: number; away: number };
+  counts: {
+    corners: { expected: number | null; actual: number | null; error: number | null };
+    cards: { expected: number | null; actual: number | null; error: number | null };
+    fouls: { expected: number | null; actual: number | null; error: number | null };
+  };
+  modelVersion: number;
+  countModelVersion: number | null;
+  foulModelVersion: number | null;
+  context: string;
+  readinessSample: number;
+  lowConfidence: boolean;
+  referee: { name: string | null; factor: number | null; sample: number | null };
+  market: Array<{
+    market: string;
+    side: string;
+    line: number | null;
+    open: number;
+    close: number | null;
+    movement: number | null;
+    freshClose: boolean;
+  }>;
+  portfolio: Array<{
+    strategy: string;
+    side: string;
+    odds: number | null;
+    hit: boolean | null;
+    profit: number | null;
+    policyVersion: number;
+  }>;
+}
+
 /**
  * Lehký záznam **odehraného** zápasu pro záložku „Výsledky". Protějšek
  * `UpcomingFixture` ze stejného denního rozpisu – proto stejná deep-link pole.
@@ -336,6 +382,8 @@ export interface PlayedFixture {
   awayCompareLeagueId: number | null;
   /** Náš tip, pokud k zápasu existuje dostupná predikce (doplňuje `mergeTips`). */
   tip?: FixtureTip;
+  /** Všechny dostupné historické modelové výstupy; nikdy se nepřepočítávají novým modelem. */
+  modelReview?: PlayedModelReview;
 }
 
 /**
@@ -402,7 +450,7 @@ export interface FixtureModelForecast {
     goalsClose: { over: number; under: number } | null;
   };
   marketSignals: Array<{
-    market: "1X2" | "OVER_25" | "CORNERS" | "CARDS";
+    market: "1X2" | "OVER_25" | "BTTS" | "CORNERS" | "CARDS";
     side: "HOME" | "DRAW" | "AWAY" | "OVER" | "UNDER";
     line: number | null;
     modelProbability: number;
@@ -416,6 +464,8 @@ export interface FixtureModelForecast {
     points: Array<{ minutesToKickoff: number; probability: number; sampledAt: string }>;
     closed: boolean;
     closingQuality: "pending" | "fresh" | "early" | "missing";
+    decimalOdds?: number | null;
+    minutesToKickoff?: number;
   }>;
   corners: CountModelForecast | null;
   cards: CountModelForecast | null;

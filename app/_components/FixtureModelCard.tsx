@@ -173,7 +173,7 @@ function TempoDiscipline({
 
 function CurrentMarketMovement({ signals }: { signals: FixtureModelForecast["marketSignals"] }) {
   if (!signals.length) return <p className="rounded-lg bg-surface px-3 py-3 text-muted">Pohyb trhu zatím nelze ukázat – nemáme první použitelný kurzový snapshot.</p>;
-  const labels = { "1X2": "1X2", OVER_25: "Góly 2,5", CORNERS: "⛳ Rohy", CARDS: "🟨 Karty" } as const;
+  const labels = { "1X2": "1X2", OVER_25: "Góly 2,5", BTTS: "Oba skórují", CORNERS: "⛳ Rohy", CARDS: "🟨 Karty" } as const;
   const sides = { HOME: "domácí", DRAW: "remíza", AWAY: "hosté", OVER: "Over", UNDER: "Under" } as const;
   const pct = (value: number) => `${Math.round(value * 100)} %`;
   return <section className="rounded-lg border border-border bg-background px-3 py-3 text-muted" aria-label="Dosavadní pohyb trhu">

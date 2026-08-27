@@ -23,6 +23,7 @@
     "calibrate": "node --env-file=.env --import tsx scripts/calibrate.ts",
     "calibrate:euro": "node --env-file=.env --import tsx scripts/calibrate.ts --context=EURO_CUP",
     "calibrate:national": "node --env-file=.env --import tsx scripts/calibrate.ts --context=NATIONAL",
+    "calibrate:goals": "node --env-file=.env --import tsx scripts/calibrateGoalMarkets.ts",
     "audit:model-contexts": "node --env-file=.env --import tsx scripts/auditModelContexts.ts",
     "resettle": "node --env-file=.env --import tsx scripts/resettleFullTime.ts",
     "reprice": "node --env-file=.env --import tsx scripts/reprice.ts",

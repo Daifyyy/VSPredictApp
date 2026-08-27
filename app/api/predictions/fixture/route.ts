@@ -7,7 +7,7 @@ import { isEuroCupLeague } from "@/lib/data/catalog";
 import type { FixtureModelForecast } from "@/lib/types";
 import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
 import { logError } from "@/lib/logError";
-import { parseBooks, sharpFair, sharpFairTotal, sharpLineFair } from "@/lib/picks/books";
+import { bestLinePrice, bestPrice, parseBooks, sharpFair, sharpFairTotal, sharpLineFair } from "@/lib/picks/books";
 import { buildCountForecast } from "@/lib/picks/countDistribution";
 import { getSettledPredictionRows } from "@/lib/data/repository";
 import { getCachedCountTotals } from "@/lib/data/cache";
@@ -136,7 +136,7 @@ export async function GET(req: Request) {
     const closeGoals = sharpFairTotal(closeBooks);
     const signalRows = isRealDataConfigured()
       ? await prisma.marketSignalSnapshot.findMany({ where: { fixtureId, OR: [
-          { market: { in: ["1X2", "OVER_25"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
+          { market: { in: ["1X2", "OVER_25", "BTTS"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
           { market: { in: ["CORNERS", "CARDS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
         ] }, orderBy: { market: "asc" } })
       : [];
@@ -151,6 +151,15 @@ export async function GET(req: Request) {
       const current = latest?.p ?? signal.closeMarketProbability ?? signal.openMarketProbability;
       const sampledAt = latest ? new Date(signal.kickoff.getTime() - latest.t * 60_000) : signal.closedAt;
       const quality = closingSampleQuality(signal.kickoff, sampledAt, new Date());
+      const sidePrice = signal.market === "1X2"
+        ? bestPrice(books, signal.side === "HOME" ? "home" : signal.side === "DRAW" ? "draw" : "away")
+        : signal.market === "OVER_25"
+          ? bestPrice(books, signal.side === "OVER" ? "over25" : "under25")
+          : signal.market === "BTTS"
+            ? bestPrice(books, signal.side === "OVER" ? "btts" : "bttsNo")
+            : signal.line == null
+              ? null
+              : bestLinePrice(books, signal.market === "CORNERS" ? "corners" : "cards", signal.line, signal.side === "OVER" ? "over" : "under");
       return {
         market: signal.market as FixtureModelForecast["marketSignals"][number]["market"],
         side: signal.side as FixtureModelForecast["marketSignals"][number]["side"],
@@ -170,6 +179,8 @@ export async function GET(req: Request) {
         })),
         closed: signal.kickoff.getTime() <= Date.now(),
         closingQuality: quality,
+        decimalOdds: sidePrice?.odds ?? null,
+        minutesToKickoff: (signal.kickoff.getTime() - Date.now()) / 60_000,
       };
     });
     const forecast: FixtureModelForecast = {

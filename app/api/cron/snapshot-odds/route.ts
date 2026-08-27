@@ -4,6 +4,7 @@ import { isRealDataConfigured } from "@/lib/db";
 import { logError } from "@/lib/logError";
 import { requireCronAuth } from "@/lib/cronAuth";
 import { cronJson } from "@/lib/cronResult";
+import { withCronRun } from "@/lib/operations";
 
 // Snímky kurzů pro CLV: otevírací, zavírací a body ČASOVÉ ŘADY. Běží **hodinově**,
 // na rozdíl od ostatních cronů – a je to nutnost, ne ladění:
@@ -37,9 +38,16 @@ export async function GET(req: Request) {
   const limit = limitParam ? Number(limitParam) : undefined;
 
   try {
-    const stats = await runSnapshotOdds(
-      Number.isFinite(limit) && limit! > 0 ? limit : undefined
-    );
+    const stats = await withCronRun("snapshot-odds", async () => {
+      const result = await runSnapshotOdds(Number.isFinite(limit) && limit! > 0 ? limit : undefined);
+      return {
+        ...result,
+        candidates: result.due + result.remaining,
+        processed: result.open + result.close + result.series,
+        cursor: result.remaining > 0 ? "continue" : null,
+        reason: result.remaining > 0 ? "BATCH_LIMIT" : null,
+      };
+    });
     // „Zvládnuto" = uložený snímek jakéhokoli druhu. `empty` (kniha zápas nekótuje)
     // se nepočítá ani do chyb, ani do úspěchů – to je legitimní prázdná odpověď.
     return cronJson(

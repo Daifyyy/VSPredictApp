@@ -4,6 +4,7 @@ import { isRealDataConfigured } from "@/lib/db";
 import { logError } from "@/lib/logError";
 import { requireCronAuth } from "@/lib/cronAuth";
 import { cronJson } from "@/lib/cronResult";
+import { withCronRun } from "@/lib/operations";
 
 // Dotažení skutečných výsledků u odehraných predikcí (denní cron). Levné
 // (batch /fixtures?ids=). Doplní goals/status → základ track-recordu a kalibrace.
@@ -20,7 +21,15 @@ export async function GET(req: Request) {
   if (denied) return denied;
 
   try {
-    const stats = await runSettleResults();
+    const stats = await withCronRun("settle-results", async () => {
+      const result = await runSettleResults();
+      return {
+        ...result,
+        candidates: result.pending,
+        processed: result.settled,
+        remaining: Math.max(0, result.pending - result.settled),
+      };
+    });
     return cronJson("cron/settle-results", stats, stats.errors, stats.settled);
   } catch (e) {
     logError("cron/settle-results", e);

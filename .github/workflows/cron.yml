@@ -33,6 +33,8 @@ on:
     - cron: "0 3 * * *" # refresh-league-styles
     - cron: "0 4 * * *" # warm
     - cron: "30 4 * * *" # predict-upcoming
+    - cron: "30 12 * * *" # predict-upcoming (průběžné doplnění)
+    - cron: "30 16 * * *" # predict-upcoming (večerní opravný průchod)
     - cron: "0 5 * * *" # refresh-transfers
     # Vypořádání jede DVAKRÁT denně (ráno + večer). S jediným ranním během čekal zápas
     # s výkopem v 18:00 UTC na ✓/✗ ~17 h – a protože `schedule` v Actions se opožďuje,
@@ -41,9 +43,12 @@ on:
     # Skóre samotné na tomhle nestojí – to jde do Výsledků z denního rozpisu –, ale
     # odznak „trefili jsme to" ano. Cena je pár volání (`fetchFixturesByIds` po 20).
     - cron: "0 6 * * *" # settle-results
+    - cron: "0 12 * * *" # settle-results
+    - cron: "0 18 * * *" # settle-results
     - cron: "15 6 * * *" # settle-tips
     - cron: "0 22 * * *" # settle-results (večerní zápasy týž den)
     - cron: "15 22 * * *" # settle-tips
+    - cron: "45 23 * * *" # audit-pipeline
   # Ruční spuštění (Actions → Cron → Run workflow), např. po výpadku.
   workflow_dispatch:
     inputs:
@@ -63,6 +68,7 @@ on:
           - settle-results
           - settle-tips
           - send-notifications
+          - audit-pipeline
 
 jobs:
   run:
@@ -95,11 +101,16 @@ jobs:
             "0 3 * * *")    path="refresh-league-styles" ;;
             "0 4 * * *")    path="warm" ;;
             "30 4 * * *")   path="predict-upcoming" ;;
+            "30 12 * * *")  path="predict-upcoming" ;;
+            "30 16 * * *")  path="predict-upcoming" ;;
             "0 5 * * *")    path="refresh-transfers" ;;
             "0 6 * * *")    path="settle-results" ;;
+            "0 12 * * *")   path="settle-results" ;;
+            "0 18 * * *")   path="settle-results" ;;
             "15 6 * * *")   path="settle-tips" ;;
             "0 22 * * *")   path="settle-results" ;;
             "15 22 * * *")  path="settle-tips" ;;
+            "45 23 * * *")  path="audit-pipeline" ;;
             # Neznámý rozvrh = někdo přidal `- cron:` a zapomněl na větev tady.
             # Radši hlasitě spadnout než tiše zavolat špatný endpoint.
             *) echo "Neznámý rozvrh: '$SCHEDULE' (událost: $EVENT)" >&2; exit 1 ;;
@@ -144,7 +155,8 @@ jobs:
             failed=0
             # Běžné ligy/reprezentace a každý evropský pohár zvlášť. Samostatné requesty
             # dávají každé soutěži vlastní 60s rozpočet Vercelu; upsert je idempotentní.
-            for target in "$url" "$url?league=2" "$url?league=3" "$url?league=848"; do
+            for league in 345 39 140 135 78 61 40 94 88 144 203 2 3 848 1 4 9 6 7 22 5 536; do
+              target="$url?league=$league"
               echo "→ $target"
               curl --fail-with-body --silent --show-error --location \
                    --max-time 90 --retry 1 --retry-delay 10 \
@@ -153,6 +165,21 @@ jobs:
             done
             if [ "$failed" -gt 0 ]; then echo "$failed predikčních běhů selhalo." >&2; exit 1; fi
             exit 0
+          fi
+          if [ "$JOB" = "snapshot-odds" ]; then
+            # Pokračovací dávky chrání neopakovatelný closing před serverless timeoutem.
+            for pass in 1 2 3 4; do
+              target="$url?limit=40"
+              echo "→ $target (dávka $pass)"
+              body=$(curl --fail-with-body --silent --show-error --location \
+                --max-time 70 --retry 2 --retry-delay 10 \
+                --header "Authorization: Bearer $CRON_SECRET" "$target")
+              echo "$body"
+              remaining=$(echo "$body" | jq -r '.remaining // 0')
+              if [ "$remaining" -le 0 ]; then exit 0; fi
+            done
+            echo "Po čtyřech dávkách stále zbývá $remaining položek." >&2
+            exit 1
           fi
           echo "→ $url"
           # `--fail-with-body` = nenulový exit u 4xx/5xx, ale tělo se pořád vypíše,

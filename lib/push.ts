@@ -7,6 +7,7 @@ import { fetchFixturesByIds } from "@/lib/data/apiFootball";
 import { chunkFixtureIds, matchStatusEvents } from "@/lib/pushMatchStatus";
 import type { NewChecklistCandidate } from "@/lib/data/checklistStore";
 import { DECISION_CHECKLIST_VERSION } from "@/lib/picks/decisionChecklist";
+import { isAdminEmail } from "@/lib/entitlements";
 
 export function pushConfigured(): boolean {
   return Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT);
@@ -43,6 +44,27 @@ export async function sendPushSubscription(
     }
     throw error;
   }
+}
+
+/** Jednorázové provozní upozornění vlastníkům z ADMIN_EMAILS. */
+export async function sendOperationalAlert(input: { fingerprint: string; title: string; body: string }) {
+  if (!pushConfigured()) return { sent: 0, errors: 0 };
+  const users = await prisma.user.findMany({ include: { pushSubscriptions: true } });
+  let sent = 0, errors = 0;
+  for (const user of users) {
+    if (!isAdminEmail(user.email)) continue;
+    for (const subscription of user.pushSubscriptions) {
+      try {
+        if (await sendPushSubscription(subscription, {
+          title: input.title,
+          body: input.body,
+          url: "/provoz",
+          tag: `operations-${input.fingerprint}`,
+        })) sent++;
+      } catch { errors++; }
+    }
+  }
+  return { sent, errors };
 }
 
 export async function sendChecklistCandidateNotifications(candidates: NewChecklistCandidate[]) {

@@ -31,6 +31,7 @@ import { Empty } from "./Empty";
 import { ViewTabs } from "./ViewTabs";
 import type { SessionUser } from "./sessionUser";
 import { PredictionOffers } from "./PredictionOffers";
+import { ModelPortfolio } from "./ModelPortfolio";
 
 type Venue = "home" | "away" | "any";
 
@@ -278,6 +279,7 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
         <PredictionOffers user={user} marketView={view === "market"} />
       ) : (
         <ModelView
+          isPro={user?.tier === "PRO"}
           reliability={reliability}
           marketBench={marketBench}
           clv={clv}
@@ -331,6 +333,7 @@ function ViewPurpose({ view }: { view: View }) {
  * poznat, co je dobře a od jakého vzorku mu věřit.
  */
 function ModelView({
+  isPro,
   reliability,
   marketBench,
   clv,
@@ -348,6 +351,7 @@ function ModelView({
   minProb,
   onRetry,
 }: {
+  isPro: boolean;
   reliability: ReliabilityReport | null;
   marketBench: MarketBenchmark | null;
   clv: ClvSummary | null;
@@ -396,11 +400,19 @@ function ModelView({
 
   return (
     <div className="mt-4 space-y-3">
+      <nav className="flex gap-2 overflow-x-auto rounded-xl border border-border bg-surface p-1" aria-label="Části výkonnosti">
+        {[["performance-portfolio", "Portfolio"], ["performance-quality", "Kvalita modelů"], ["performance-clv", "CLV a trh"], ["performance-research", "Výzkum a archiv"]].map(([href, label]) => <a key={href} href={`#${href}`} className="min-h-11 shrink-0 rounded-lg px-3 py-2.5 text-xs font-semibold text-foreground transition hover:bg-background">{label}</a>)}
+      </nav>
+      <section id="performance-portfolio" className="scroll-mt-24"><ModelPortfolio isPro={isPro} /></section>
+      <h2 id="performance-clv" className="scroll-mt-24 px-1 pt-3 text-base font-semibold text-foreground">CLV a trh</h2>
       <MarketClvDashboard rows={clvByMarket} />
+      <h2 id="performance-research" className="scroll-mt-24 px-1 pt-3 text-base font-semibold text-foreground">Výzkum a archiv</h2>
       <ChecklistPerformancePanel value={checklist} />
       {backtest && <StrategyPanel backtest={backtest} market={market} venue={venue} minProb={minProb} settled={track?.n ?? 0} />}
       <PublishedTipsPanel league={publishedTips} european={european?.publishedTips ?? null} />
+      <h2 id="performance-quality" className="scroll-mt-24 px-1 pt-3 text-base font-semibold text-foreground">Kvalita modelů</h2>
       <ForecastOverview track={track} counts={countAccuracy} />
+      <PerformanceAudit />
       <GateHeadline gate={gate} />
       {gate.criteria.map((c, i) => (
         <CriterionCard key={c.key} index={i + 1} criterion={c} evidence={evidence[c.key]} />
@@ -534,9 +546,9 @@ function ChecklistPerformancePanel({ value }: { value: ChecklistPerformance | nu
     <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="page-kicker">Rozhodovací checklist · v{value.version}</p>
-          <h3 className="mt-1 font-bold text-foreground">Skutečně zachycení kandidáti</h3>
-          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted">Pouze stavy zmrazené před výkopem při kurzovém cronu. Úspěšnost výsledku, CLV a hypotetické ROI jsou různé ukazatele a navzájem se nezaměňují.</p>
+          <p className="page-kicker">Archivní checklist · v{value.version}</p>
+          <h3 className="mt-1 font-bold text-foreground">Ukončená historická politika</h3>
+          <p className="mt-1 max-w-3xl text-xs leading-5 text-muted">V1 už nevytváří nové kandidáty ani push notifikace. Záznamy zůstávají neměnné pro audit; checklist v2 pouze vysvětluje brány portfolia a nemá vlastní ROI.</p>
         </div>
         <span className="rounded-full bg-accent-soft px-3 py-1 text-xs font-bold text-foreground">{value.candidates} kandidátů</span>
       </div>
@@ -569,6 +581,9 @@ function PublishedTipsPanel({
         Jen tipy uložené před výkopem: alespoň 55 %, náskok 10 p. b., vzorek 6 a bez
         příznaku nízké spolehlivosti. Starší prognózy se zpětně nezapočítávají.
       </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {[["1X2", "1X2"], ["OVER_25", "Over 2,5"], ["BTTS", "BTTS"], ["CORNERS", "Rohy"], ["CARDS", "Karty"], ["FOULS", "Fauly"]].map(([model, label]) => <a key={model} href={`?view=model&audit=${model}#performance-audit`} className="rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground transition hover:border-accent">{label} · zobrazit zápasy</a>)}
+      </div>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <PublishedRecordCard title="Ligové soutěže" record={league} />
         <PublishedRecordCard title="Experimentální · Evropa" record={european} experimental />
@@ -609,10 +624,44 @@ function ForecastOverview({ track, counts }: { track: TrackRecord | null; counts
         Měří každý odehraný výstup modelu, i když nesplnil podmínky publikovaného tipu.
         Tato čísla proto nejsou sázkovou bilancí.
       </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {[["1X2", "1X2"], ["OVER_25", "Over 2,5"], ["BTTS", "BTTS"], ["CORNERS", "Rohy"], ["CARDS", "Karty"], ["FOULS", "Fauly"]].map(([model, label]) => <a key={model} href={`?view=model&audit=${model}#performance-audit`} className="rounded-full border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground transition hover:border-accent">{label} · zobrazit zápasy</a>)}
+      </div>
       {track && <TrackRecordPanel track={track} embedded />}
       {counts && <CountAccuracyPanel accuracy={counts} />}
     </section>
   );
+}
+
+type AuditModel = "1X2" | "OVER_25" | "BTTS" | "CORNERS" | "CARDS" | "FOULS";
+interface AuditPayload { cohortId: string; model: AuditModel; total: number; page: number; pages: number; rows: Array<{ fixtureId: number; kickoff: string; homeName: string; awayName: string; score: string; modelVersion: number; context: string; lowConfidence: boolean; predicted: string; actual: string; hit: boolean | null; error: number | null }> }
+
+function PerformanceAudit() {
+  const [model, setModel] = useState<AuditModel>("1X2");
+  const [result, setResult] = useState<"all" | "hit" | "miss">("all");
+  const [page, setPage] = useState(1);
+  const [data, setData] = useState<AuditPayload | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get("audit") as AuditModel | null;
+    if (fromUrl && ["1X2", "OVER_25", "BTTS", "CORNERS", "CARDS", "FOULS"].includes(fromUrl)) queueMicrotask(() => setModel(fromUrl));
+  }, []);
+  useEffect(() => {
+    let active = true;
+    const query = new URLSearchParams({ model, page: String(page) });
+    if (result !== "all") query.set("result", result);
+    fetch(`/api/picks/audit?${query}`, { cache: "no-store" }).then(async (response) => { if (!response.ok) throw new Error("load"); return response.json() as Promise<AuditPayload>; }).then((payload) => { if (active) { setData(payload); setFailed(false); } }).catch(() => active && setFailed(true));
+    return () => { active = false; };
+  }, [model, result, page]);
+  const choose = (next: AuditModel) => { setModel(next); setPage(1); const url = new URL(window.location.href); url.searchParams.set("audit", next); window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}#performance-audit`); };
+  return <section id="performance-audit" className="scroll-mt-24 rounded-2xl border border-border bg-surface p-4 shadow-sm">
+    <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="page-kicker text-muted">Výkon → konkrétní zápasy</p><h2 className="mt-1 text-lg font-bold text-foreground">Audit odehraných prognóz</h2><p className="mt-1 text-xs text-muted">Řádky používají stejnou zmrazenou historii jako výsledkové metriky; nic se nepřepočítává aktuální verzí.</p></div>{data && <span className="rounded-full bg-background px-2.5 py-1 text-xs text-muted">{data.total} zápasů</span>}</div>
+    <div className="mt-3 flex gap-1.5 overflow-x-auto">{(["1X2", "OVER_25", "BTTS", "CORNERS", "CARDS", "FOULS"] as AuditModel[]).map((value) => <button type="button" key={value} onClick={() => choose(value)} className={`min-h-11 shrink-0 rounded-full border px-3 text-xs font-semibold ${model === value ? "border-accent bg-accent text-foreground" : "border-border bg-background text-muted"}`}>{value}</button>)}</div>
+    <div className="mt-2 flex gap-1.5">{(["all", "hit", "miss"] as const).map((value) => <button type="button" key={value} onClick={() => { setResult(value); setPage(1); }} className={`rounded-full px-3 py-1.5 text-xs ${result === value ? "bg-foreground text-background" : "bg-background text-muted"}`}>{value === "all" ? "Vše" : value === "hit" ? "Vyšlo / tolerance" : "Nevyšlo"}</button>)}</div>
+    {failed ? <p className="mt-3 text-sm text-negative">Audit se nepodařilo načíst.</p> : !data ? <div className="mt-3 h-24 animate-pulse rounded-xl bg-background" /> : <div className="mt-3 space-y-2">{data.rows.map((row) => <article key={row.fixtureId} className="rounded-xl border border-border bg-background px-3 py-2"><div className="flex flex-wrap items-center gap-2 text-sm"><span className="font-semibold text-foreground">{row.homeName} – {row.awayName}</span><span className="font-bold tabular-nums">{row.score}</span><span className={`ml-auto rounded-full px-2 py-1 text-[10px] font-bold ${row.hit == null ? "bg-border text-muted" : row.hit ? "bg-positive/10 text-positive" : "bg-negative/10 text-negative"}`}>{row.hit == null ? "bez skutečnosti" : row.hit ? "vyšlo" : "nevyšlo"}</span></div><div className="mt-1 flex flex-wrap gap-x-3 text-[11px] text-muted"><span>model {row.predicted}</span><span>skutečnost {row.actual}</span>{row.error != null && <span>chyba {row.error.toFixed(1)}</span>}<span>v{row.modelVersion} · {row.context}{row.lowConfidence ? " · málo dat" : ""}</span></div></article>)}{!data.rows.length && <p className="py-5 text-center text-sm text-muted">Této kohortě neodpovídá žádný zápas.</p>}</div>}
+    {data && data.pages > 1 && <div className="mt-3 flex items-center justify-center gap-3"><button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="min-h-11 rounded-full border border-border px-4 text-xs disabled:opacity-40">Předchozí</button><span className="text-xs text-muted">{page}/{data.pages}</span><button type="button" disabled={page >= data.pages} onClick={() => setPage((p) => p + 1)} className="min-h-11 rounded-full border border-border px-4 text-xs disabled:opacity-40">Další</button></div>}
+  </section>;
 }
 
 function CountAccuracyPanel({ accuracy, compact = false }: { accuracy: CountModelAccuracy; compact?: boolean }) {

@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { DECISION_CHECKLIST_VERSION } from "@/lib/picks/decisionChecklist";
+import { freshClosing } from "@/lib/picks/evaluation";
 
 export interface ChecklistPerformance {
   version: number;
@@ -15,19 +15,19 @@ export interface ChecklistPerformance {
   hypotheticalRoi: number | null;
 }
 
-export async function checklistPerformance(): Promise<ChecklistPerformance> {
+export async function checklistPerformance(version = 1): Promise<ChecklistPerformance> {
   const candidates = await prisma.checklistDecisionSnapshot.findMany({
-    where: { status: "candidate", checklistVersion: DECISION_CHECKLIST_VERSION },
+    where: { status: "candidate", checklistVersion: version },
     orderBy: { candidateAt: "asc" },
   });
-  if (!candidates.length) return { version: DECISION_CHECKLIST_VERSION, candidates: 0, settled: 0, won: 0, hitRate: null, pending: 0, measuredClv: 0, averageClv: null, positiveClvRate: null, priced: 0, hypotheticalRoi: null };
+  if (!candidates.length) return { version, candidates: 0, settled: 0, won: 0, hitRate: null, pending: 0, measuredClv: 0, averageClv: null, positiveClvRate: null, priced: 0, hypotheticalRoi: null };
   const fixtureIds = [...new Set(candidates.map((row) => row.fixtureId))];
   const [fixtures, signals] = await Promise.all([
     prisma.fixturePrediction.findMany({ where: { fixtureId: { in: fixtureIds } }, select: { fixtureId: true, status: true, homeGoals: true, awayGoals: true } }),
-    prisma.marketSignalSnapshot.findMany({ where: { fixtureId: { in: fixtureIds } }, select: { fixtureId: true, market: true, closeMarketProbability: true } }),
+    prisma.marketSignalSnapshot.findMany({ where: { fixtureId: { in: fixtureIds } }, select: { fixtureId: true, market: true, kickoff: true, closeMarketProbability: true, closedAt: true } }),
   ]);
   const fixtureById = new Map(fixtures.map((row) => [row.fixtureId, row]));
-  const closeByKey = new Map(signals.map((row) => [`${row.fixtureId}:${row.market}`, row.closeMarketProbability]));
+  const closeByKey = new Map(signals.map((row) => [`${row.fixtureId}:${row.market}`, freshClosing(row.kickoff, row.closedAt, row.closeMarketProbability).close]));
   let settled = 0;
   let won = 0;
   let priced = 0;
@@ -53,7 +53,7 @@ export async function checklistPerformance(): Promise<ChecklistPerformance> {
     if (close != null) clv.push(close - row.marketProbability);
   }
   return {
-    version: DECISION_CHECKLIST_VERSION,
+    version,
     candidates: candidates.length,
     settled,
     won,

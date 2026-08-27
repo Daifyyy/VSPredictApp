@@ -4,6 +4,7 @@ import { isRealDataConfigured } from "@/lib/db";
 import { logError } from "@/lib/logError";
 import { requireCronAuth } from "@/lib/cronAuth";
 import { cronJson } from "@/lib/cronResult";
+import { recordCoverage, withCronRun } from "@/lib/operations";
 
 // Predikce nadcházejících zápasů (denní cron). Warm cache → levné; první studené
 // naplnění radši lokálně / přes ?league=ID. Idempotentní (upsert).
@@ -34,7 +35,24 @@ export async function GET(req: Request) {
   const leagueIds = leagueParam ? [Number(leagueParam)] : undefined;
 
   try {
-    const stats = await runPredictUpcoming(leagueIds);
+    const stats = await withCronRun("predict-upcoming", async () => {
+      const result = await runPredictUpcoming(leagueIds);
+      await recordCoverage({
+        category: leagueIds?.length === 1 ? `PREDICTION_24H_${leagueIds[0]}` : "PREDICTION_24H",
+        eligible: result.eligible24h,
+        covered: result.ready24h,
+        target: .95,
+        details: { leagueIds },
+      });
+      return {
+        ...result,
+        candidates: result.fixtures,
+        processed: result.predicted,
+        remaining: result.stopped ? Math.max(0, result.leagues - result.covered) : 0,
+        cursor: result.stopped ? String(result.covered) : null,
+        reason: result.stopped ? "TIME_BUDGET" : null,
+      };
+    });
     return cronJson("cron/predict-upcoming", stats, stats.errors, stats.predicted);
   } catch (e) {
     logError("cron/predict-upcoming", e, { leagueIds });

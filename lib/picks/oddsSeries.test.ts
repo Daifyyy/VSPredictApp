@@ -12,6 +12,7 @@ import {
   seriesPointFrom,
   snapshotIntervalMinutes,
   snapshotPlan,
+  snapshotPriority,
   MAX_SERIES_POINTS,
   type OddsSeriesPoint,
 } from "./oddsSeries";
@@ -56,6 +57,15 @@ describe("kadence", () => {
   it("malá tolerance, aby běh o minutu dřív bod nepřeskočil", () => {
     expect(seriesDue(2, 56)).toBe(true); // 60 − 5 min tolerance
     expect(seriesDue(2, 50)).toBe(false);
+  });
+});
+
+describe("provozní priorita", () => {
+  it("upřednostní čerstvý closing před blízkým během a vzdáleným openingem", () => {
+    expect(snapshotPriority({ fetch: true, open: false, close: true, series: true }, 60)).toBe(0);
+    expect(snapshotPriority({ fetch: true, open: true, close: false, series: true }, 180)).toBe(1);
+    expect(snapshotPriority({ fetch: true, open: true, close: false, series: true }, 900)).toBe(2);
+    expect(snapshotPriority({ fetch: true, open: false, close: false, series: true }, 1800)).toBe(3);
   });
 });
 
