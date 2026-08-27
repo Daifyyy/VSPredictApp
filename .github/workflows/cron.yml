@@ -168,8 +168,10 @@ jobs:
           fi
           if [ "$JOB" = "snapshot-odds" ]; then
             # Pokračovací dávky chrání neopakovatelný closing před serverless timeoutem.
-            for pass in 1 2 3 4; do
-              target="$url?limit=40"
+            # Menší serverless dávky + pokračování. Endpoint má navíc vlastní 35s
+            # časový rozpočet, takže vždy stihne vrátit `remaining` před limitem Vercelu.
+            for pass in $(seq 1 12); do
+              target="$url?limit=12"
               echo "→ $target (dávka $pass)"
               body=$(curl --fail-with-body --silent --show-error --location \
                 --max-time 70 --retry 2 --retry-delay 10 \
@@ -178,7 +180,7 @@ jobs:
               remaining=$(echo "$body" | jq -r '.remaining // 0')
               if [ "$remaining" -le 0 ]; then exit 0; fi
             done
-            echo "Po čtyřech dávkách stále zbývá $remaining položek." >&2
+            echo "Po dvanácti dávkách stále zbývá $remaining položek." >&2
             exit 1
           fi
           echo "→ $url"

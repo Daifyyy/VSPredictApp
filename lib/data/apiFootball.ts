@@ -12,6 +12,9 @@ const BASE_URL = "https://v3.football.api-sports.io";
 // Rate-limit api-sports je distribuovaný a občas odmítne i pod limitem →
 // přechodná chyba, kterou vyřeší rychlý retry (trefí jiný edge node).
 const MAX_RETRIES = 6;
+// Jediný zaseknutý upstream požadavek nesmí spotřebovat celý 60s serverless běh.
+// Timeout se počítá pro jeden pokus; běžné odpovědi API-Football trvají výrazně méně.
+const API_REQUEST_TIMEOUT_MS = 12_000;
 
 function apiKey(): string {
   const key = process.env.API_FOOTBALL_KEY;
@@ -59,6 +62,7 @@ async function doFetch<T>(
   }
   const res = await fetch(url, {
     headers: { "x-apisports-key": apiKey() },
+    signal: AbortSignal.timeout(API_REQUEST_TIMEOUT_MS),
     // ŽÁDNÁ Next data cache. Cachovací vrstva je Postgres (`ApiCache` s TTL per
     // endpoint + trvalá `MatchStatCache`) – tenhle fetch je to, co se volá, teprve
     // když ta vrstva chce čerstvá data. Next fetch cache s pevnou revalidací tu

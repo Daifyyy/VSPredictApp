@@ -506,8 +506,11 @@ export async function runPredictUpcoming(
  * skoro zadarmo (pár desítek malých řádků ze selectu) a chrání před tím, aby při
  * nabitém víkendu zůstal konec seznamu bez prvního snímku. Reálně je „due" ~16/hod.
  */
-const SNAPSHOT_LIMIT = 40;
+const SNAPSHOT_LIMIT = 12;
 const SNAPSHOT_SCAN_LIMIT = 500;
+// Nechává rezervu pro poslední DB zápisy, audit CronRun a vytvoření HTTP odpovědi.
+// Vercel Hobby ukončí celou funkci po 60 s, takže se nesmíme spoléhat jen na počet položek.
+const SNAPSHOT_BUDGET_MS = 35_000;
 
 /**
  * **Snímky kurzů** – otevírací, zavírací a body **časové řady** pro zápasy v okně.
@@ -532,7 +535,10 @@ const SNAPSHOT_SCAN_LIMIT = 500;
  * nedozvěděl) – běh, který hlásí `errors: 0` a `saved: 0`, musí jít poznat od běhu,
  * který hlásí `errors: 40`.
  */
-export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
+export async function runSnapshotOdds(
+  limit = SNAPSHOT_LIMIT,
+  budgetMs = SNAPSHOT_BUDGET_MS
+): Promise<{
   due: number;
   open: number;
   close: number;
@@ -574,7 +580,7 @@ export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
       return snapshotPriority(a.plan, minsA) - snapshotPriority(b.plan, minsB) || minsA - minsB;
     });
   const queue = planned.slice(0, limit);
-  const remaining = Math.max(0, planned.length - queue.length);
+  let remaining = Math.max(0, planned.length - queue.length);
 
   let open = 0;
   let close = 0;
@@ -588,7 +594,13 @@ export async function runSnapshotOdds(limit = SNAPSHOT_LIMIT): Promise<{
   let autonomousCandidates = 0;
   const coverage = emptyCoverage();
 
-  for (const { item, plan } of queue) {
+  const deadline = Date.now() + Math.max(5_000, Math.min(budgetMs, SNAPSHOT_BUDGET_MS));
+  for (let index = 0; index < queue.length; index++) {
+    if (Date.now() >= deadline) {
+      remaining += queue.length - index;
+      break;
+    }
+    const { item, plan } = queue[index];
     // Čisté rozhodnutí: co se má z tohohle zápasu udělat. Zápas, který nepotřebuje nic,
     // se kvóty ani nedotkne.
     due++;
