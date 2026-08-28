@@ -128,7 +128,9 @@ export async function upsertIncident(input: {
       resolvedAt: null,
     },
   });
-  if (!previous || previous.status === "RESOLVED") {
+  // Push je vyhrazen jen pro kritickĂ© incidenty. VarovĂˇnĂ­ o menĹˇĂ­m vzorku nebo
+  // pokrytĂ­ zĹŻstĂˇvajĂ­ na dashboardu, kde majĂ­ kontext a nevytvĂˇĹ™ejĂ­ hluk.
+  if ((!previous || previous.status === "RESOLVED") && input.severity === "CRITICAL") {
     const { sendOperationalAlert } = await import("@/lib/push");
     await sendOperationalAlert({
       fingerprint: input.fingerprint,
@@ -186,7 +188,11 @@ export async function auditPipeline(now = new Date()) {
       select: { fixtureId: true, oddsFetchedAt: true, oddsSeries: true },
     }),
     prisma.fixturePrediction.findMany({
-      where: { kickoff: { gte: recent, lte: now }, status: { in: ["FT", "AET", "PEN"] } },
+      where: {
+        leagueId: { in: SUPPORTED_ODDS_LEAGUES },
+        kickoff: { gte: recent, lte: now },
+        status: { in: ["FT", "AET", "PEN"] },
+      },
       select: { fixtureId: true, homeTeamId: true, awayTeamId: true, lambdaCornersHome: true, lambdaCornersAway: true, lambdaCardsHome: true, lambdaCardsAway: true, lambdaFoulsHome: true, lambdaFoulsAway: true },
     }),
     prisma.fixturePrediction.findMany({
@@ -194,7 +200,11 @@ export async function auditPipeline(now = new Date()) {
       select: { fixtureId: true, kickoff: true, oddsCloseAt: true },
     }),
     prisma.fixturePrediction.count({
-      where: { status: "NS", kickoff: { lt: new Date(now.getTime() - 6 * 60 * 60_000) } },
+      where: {
+        leagueId: { in: SUPPORTED_ODDS_LEAGUES },
+        status: { in: ["NS", "PST", "TBD", "SUSP", "INT"] },
+        kickoff: { lt: new Date(now.getTime() - 6 * 60 * 60_000) },
+      },
     }),
     prisma.cronRun.findMany({ orderBy: { startedAt: "desc" }, take: 40 }),
   ]);
@@ -259,7 +269,7 @@ export async function auditPipeline(now = new Date()) {
     fingerprint: "settlement:overdue",
     kind: "SETTLEMENT",
     severity: "CRITICAL",
-    message: `${overdue} ukončených kandidátů čeká na settlement déle než šest hodin.`,
+    message: `${overdue} zápasů po plánovaném výkopu čeká déle než 6 hodin na ověření stavu. Otevřete Provoz a spusťte retry settlementu.`,
     details: { overdue },
   });
   else await resolveIncident("settlement:overdue");

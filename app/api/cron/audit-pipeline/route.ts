@@ -15,7 +15,10 @@ export async function GET(req: Request) {
         ...health,
         candidates: health.coverage.reduce((sum, row) => sum + row.eligible, 0),
         processed: health.coverage.reduce((sum, row) => sum + row.covered, 0),
-        errors: health.incidents.filter((item) => item.severity === "CRITICAL").length,
+        // NalezenĂ˝ incident nenĂ­ chyba samotnĂ©ho auditu. Jinak audit vytvĂˇĹ™Ă­
+        // rekurzivnĂ­ faleĹˇnĂ˝ poplach pokaĹľdĂ©, kdy korektnÄ› odhalĂ­ problĂ©m jinde.
+        errors: 0,
+        findings: health.incidents.length,
         remaining: health.overdue,
       };
     });

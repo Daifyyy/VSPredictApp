@@ -47,6 +47,8 @@ import { fullTimeGoals, knockoutResult } from "./fixtures";
 import {
   upsertPrediction,
   getUnsettledPredictions,
+  getMissingActualStatPredictionIds,
+  applyObservedFixtureState,
   applyResult,
   hasBenchmark,
   saveBenchmark,
@@ -673,15 +675,25 @@ export async function runSnapshotOdds(
 /** Dotáhne výsledky u predikcí, jejichž zápas už proběhl (batch po 20 ID). */
 export async function runSettleResults(): Promise<{
   pending: number;
+  statusPending: number;
+  statsRepairPending: number;
   settled: number;
+  statusUpdated: number;
   statsSaved: number;
   statsMissing: number;
   statsErrors: number;
   /** Kolik dávek po 20 se nepodařilo stáhnout (viz `errors` u ostatních běhů). */
   errors: number;
 }> {
-  const pending = await getUnsettledPredictions();
+  const statusPending = await getUnsettledPredictions();
+  const statsRepairIds = await getMissingActualStatPredictionIds();
+  const repairSet = new Set(statsRepairIds);
+  const pending = [...new Set([
+    ...statusPending.map((row) => row.fixtureId),
+    ...statsRepairIds,
+  ])].map((fixtureId) => ({ fixtureId }));
   let settled = 0;
+  let statusUpdated = 0;
   let errors = 0;
   let statsSaved = 0;
   let statsMissing = 0;
@@ -699,7 +711,13 @@ export async function runSettleResults(): Promise<{
       continue;
     }
     for (const f of fixtures) {
-      if (!FINISHED_STATUSES.has(f.fixture.status.short)) continue;
+      if (!FINISHED_STATUSES.has(f.fixture.status.short)) {
+        if (f.fixture.status.short !== "NS") {
+          await applyObservedFixtureState(f.fixture.id, f.fixture.status.short, f.fixture.date);
+          statusUpdated++;
+        }
+        continue;
+      }
       // Skóre po 90 min (ne koncové) – model predikuje regulérní hrací dobu, viz `fullTimeGoals`.
       const ft = fullTimeGoals(f);
       await applyResult(
@@ -711,7 +729,7 @@ export async function runSettleResults(): Promise<{
       );
       settled++;
       try {
-        const cached = await cacheFinishedFixtureStats(f);
+        const cached = await cacheFinishedFixtureStats(f, repairSet.has(f.fixture.id));
         if (cached === "fetched" || cached === "cached") statsSaved++;
         else statsMissing++;
       } catch (error) {
@@ -721,5 +739,15 @@ export async function runSettleResults(): Promise<{
     }
     await ingestRefereeHistory(fixtures);
   }
-  return { pending: pending.length, settled, statsSaved, statsMissing, statsErrors, errors: errors + statsErrors };
+  return {
+    pending: pending.length,
+    statusPending: statusPending.length,
+    statsRepairPending: statsRepairIds.length,
+    settled,
+    statusUpdated,
+    statsSaved,
+    statsMissing,
+    statsErrors,
+    errors: errors + statsErrors,
+  };
 }

@@ -416,10 +416,71 @@ export async function getUnsettledPredictions(
   graceMs = 3 * 60 * 60 * 1000
 ): Promise<{ fixtureId: number }[]> {
   return prisma.fixturePrediction.findMany({
-    where: { status: "NS", kickoff: { lt: new Date(Date.now() - graceMs) } },
+    where: {
+      status: { in: ["NS", "PST", "TBD", "SUSP", "INT"] },
+      kickoff: { lt: new Date(Date.now() - graceMs) },
+    },
     orderBy: { kickoff: "asc" },
     select: { fixtureId: true },
   });
+}
+
+/** UloĹľĂ­ aktuĂˇlnĂ­ nefinĂˇlnĂ­ stav, aby odloĹľenĂ˝ nebo zruĹˇenĂ˝ zĂˇpas nezĹŻstal jako NS. */
+export async function applyObservedFixtureState(
+  fixtureId: number,
+  status: string,
+  kickoff: string
+): Promise<void> {
+  await prisma.fixturePrediction.update({
+    where: { fixtureId },
+    data: { status, kickoff: new Date(kickoff) },
+  });
+}
+
+/** NedĂˇvnĂ© uzavĹ™enĂ© predikce, kterĂ˝m chybĂ­ skuteÄŤnost pro nÄ›kterĂ˝ poÄŤetnĂ­ model. */
+export async function getMissingActualStatPredictionIds(
+  days = 7,
+  limit = 20
+): Promise<number[]> {
+  const rows = await prisma.fixturePrediction.findMany({
+    where: {
+      status: { in: [...FINISHED_STATUSES] },
+      kickoff: { gte: new Date(Date.now() - days * 24 * 60 * 60_000) },
+      OR: [
+        { lambdaCornersHome: { not: null }, lambdaCornersAway: { not: null } },
+        { lambdaCardsHome: { not: null }, lambdaCardsAway: { not: null } },
+        { lambdaFoulsHome: { not: null }, lambdaFoulsAway: { not: null } },
+      ],
+    },
+    orderBy: { kickoff: "desc" },
+    select: {
+      fixtureId: true,
+      homeTeamId: true,
+      awayTeamId: true,
+      lambdaCornersHome: true,
+      lambdaCardsHome: true,
+      lambdaFoulsHome: true,
+    },
+  });
+  if (!rows.length) return [];
+  const actual = await prisma.matchStatCache.findMany({
+    where: { fixtureId: { in: rows.map((row) => row.fixtureId) } },
+    select: { fixtureId: true, teamId: true, corners: true, yellowCards: true, fouls: true },
+  });
+  const byFixture = new Map<number, typeof actual>();
+  for (const item of actual) {
+    const list = byFixture.get(item.fixtureId) ?? [];
+    list.push(item);
+    byFixture.set(item.fixtureId, list);
+  }
+  return rows.filter((row) => {
+    const items = byFixture.get(row.fixtureId) ?? [];
+    const home = items.find((item) => item.teamId === row.homeTeamId);
+    const away = items.find((item) => item.teamId === row.awayTeamId);
+    return (row.lambdaCornersHome != null && (home?.corners == null || away?.corners == null)) ||
+      (row.lambdaCardsHome != null && (home?.yellowCards == null || away?.yellowCards == null)) ||
+      (row.lambdaFoulsHome != null && (home?.fouls == null || away?.fouls == null));
+  }).slice(0, limit).map((row) => row.fixtureId);
 }
 
 /** Doplní skutečný výsledek odehraného zápasu. */

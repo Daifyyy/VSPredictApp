@@ -26,11 +26,11 @@ export async function GET(req: Request) {
       return {
         ...result,
         candidates: result.pending,
-        processed: result.settled,
-        remaining: Math.max(0, result.pending - result.settled),
+        processed: result.settled + result.statusUpdated,
+        remaining: Math.max(0, result.pending - result.settled - result.statusUpdated),
       };
     });
-    return cronJson("cron/settle-results", stats, stats.errors, stats.settled);
+    return cronJson("cron/settle-results", stats, stats.errors, stats.settled + stats.statusUpdated);
   } catch (e) {
     logError("cron/settle-results", e);
     return NextResponse.json({ error: "Settle selhal" }, { status: 502 });

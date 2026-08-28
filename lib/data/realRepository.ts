@@ -1476,9 +1476,12 @@ function buildMatchStat(
  * Doplní neměnné pozápasové statistiky během settlementu. Jeden API request vrací
  * obě strany a oba řádky se uloží společně; existující úplná cache znamená 0 volání.
  */
-export async function cacheFinishedFixtureStats(f: ApiFixture): Promise<"cached" | "fetched" | "missing"> {
+export async function cacheFinishedFixtureStats(
+  f: ApiFixture,
+  forceRefresh = false
+): Promise<"cached" | "fetched" | "missing"> {
   const existing = await getCachedFixtureStats(f.fixture.id);
-  if (existing.has(f.teams.home.id) && existing.has(f.teams.away.id)) return "cached";
+  if (!forceRefresh && existing.has(f.teams.home.id) && existing.has(f.teams.away.id)) return "cached";
   const stats = await fetchFixtureStatistics(f.fixture.id);
   const homeRaw = stats.find((row) => row.team.id === f.teams.home.id) ?? null;
   const awayRaw = stats.find((row) => row.team.id === f.teams.away.id) ?? null;
