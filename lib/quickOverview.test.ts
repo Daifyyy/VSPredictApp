@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rankQuickCandidates, restDaysBetween, scoreQuickCandidate, type QuickCandidate } from "./quickOverview";
+import { rankQuickCandidates, restDaysBetween, scoreQuickCandidate, selectRecentSeasonRows, type QuickCandidate } from "./quickOverview";
 import type { PredictionRow } from "./types";
 
 function candidate(overrides: Partial<PredictionRow> = {}): QuickCandidate {
@@ -50,5 +50,14 @@ describe("quick overview ranking", () => {
     expect(restDaysBetween("2026-08-25T18:00:00Z", "2026-08-29T17:59:00Z")).toBe(3);
     expect(restDaysBetween(null, "2026-08-29T18:00:00Z")).toBeNull();
     expect(restDaysBetween("2026-08-30T18:00:00Z", "2026-08-29T18:00:00Z")).toBe(0);
+  });
+  it("selects only the current season before kickoff", () => {
+    const rows = [
+      { teamId: 10, season: 2025, date: new Date("2026-05-20T18:00:00Z"), id: "old" },
+      { teamId: 10, season: 2026, date: new Date("2026-08-20T18:00:00Z"), id: "current" },
+      { teamId: 10, season: 2026, date: new Date("2026-08-30T18:00:00Z"), id: "future" },
+      { teamId: 20, season: 2026, date: new Date("2026-08-21T18:00:00Z"), id: "other-team" },
+    ];
+    expect(selectRecentSeasonRows(rows, 10, 2026, "2026-08-29T18:00:00Z").map((row) => row.id)).toEqual(["current"]);
   });
 });

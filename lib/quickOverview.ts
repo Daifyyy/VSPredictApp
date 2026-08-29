@@ -132,3 +132,18 @@ export function restDaysBetween(lastMatch: string | Date | null, kickoff: string
   if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
   return Math.max(0, Math.floor((end - start) / 86_400_000));
 }
+
+/** Selects current-season form that was known before the compared kickoff. */
+export function selectRecentSeasonRows<T extends { teamId: number; season: number; date: Date }>(
+  rows: T[],
+  teamId: number,
+  season: number,
+  kickoff: string | Date,
+  limit = 5
+): T[] {
+  const before = new Date(kickoff).getTime();
+  return rows
+    .filter((row) => row.teamId === teamId && row.season === season && row.date.getTime() < before)
+    .sort((a, b) => b.date.getTime() - a.date.getTime())
+    .slice(0, limit);
+}

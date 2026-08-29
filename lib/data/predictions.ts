@@ -84,6 +84,7 @@ import { getRefereeProfile, ingestRefereeHistory } from "./refereeStore";
 import { normalizeRefereeName, type RefereeEstimate } from "@/lib/picks/cards";
 import { FOUL_MODEL_VERSION, predictFouls } from "@/lib/picks/fouls";
 import { captureAutonomousPortfolio, closeAutonomousPortfolio } from "./autonomousPortfolioStore";
+import { invalidateCachedJson } from "./cache";
 
 /**
  * Orchestrace predikční pipeline (běží jen na pozadí / cron, real data).
@@ -727,6 +728,19 @@ export async function runSettleResults(): Promise<{
         ft?.away ?? null,
         knockoutResult(f)
       );
+      // A team fixture list may still contain this match as NS for up to its 24h TTL.
+      // Settlement is the authoritative freshness boundary for recent competitive form.
+      await invalidateCachedJson([
+        `fix:${f.teams.home.id}:${f.league.id}:${f.league.season}`,
+        `fix:${f.teams.away.id}:${f.league.id}:${f.league.season}`,
+        `fixlast:${f.teams.home.id}`,
+        `fixlast:${f.teams.away.id}`,
+        `cupfix:${f.teams.home.id}`,
+        `cupfix:${f.teams.away.id}`,
+        `eurofix:v2:${f.teams.home.id}`,
+        `eurofix:v2:${f.teams.away.id}`,
+        `stylefix:${f.league.id}:${f.league.season}`,
+      ]);
       settled++;
       try {
         const cached = await cacheFinishedFixtureStats(f, repairSet.has(f.fixture.id));

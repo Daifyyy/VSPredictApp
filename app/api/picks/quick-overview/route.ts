@@ -3,7 +3,7 @@ import { prisma, isRealDataConfigured } from "@/lib/db";
 import { getUpcomingPredictions } from "@/lib/data/repository";
 import { catalogLeagueName, isPublicCompetition } from "@/lib/data/catalog";
 import { localDateKey } from "@/lib/competitionGrouping";
-import { QUICK_FOCUS_IDS, rankQuickCandidates, restDaysBetween, type QuickCandidate, type QuickMarketSignal } from "@/lib/quickOverview";
+import { QUICK_FOCUS_IDS, rankQuickCandidates, restDaysBetween, selectRecentSeasonRows, type QuickCandidate, type QuickMarketSignal } from "@/lib/quickOverview";
 import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
 import { logError } from "@/lib/logError";
 import type { ApiStandingRow } from "@/lib/data/apiFootball";
@@ -115,13 +115,13 @@ async function buildContexts(candidates: QuickCandidate[]) {
   if (!isRealDataConfigured() || !candidates.length) return out;
   const teamIds = [...new Set(candidates.flatMap(({ row }) => [row.homeTeamId, row.awayTeamId]))];
   const leagueIds = [...new Set(candidates.map(({ row }) => row.leagueId))];
+  const seasons = [...new Set(candidates.map(({ row }) => row.season))];
   const latestKickoff = new Date(Math.max(...candidates.map(({ row }) => new Date(row.kickoff).getTime())));
   const [stats, standingsCache, injuryCache] = await Promise.all([
     prisma.matchStatCache.findMany({
-      where: { teamId: { in: teamIds }, competitive: true, date: { lt: latestKickoff }, schemaVersion: { gte: 2 } },
+      where: { teamId: { in: teamIds }, season: { in: seasons }, competitive: true, date: { lt: latestKickoff }, schemaVersion: { gte: 2 } },
       orderBy: { date: "desc" },
-      select: { teamId: true, fixtureId: true, date: true, goalsFor: true, goalsAgainst: true, xg: true, xgAgainst: true, isHome: true, opponentName: true },
-      take: Math.max(60, teamIds.length * 12),
+      select: { teamId: true, season: true, fixtureId: true, date: true, goalsFor: true, goalsAgainst: true, xg: true, xgAgainst: true, isHome: true, isNeutral: true, opponentName: true, opponentLogo: true },
     }),
     prisma.apiCache.findMany({
       where: { OR: leagueIds.map((leagueId) => ({ key: { startsWith: `standings:${leagueId}:` } })) },
@@ -137,7 +137,7 @@ async function buildContexts(candidates: QuickCandidate[]) {
   const statsByTeam = new Map<number, typeof stats>();
   for (const row of stats) {
     const rows = statsByTeam.get(row.teamId) ?? [];
-    if (rows.length < 5) rows.push(row);
+    rows.push(row);
     statsByTeam.set(row.teamId, rows);
   }
   const standingsByLeague = new Map<number, { rows: ApiStandingRow[]; updatedAt: Date }>();
@@ -153,12 +153,14 @@ async function buildContexts(candidates: QuickCandidate[]) {
   for (const candidate of candidates) {
     const row = candidate.row;
     const table = standingsByLeague.get(row.leagueId);
-    out.set(row.fixtureId, contextFor(row.kickoff, statsByTeam.get(row.homeTeamId) ?? [], statsByTeam.get(row.awayTeamId) ?? [], table ? pickTeamStanding(table.rows, row.homeTeamId) : null, table ? pickTeamStanding(table.rows, row.awayTeamId) : null, table?.updatedAt ?? null, injuriesByTeam.get(row.homeTeamId) ?? null, injuriesByTeam.get(row.awayTeamId) ?? null));
+    const homeRows = selectRecentSeasonRows(statsByTeam.get(row.homeTeamId) ?? [], row.homeTeamId, row.season, row.kickoff);
+    const awayRows = selectRecentSeasonRows(statsByTeam.get(row.awayTeamId) ?? [], row.awayTeamId, row.season, row.kickoff);
+    out.set(row.fixtureId, contextFor(row.kickoff, homeRows, awayRows, table ? pickTeamStanding(table.rows, row.homeTeamId) : null, table ? pickTeamStanding(table.rows, row.awayTeamId) : null, table?.updatedAt ?? null, injuriesByTeam.get(row.homeTeamId) ?? null, injuriesByTeam.get(row.awayTeamId) ?? null));
   }
   return out;
 }
 
-type RecentRow = { fixtureId: number; date: Date; goalsFor: number | null; goalsAgainst: number | null; xg: number | null; xgAgainst: number | null; isHome: boolean; opponentName: string | null };
+type RecentRow = { teamId: number; season: number; fixtureId: number; date: Date; goalsFor: number | null; goalsAgainst: number | null; xg: number | null; xgAgainst: number | null; isHome: boolean; isNeutral: boolean; opponentName: string | null; opponentLogo: string | null };
 
 function contextFor(kickoff: string, homeRows: RecentRow[], awayRows: RecentRow[], homeStanding: ReturnType<typeof pickTeamStanding>, awayStanding: ReturnType<typeof pickTeamStanding>, standingsUpdatedAt: Date | null, homeInjuries: { rows: ReturnType<typeof selectCurrentInjuries>; updatedAt: Date } | null, awayInjuries: { rows: ReturnType<typeof selectCurrentInjuries>; updatedAt: Date } | null) {
   const home = teamContext(kickoff, homeRows, homeStanding, homeInjuries);
@@ -172,7 +174,8 @@ function teamContext(kickoff: string, rows: RecentRow[], standing: ReturnType<ty
   const form = rows.slice(0, 5).map((row) => ({
     fixtureId: row.fixtureId, date: row.date.toISOString(), opponent: row.opponentName,
     result: row.goalsFor == null || row.goalsAgainst == null ? null : row.goalsFor > row.goalsAgainst ? "W" : row.goalsFor < row.goalsAgainst ? "L" : "D",
-    goalsFor: row.goalsFor, goalsAgainst: row.goalsAgainst, xgFor: row.xg, xgAgainst: row.xgAgainst, venue: row.isHome ? "HOME" : "AWAY",
+    goalsFor: row.goalsFor, goalsAgainst: row.goalsAgainst, xgFor: row.xg, xgAgainst: row.xgAgainst,
+    opponentLogo: row.opponentLogo, venue: row.isNeutral ? "NEUTRAL" : row.isHome ? "HOME" : "AWAY",
   }));
   const points = form.reduce((sum, item) => sum + (item.result === "W" ? 3 : item.result === "D" ? 1 : 0), 0);
   const xgRows = form.filter((item) => item.xgFor != null && item.xgAgainst != null);
@@ -184,6 +187,8 @@ function teamContext(kickoff: string, rows: RecentRow[], standing: ReturnType<ty
   const restDays = restDaysBetween(last ?? null, kickoff);
   return {
     form, formScore, points, xgDiff, restDays,
+    cleanSheetPct: rate(form, (match) => match.goalsAgainst === 0),
+    failedToScorePct: rate(form, (match) => match.goalsFor === 0),
     standing: standing ? {
       rank: standing.rank, points: standing.points, played: standing.all.played, ppg,
       home: splitSummary(standing.home), away: splitSummary(standing.away),
@@ -191,6 +196,10 @@ function teamContext(kickoff: string, rows: RecentRow[], standing: ReturnType<ty
     injuries: injuries?.rows ?? null,
     injuriesUpdatedAt: injuries?.updatedAt.toISOString() ?? null,
   };
+}
+
+function rate<T>(rows: T[], predicate: (row: T) => boolean) {
+  return rows.length ? rows.filter(predicate).length / rows.length : null;
 }
 
 function splitSummary(split: { played: number; win: number; draw: number; lose: number; goalsFor: number; goalsAgainst: number }) {

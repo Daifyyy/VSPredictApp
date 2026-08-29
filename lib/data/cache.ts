@@ -101,6 +101,17 @@ export async function cachedJsonMemo<T>(
   return request;
 }
 
+/** Invalidates read-through fixture lists after a newly settled result. */
+export async function invalidateCachedJson(keys: string[]): Promise<void> {
+  const unique = [...new Set(keys.filter(Boolean))];
+  if (!unique.length) return;
+  for (const key of unique) {
+    memoryHits.delete(key);
+    memoryPending.delete(key);
+  }
+  await prisma.apiCache.deleteMany({ where: { key: { in: unique } } });
+}
+
 // ---- Trvalá cache per-zápas statistik (MatchStatCache) ----
 
 type Row = Prisma.MatchStatCacheGetPayload<object>;

@@ -19,7 +19,7 @@ const RATE_SIZE = 10;
  */
 export function orderedMatches(matches: MatchStat[], venue: Venue): MatchStat[] {
   return matches
-    .filter((m) => !m.isBaseline && matchesVenue(m, venue))
+    .filter((m) => m.competitive && !m.isBaseline && matchesVenue(m, venue))
     .sort((a, b) => b.date.localeCompare(a.date)); // nejnovější první
 }
 

@@ -142,3 +142,16 @@ describe("computeSummary – prázdný vstup", () => {
     expect(s.failedToScorePct).toBeNull();
   });
 });
+
+describe("competitive form filter", () => {
+  it("excludes current-season friendlies", () => {
+    const matches = [
+      match(1, 1, 4, 0, { competitive: false }),
+      match(2, 2, 2, 1),
+    ];
+    const s = computeSummary(matches, "TOTAL");
+    expect(s.form).toEqual(["W"]);
+    expect(s.formSampleSize).toBe(1);
+    expect(s.sampleSize).toBe(1);
+  });
+});
