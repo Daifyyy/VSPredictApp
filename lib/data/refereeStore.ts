@@ -3,6 +3,7 @@ import type { RefereeProfileForecast } from "@/lib/types";
 import { prisma } from "@/lib/db";
 import { DEFAULT_CARD_TUNING, normalizeRefereeName, refereeFactor } from "@/lib/picks/cards";
 import { fetchFixturesByIds } from "./apiFootball";
+import { logError } from "@/lib/logError";
 
 const average = (values: number[]) => values.length
   ? values.reduce((sum, value) => sum + value, 0) / values.length
@@ -24,8 +25,15 @@ export async function getRefereeProfile(
 ): Promise<RefereeProfileForecast> {
   const refereeKey = normalizeRefereeName(name);
   const [matches, leagueRows] = await Promise.all([
-    prisma.refereeMatch.findMany({ where: { refereeKey, modelContext, kickoff: { lt: before } }, orderBy: { kickoff: "asc" } }),
-    prisma.refereeMatch.findMany({ where: { leagueId, modelContext, kickoff: { lt: before } } }),
+    prisma.refereeMatch.findMany({
+      where: { refereeKey, modelContext, kickoff: { lt: before } },
+      orderBy: { kickoff: "asc" },
+      select: { kickoff: true, actualCards: true, expectedCards: true, fouls: true, redCards: true, updatedAt: true },
+    }),
+    prisma.refereeMatch.findMany({
+      where: { leagueId, modelContext, kickoff: { lt: before } },
+      select: { refereeKey: true, actualCards: true, fouls: true },
+    }),
   ]);
   const estimate = refereeFactor(
     matches.map((match) => ({ date: match.kickoff.toISOString(), cards: match.actualCards, expected: match.expectedCards })),
@@ -93,7 +101,12 @@ export async function ingestRefereeHistory(fixtures: ApiFixture[]): Promise<void
   }
 }
 
-export async function refreshUpcomingReferees(now = new Date()) {
+export async function refreshUpcomingReferees(
+  now = new Date(),
+  options: { limit?: number; budgetMs?: number } = {}
+) {
+  const limit = Math.min(60, Math.max(1, options.limit ?? 40));
+  const deadline = Date.now() + Math.min(45_000, Math.max(5_000, options.budgetMs ?? 42_000));
   const candidates = await prisma.fixturePrediction.findMany({
     where: {
       status: "NS",
@@ -103,45 +116,98 @@ export async function refreshUpcomingReferees(now = new Date()) {
       lambdaCardsAwayBeforeRef: { not: null },
     },
     orderBy: { kickoff: "asc" },
-    take: 100,
+    take: limit,
+    select: {
+      fixtureId: true,
+      leagueId: true,
+      kickoff: true,
+      modelContext: true,
+      refereeName: true,
+      refereeSource: true,
+      lambdaCardsHomeBeforeRef: true,
+      lambdaCardsAwayBeforeRef: true,
+    },
   });
   let batches = 0;
   let assigned = 0;
   let updated = 0;
+  let processed = 0;
+  let errors = 0;
+  let failedBatches = 0;
+  let stoppedForBudget = false;
   for (let index = 0; index < candidates.length; index += 20) {
+    if (Date.now() >= deadline) {
+      stoppedForBudget = true;
+      break;
+    }
     const chunk = candidates.slice(index, index + 20);
-    const fixtures = await fetchFixturesByIds(chunk.map((row) => row.fixtureId));
+    let fixtures: ApiFixture[];
+    try {
+      fixtures = await fetchFixturesByIds(chunk.map((row) => row.fixtureId));
+    } catch (error) {
+      failedBatches++;
+      errors += chunk.length;
+      logError("referees.refresh.batch", error, { fixtureIds: chunk.map((row) => row.fixtureId) });
+      continue;
+    }
     batches++;
     const byId = new Map(fixtures.map((fixture) => [fixture.fixture.id, fixture]));
     for (const row of chunk) {
+      if (Date.now() >= deadline) {
+        stoppedForBudget = true;
+        break;
+      }
       const refereeName = byId.get(row.fixtureId)?.fixture.referee?.trim();
-      if (!refereeName) continue;
+      if (!refereeName) {
+        processed++;
+        continue;
+      }
       assigned++;
-      const profile = await getRefereeProfile(refereeName, row.leagueId, row.kickoff, row.modelContext);
-      await prisma.fixturePrediction.update({
-        where: { fixtureId: row.fixtureId },
-        data: {
-          refereeName,
-          refereeKey: normalizeRefereeName(refereeName),
-          refereeSource: "API",
-          refereeAssignedAt: now,
-          refereeAssignedBy: null,
-          refereeFactor: profile.factor,
-          refereeSample: profile.sample,
-          lambdaCardsHome: Math.min(8, Math.max(0.3, row.lambdaCardsHomeBeforeRef! * profile.factor)),
-          lambdaCardsAway: Math.min(8, Math.max(0.3, row.lambdaCardsAwayBeforeRef! * profile.factor)),
-          predictedAt: now,
-        },
-      });
-      await prisma.refereeAssignmentAudit.create({ data: {
-        fixtureId: row.fixtureId,
-        previousName: row.refereeName,
-        newName: refereeName,
-        previousSource: row.refereeSource,
-        newSource: "API",
-      } });
-      updated++;
+      try {
+        const profile = await getRefereeProfile(refereeName, row.leagueId, row.kickoff, row.modelContext);
+        await prisma.$transaction([
+          prisma.fixturePrediction.update({
+            where: { fixtureId: row.fixtureId },
+            data: {
+              refereeName,
+              refereeKey: normalizeRefereeName(refereeName),
+              refereeSource: "API",
+              refereeAssignedAt: now,
+              refereeAssignedBy: null,
+              refereeFactor: profile.factor,
+              refereeSample: profile.sample,
+              lambdaCardsHome: Math.min(8, Math.max(0.3, row.lambdaCardsHomeBeforeRef! * profile.factor)),
+              lambdaCardsAway: Math.min(8, Math.max(0.3, row.lambdaCardsAwayBeforeRef! * profile.factor)),
+              predictedAt: now,
+            },
+          }),
+          prisma.refereeAssignmentAudit.create({ data: {
+            fixtureId: row.fixtureId,
+            previousName: row.refereeName,
+            newName: refereeName,
+            previousSource: row.refereeSource,
+            newSource: "API",
+          } }),
+        ]);
+        updated++;
+        processed++;
+      } catch (error) {
+        errors++;
+        logError("referees.refresh.fixture", error, { fixtureId: row.fixtureId, refereeName });
+      }
     }
+    if (stoppedForBudget) break;
   }
-  return { candidates: candidates.length, batches, assigned, updated };
+  return {
+    candidates: candidates.length,
+    batches,
+    failedBatches,
+    assigned,
+    updated,
+    processed,
+    errors,
+    remaining: Math.max(0, candidates.length - processed),
+    stoppedForBudget,
+    reason: stoppedForBudget ? "time-budget" : errors > 0 ? "partial-errors" : null,
+  };
 }

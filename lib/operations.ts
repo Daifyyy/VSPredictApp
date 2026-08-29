@@ -23,6 +23,7 @@ const json = (value: unknown): Prisma.InputJsonValue => value as Prisma.InputJso
 function statusOf(stats: CronTelemetry): CronHealthStatus {
   const errors = stats.errors ?? 0;
   const processed = stats.processed ?? 0;
+  if ((stats.remaining ?? 0) > 0 && stats.reason === "time-budget") return "DEGRADED";
   if (errors === 0) return "HEALTHY";
   return processed > 0 ? "DEGRADED" : "FAILED";
 }
