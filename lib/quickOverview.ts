@@ -1,10 +1,9 @@
 import type { PredictionRow } from "@/lib/types";
 
-export const QUICK_FOCUS_IDS = ["summary", "1x2", "goals", "btts", "corners", "cards", "market"] as const;
+export const QUICK_FOCUS_IDS = ["1x2", "goals", "btts", "corners", "cards", "market"] as const;
 export type QuickFocus = (typeof QUICK_FOCUS_IDS)[number];
 
 export const QUICK_FOCUS_LABELS: Record<QuickFocus, string> = {
-  summary: "Nejsilnější shoda modelů",
   "1x2": "Výsledek 1X2",
   goals: "Góly Over/Under 2,5",
   btts: "Oba týmy skórují",
@@ -110,14 +109,7 @@ export function scoreQuickCandidate(candidate: QuickCandidate, focus: QuickFocus
     return make(Math.abs(edge) * 0.75 + Math.min(best.samples, 6) / 6 * 0.15 + ready * 0.1, `${marketLabel(best.market)} · model vs. trh ${pp(edge)}`, best.modelProbability, best.currentMarketProbability, move, best.samples);
   }
 
-  const componentScores = (["1x2", "goals", "btts"] as const)
-    .map((item) => scoreQuickCandidate(candidate, item))
-    .filter((item): item is QuickScore => item != null);
-  const strong = componentScores.filter((item) => (item.modelProbability ?? 0) >= 0.6).length;
-  const marketSignals = candidate.signals.filter((item) => item.samples >= 3);
-  const completeness = Math.min(1, (3 + Number(row.lambdaCornersHome != null) + Number(row.lambdaCardsHome != null) + Number(marketSignals.length > 0)) / 6);
-  const best = componentScores.sort((a, b) => b.score - a.score)[0];
-  return make(strong * 0.22 + ready * 0.24 + completeness * 0.18 + (best?.modelProbability ?? 0.5) * 0.36, `${strong || "Žádné"} silné modelové signály · data ${Math.round(completeness * 100)} %`, best?.modelProbability ?? null, best?.marketProbability ?? null, best?.marketMove ?? null, best?.marketSamples ?? 0);
+  return null;
 }
 
 function marketLabel(market: QuickMarketSignal["market"]) {

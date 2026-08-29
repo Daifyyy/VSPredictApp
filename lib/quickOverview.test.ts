@@ -28,6 +28,10 @@ describe("quick overview ranking", () => {
     expect(scoreQuickCandidate(candidate({ homeWin: .3, draw: .4, awayWin: .3 }), "1x2")).toBeNull();
   });
 
+  it("nenabízí neurčitou souhrnnou kategorii", () => {
+    expect(scoreQuickCandidate(candidate(), "1x2")?.reason).toContain("Domácí");
+  });
+
   it("pohyb trhu vyžaduje alespoň tři vzorky", () => {
     const row = candidate();
     row.signals = [{ market: "OVER_25", side: "OVER", line: 2.5, modelProbability: .62, openMarketProbability: .55, currentMarketProbability: .57, samples: 2 }];

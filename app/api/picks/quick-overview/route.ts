@@ -71,10 +71,18 @@ export async function GET(req: Request) {
         home: { id: row.homeTeamId, name: row.homeName, logoUrl: row.homeLogo },
         away: { id: row.awayTeamId, name: row.awayName, logoUrl: row.awayLogo },
         expectedScore: { home: row.lambdaHome, away: row.lambdaAway },
+        probabilities: { home: row.homeWin, draw: row.draw, away: row.awayWin, over25: row.over25, btts: row.bttsYes },
+        counts: {
+          corners: total(row.lambdaCornersHome, row.lambdaCornersAway),
+          cards: total(row.lambdaCardsHome, row.lambdaCardsAway),
+          cardsBeforeReferee: total(row.lambdaCardsHomeBeforeRef, row.lambdaCardsAwayBeforeRef),
+          fouls: total(row.lambdaFoulsHome, row.lambdaFoulsAway),
+        },
         lowConfidence: row.lowConfidence,
         readinessSample: row.readinessSample,
         referee: row.refereeName ? { name: row.refereeName, factor: row.refereeFactor ?? null, sample: row.refereeSample ?? 0 } : null,
         h2hMeetings: h2hCount(row.h2hSnapshot),
+        marketSignals: item.candidate.signals,
         ...item.result,
         context: contexts.get(row.fixtureId) ?? null,
       };
@@ -96,6 +104,10 @@ function emptyCategories() {
 
 function isSeriesPoint(value: unknown): value is { t: number; p: number } {
   return typeof value === "object" && value != null && typeof (value as { t?: unknown }).t === "number" && typeof (value as { p?: unknown }).p === "number";
+}
+
+function total(home: number | null | undefined, away: number | null | undefined) {
+  return home == null || away == null ? null : home + away;
 }
 
 async function buildContexts(candidates: QuickCandidate[]) {
@@ -170,7 +182,19 @@ function teamContext(kickoff: string, rows: RecentRow[], standing: ReturnType<ty
   const formScore = form.length >= 3 && parts.length ? parts.reduce((sum, item) => sum + item.value * item.weight, 0) / parts.reduce((sum, item) => sum + item.weight, 0) * 10 : null;
   const last = rows[0]?.date;
   const restDays = restDaysBetween(last ?? null, kickoff);
-  return { form, formScore, points, xgDiff, restDays, standing: standing ? { rank: standing.rank, points: standing.points, played: standing.all.played, ppg } : null, injuries: injuries?.rows ?? null, injuriesUpdatedAt: injuries?.updatedAt.toISOString() ?? null };
+  return {
+    form, formScore, points, xgDiff, restDays,
+    standing: standing ? {
+      rank: standing.rank, points: standing.points, played: standing.all.played, ppg,
+      home: splitSummary(standing.home), away: splitSummary(standing.away),
+    } : null,
+    injuries: injuries?.rows ?? null,
+    injuriesUpdatedAt: injuries?.updatedAt.toISOString() ?? null,
+  };
+}
+
+function splitSummary(split: { played: number; win: number; draw: number; lose: number; goalsFor: number; goalsAgainst: number }) {
+  return { ...split, points: split.win * 3 + split.draw, ppg: split.played ? (split.win * 3 + split.draw) / split.played : null };
 }
 
 function h2hCount(value: unknown) {
