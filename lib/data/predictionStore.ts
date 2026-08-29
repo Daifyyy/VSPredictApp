@@ -209,7 +209,14 @@ export async function upsertPrediction(row: PredictionUpsert): Promise<void> {
   // existující point-in-time hodnotu už žádný další cron nepřepíše.
   if (row.h2hSnapshot) {
     await prisma.fixturePrediction.updateMany({
-      where: { fixtureId: row.fixtureId, h2hSnapshot: { equals: Prisma.DbNull } },
+      where: {
+        fixtureId: row.fixtureId,
+        OR: [
+          { h2hSnapshot: { equals: Prisma.DbNull } },
+          { h2hSnapshotVersion: null },
+          { h2hSnapshotVersion: { lt: row.h2hSnapshotVersion ?? 0 } },
+        ],
+      },
       data: {
         h2hSnapshot: row.h2hSnapshot as unknown as Prisma.InputJsonValue,
         h2hSnapshotVersion: row.h2hSnapshotVersion ?? null,

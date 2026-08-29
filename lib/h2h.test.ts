@@ -3,6 +3,7 @@ import { summarizeHeadToHead, toPredictionSnapshot, type HeadToHeadRow } from ".
 
 const row = (values: Partial<HeadToHeadRow> & Pick<HeadToHeadRow, "teamId" | "fixtureId" | "opponentId" | "isHome">): HeadToHeadRow => ({
   context: "league", date: new Date("2026-08-01T18:00:00Z"), season: 2026,
+  competitive: true,
   goalsFor: null, goalsAgainst: null, xg: null, xgAgainst: null, corners: null,
   yellowCards: null, redCards: null, opponentName: null, opponentLogo: null,
   cachedAt: new Date("2026-08-02T00:00:00Z"), ...values,
@@ -48,10 +49,20 @@ describe("summarizeHeadToHead", () => {
       row({ teamId: 1, fixtureId: 21, opponentId: 2, isHome: false, date: new Date("2021-03-01"), goalsFor: 1, goalsAgainst: 1 }),
     ], 1, 2, capturedAt);
     const snapshot = toPredictionSnapshot(summary, 1, capturedAt);
-    expect(snapshot.version).toBe(1);
+    expect(snapshot.version).toBe(2);
     expect(snapshot.sample).toBe(2);
     expect(snapshot.recentTwoSeasonSample).toBe(1);
     expect(snapshot.sameVenueSample).toBe(1);
     expect(snapshot.goalsPerMatchA).toBe(1.5);
+  });
+
+  it("excludes friendly meetings", () => {
+    const summary = summarizeHeadToHead([
+      row({ teamId: 1, fixtureId: 30, opponentId: 2, isHome: true, competitive: false, goalsFor: 4, goalsAgainst: 0 }),
+      row({ teamId: 1, fixtureId: 31, opponentId: 2, isHome: true, goalsFor: 1, goalsAgainst: 1 }),
+    ], 1, 2);
+    expect(summary.sample).toBe(1);
+    expect(summary.draws).toBe(1);
+    expect(summary.teamAWins).toBe(0);
   });
 });

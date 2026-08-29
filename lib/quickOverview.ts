@@ -147,3 +147,13 @@ export function selectRecentSeasonRows<T extends { teamId: number; season: numbe
     .sort((a, b) => b.date.getTime() - a.date.getTime())
     .slice(0, limit);
 }
+
+/** Supports both a full H2H response and its immutable prediction snapshot. */
+export function h2hSnapshotCount(value: unknown): number {
+  if (!value || typeof value !== "object") return 0;
+  const snapshot = value as { sample?: unknown; meetings?: unknown };
+  if (typeof snapshot.sample === "number" && Number.isFinite(snapshot.sample)) {
+    return Math.max(0, Math.floor(snapshot.sample));
+  }
+  return Array.isArray(snapshot.meetings) ? snapshot.meetings.length : 0;
+}

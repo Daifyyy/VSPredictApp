@@ -5,6 +5,7 @@ export async function getHeadToHead(teamAId: number, teamBId: number): Promise<H
   if (!isRealDataConfigured()) return summarizeHeadToHead([], teamAId, teamBId);
   const rows = await prisma.matchStatCache.findMany({
     where: {
+      competitive: true,
       OR: [
         { teamId: teamAId, opponentId: teamBId },
         { teamId: teamBId, opponentId: teamAId },

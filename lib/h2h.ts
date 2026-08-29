@@ -29,7 +29,7 @@ export interface HeadToHeadSummary {
   updatedAt: string | null;
 }
 
-export const H2H_SNAPSHOT_VERSION = 1;
+export const H2H_SNAPSHOT_VERSION = 2;
 
 /** Minimální neměnný feature set pro časově korektní backtest bez osobních údajů/UI dat. */
 export interface HeadToHeadPredictionSnapshot {
@@ -88,6 +88,7 @@ export interface HeadToHeadRow {
   context: string;
   date: Date;
   season: number;
+  competitive: boolean;
   isHome: boolean;
   goalsFor: number | null;
   goalsAgainst: number | null;
@@ -116,8 +117,10 @@ export function summarizeHeadToHead(
 ): HeadToHeadSummary {
   const relevant = rows
     .filter((row) =>
-      (row.teamId === teamAId && row.opponentId === teamBId) ||
-      (row.teamId === teamBId && row.opponentId === teamAId))
+      row.competitive && (
+        (row.teamId === teamAId && row.opponentId === teamBId) ||
+        (row.teamId === teamBId && row.opponentId === teamAId)
+      ))
     .sort((a, b) => b.date.getTime() - a.date.getTime());
   const byFixture = new Map<number, HeadToHeadRow[]>();
   for (const row of relevant) {

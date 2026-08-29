@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rankQuickCandidates, restDaysBetween, scoreQuickCandidate, selectRecentSeasonRows, type QuickCandidate } from "./quickOverview";
+import { h2hSnapshotCount, rankQuickCandidates, restDaysBetween, scoreQuickCandidate, selectRecentSeasonRows, type QuickCandidate } from "./quickOverview";
 import type { PredictionRow } from "./types";
 
 function candidate(overrides: Partial<PredictionRow> = {}): QuickCandidate {
@@ -59,5 +59,10 @@ describe("quick overview ranking", () => {
       { teamId: 20, season: 2026, date: new Date("2026-08-21T18:00:00Z"), id: "other-team" },
     ];
     expect(selectRecentSeasonRows(rows, 10, 2026, "2026-08-29T18:00:00Z").map((row) => row.id)).toEqual(["current"]);
+  });
+  it("reads H2H count from a prediction snapshot", () => {
+    expect(h2hSnapshotCount({ sample: 2 })).toBe(2);
+    expect(h2hSnapshotCount({ meetings: [{}, {}] })).toBe(2);
+    expect(h2hSnapshotCount(null)).toBe(0);
   });
 });

@@ -3,7 +3,7 @@ import { prisma, isRealDataConfigured } from "@/lib/db";
 import { getUpcomingPredictions } from "@/lib/data/repository";
 import { catalogLeagueName, isPublicCompetition } from "@/lib/data/catalog";
 import { localDateKey } from "@/lib/competitionGrouping";
-import { QUICK_FOCUS_IDS, rankQuickCandidates, restDaysBetween, selectRecentSeasonRows, type QuickCandidate, type QuickMarketSignal } from "@/lib/quickOverview";
+import { h2hSnapshotCount, QUICK_FOCUS_IDS, rankQuickCandidates, restDaysBetween, selectRecentSeasonRows, type QuickCandidate, type QuickMarketSignal } from "@/lib/quickOverview";
 import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
 import { logError } from "@/lib/logError";
 import type { ApiStandingRow } from "@/lib/data/apiFootball";
@@ -81,7 +81,7 @@ export async function GET(req: Request) {
         lowConfidence: row.lowConfidence,
         readinessSample: row.readinessSample,
         referee: row.refereeName ? { name: row.refereeName, factor: row.refereeFactor ?? null, sample: row.refereeSample ?? 0 } : null,
-        h2hMeetings: h2hCount(row.h2hSnapshot),
+        h2hMeetings: h2hSnapshotCount(row.h2hSnapshot),
         marketSignals: item.candidate.signals,
         ...item.result,
         context: contexts.get(row.fixtureId) ?? null,
@@ -204,10 +204,4 @@ function rate<T>(rows: T[], predicate: (row: T) => boolean) {
 
 function splitSummary(split: { played: number; win: number; draw: number; lose: number; goalsFor: number; goalsAgainst: number }) {
   return { ...split, points: split.win * 3 + split.draw, ppg: split.played ? (split.win * 3 + split.draw) / split.played : null };
-}
-
-function h2hCount(value: unknown) {
-  if (!value || typeof value !== "object") return 0;
-  const meetings = (value as { meetings?: unknown }).meetings;
-  return Array.isArray(meetings) ? meetings.length : 0;
 }
