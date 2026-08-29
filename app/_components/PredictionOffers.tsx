@@ -6,6 +6,7 @@ import { competitionGroupLabel, groupCompetitionFixtures, localDateKey } from "@
 import { isPredictionPresetId, matchesPredictionPreset, PREDICTION_PRESETS, predictionPresetReason, type PredictionPresetId, type PredictionPresetSignals } from "@/lib/predictionPresets";
 import { CompetitionDayTabs } from "./CompetitionDayTabs";
 import { FixtureModelCard } from "./FixtureModelCard";
+import { QuickMatchOverview } from "./QuickMatchOverview";
 import { ProLock } from "./ProLock";
 import { TeamLogo } from "./TeamLogo";
 import type { SessionUser } from "./sessionUser";
@@ -108,7 +109,15 @@ export function PredictionOffers({ user, marketView }: { user: SessionUser | nul
     writeUrl({ league: next.has(id) ? String(id) : null }); return next;
   });
 
-  if (locked) return <div className="mt-4"><ProLock user={user} /></div>;
+  if (locked) {
+    const fallbackDate = typeof window === "undefined"
+      ? ""
+      : new URLSearchParams(window.location.search).get("date") ?? localDateKey(new Date());
+    return <div className="mt-4 space-y-4">
+      <QuickMatchOverview date={fallbackDate || null} user={user} />
+      <ProLock user={user} />
+    </div>;
+  }
   if (error) return <p className="mt-4 rounded-xl border border-border p-5 text-muted">Nabídku se nepodařilo načíst.</p>;
   if (!offers) return <div className="mt-4 h-32 animate-pulse rounded-xl bg-border/60" />;
 
@@ -140,6 +149,7 @@ export function PredictionOffers({ user, marketView }: { user: SessionUser | nul
       <span className="shrink-0 text-xs text-muted">{preset === "all" ? visible.length : filtered.length} zápasů</span>
     </div>
     {preset === "all" && <CompetitionDayTabs days={days} activeDate={activeDate} onSelect={selectDate} />}
+    {preset === "all" && <QuickMatchOverview date={activeDate || null} user={user} />}
     {preset !== "all" && <p className="mt-3 text-xs text-muted">Výběr pro celý dostupný horizont · modelový filtr, nikoli publikovaný tip.</p>}
     {marketView && <p className="mt-3 text-xs text-muted">Pořadí odpovídá Programu. Rozdíl model–trh není automaticky potvrzená value sázka.</p>}
     <div className="mt-3 space-y-3">

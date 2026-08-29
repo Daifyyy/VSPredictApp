@@ -22,6 +22,7 @@ import { useCurrentUser } from "./useCurrentUser";
 import { InstallLink } from "./InstallLink";
 import { preferredProgramDayIndex } from "@/lib/homeDashboard";
 import { FixtureModelCard } from "./FixtureModelCard";
+import { QuickMatchOverview } from "./QuickMatchOverview";
 import { chooseFeaturedFixture } from "@/lib/homeFeaturedFixture";
 import { competitionGroupLabel, groupCompetitionFixtures, localDateKey } from "@/lib/competitionGrouping";
 import type { CompetitionGroup } from "@/lib/data/catalog";
@@ -638,6 +639,8 @@ export function ZapasyApp({
               rememberPage("program", visibleDays[index]?.date);
             }}
           />
+
+          <QuickMatchOverview date={active?.date ?? null} user={user} compact />
 
           {proCta && (
             <ProCtaBanner

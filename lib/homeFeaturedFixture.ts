@@ -62,6 +62,15 @@ const RIVALRY_BY_PAIR = new Map(
   RIVALRIES.map((rivalry) => [pairKey(...rivalry.teams), rivalry])
 );
 
+/** Kurátorovaný titulek použitelný i mimo hlavní featured kartu. */
+export function fixtureEditorialTitle(homeName: string, awayName: string, europeanCup = false): string | null {
+  const rivalry = RIVALRY_BY_PAIR.get(pairKey(homeName, awayName));
+  if (rivalry) return rivalry.title;
+  const bothElite = ELITE_CLUBS.has(normalized(homeName)) && ELITE_CLUBS.has(normalized(awayName));
+  if (!bothElite) return null;
+  return europeanCup ? "Evropský souboj velkoklubů" : "Souboj ligových velkoklubů";
+}
+
 function roundBonus(round?: string | null): number {
   const value = round?.toLocaleLowerCase("en") ?? "";
   if (value.includes("final") && !value.includes("semi") && !value.includes("quarter")) return 1_100;
