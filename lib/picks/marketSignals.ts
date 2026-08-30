@@ -3,10 +3,11 @@ import type { PredictionRow } from "@/lib/types";
 import { sharpFair, sharpFairTotal, sharpLineFair } from "./books";
 import { overProbNegBin } from "./corners";
 import { mainHalfLine } from "./countDistribution";
+import { teamTotalProb } from "./teamTotals";
 
 export const MARKET_SIGNAL_POLICY_VERSION = 1;
 export const COUNT_MARKET_SIGNAL_POLICY_VERSION = 2;
-export type SignalMarket = "1X2" | "OVER_25" | "BTTS" | "CORNERS" | "CARDS";
+export type SignalMarket = "1X2" | "OVER_25" | "BTTS" | "CORNERS" | "CARDS" | "TEAM_HOME_05" | "TEAM_HOME_15" | "TEAM_AWAY_05" | "TEAM_AWAY_15";
 export type SignalSide = "HOME" | "DRAW" | "AWAY" | "OVER" | "UNDER";
 
 export interface FrozenMarketSignal {
@@ -100,6 +101,16 @@ export function freezeMarketSignals(row: PredictionRow, books: BookOdds[]): Froz
       publishedTip: false,
     });
   }
+  for (const definition of [
+    { market: "TEAM_HOME_05" as const, book: "totalHome" as const, team: "home" as const, line: .5 },
+    { market: "TEAM_HOME_15" as const, book: "totalHome" as const, team: "home" as const, line: 1.5 },
+    { market: "TEAM_AWAY_05" as const, book: "totalAway" as const, team: "away" as const, line: .5 },
+    { market: "TEAM_AWAY_15" as const, book: "totalAway" as const, team: "away" as const, line: 1.5 },
+  ]) {
+    const fair = sharpLineFair(books, definition.book, definition.line);
+    if (!fair) continue;
+    out.push({ market: definition.market, side: "OVER", line: definition.line, modelProbability: teamTotalProb(row, definition.team, definition.line), marketProbability: fair.over, publishedTip: false });
+  }
   return out;
 }
 
@@ -131,7 +142,8 @@ export function marketProbabilityAt(
     return side === "OVER" ? best.yes : best.no;
   }
   if (line == null) return null;
-  const fair = sharpLineFair(books, market === "CORNERS" ? "corners" : "cards", line);
+  const lineMarket = market === "CORNERS" ? "corners" : market === "CARDS" ? "cards" : market.startsWith("TEAM_HOME") ? "totalHome" : "totalAway";
+  const fair = sharpLineFair(books, lineMarket, line);
   if (!fair) return null;
   return side === "OVER" ? fair.over : fair.under;
 }

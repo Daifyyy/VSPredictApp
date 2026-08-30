@@ -32,6 +32,7 @@ import { ViewTabs } from "./ViewTabs";
 import type { SessionUser } from "./sessionUser";
 import { PredictionOffers } from "./PredictionOffers";
 import { ModelPortfolio } from "./ModelPortfolio";
+import { ModelLab } from "./ModelLab";
 
 type Venue = "home" | "away" | "any";
 
@@ -280,6 +281,7 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
       ) : (
         <ModelView
           isPro={user?.tier === "PRO"}
+          isAdmin={Boolean(user?.isAdmin)}
           reliability={reliability}
           marketBench={marketBench}
           clv={clv}
@@ -330,6 +332,7 @@ function ViewPurpose({ view }: { view: View }) {
  */
 function ModelView({
   isPro,
+  isAdmin,
   reliability,
   marketBench,
   clv,
@@ -348,6 +351,7 @@ function ModelView({
   onRetry,
 }: {
   isPro: boolean;
+  isAdmin: boolean;
   reliability: ReliabilityReport | null;
   marketBench: MarketBenchmark | null;
   clv: ClvSummary | null;
@@ -396,12 +400,11 @@ function ModelView({
 
   return (
     <div className="mt-4 space-y-3">
+      <ModelLab isPro={isPro} isAdmin={isAdmin} />
       <nav className="flex gap-2 overflow-x-auto rounded-xl border border-border bg-surface p-1" aria-label="Části výkonnosti">
-        {[["performance-portfolio", "Portfolio"], ["performance-quality", "Kvalita modelů"], ["performance-clv", "CLV a trh"], ["performance-research", "Výzkum a archiv"]].map(([href, label]) => <a key={href} href={`#${href}`} className="min-h-11 shrink-0 rounded-lg px-3 py-2.5 text-xs font-semibold text-foreground transition hover:bg-background">{label}</a>)}
+        {[["performance-detail", "Doplňková diagnostika"], ["performance-research", "Výzkum a archiv"], ["performance-quality", "Všechny prognózy"]].map(([href, label]) => <a key={href} href={`#${href}`} className="min-h-11 shrink-0 rounded-lg px-3 py-2.5 text-xs font-semibold text-foreground transition hover:bg-background">{label}</a>)}
       </nav>
-      <DeferredPanel id="performance-portfolio" title="Živě testované strategie"><ModelPortfolio isPro={isPro} /></DeferredPanel>
-      <h2 id="performance-clv" className="scroll-mt-24 px-1 pt-3 text-base font-semibold text-foreground">CLV a trh</h2>
-      <MarketClvDashboard rows={clvByMarket} />
+      <DeferredPanel id="performance-detail" title="Doplňková historická diagnostika"><div className="space-y-3"><ModelPortfolio isPro={isPro} /><MarketClvDashboard rows={clvByMarket} /></div></DeferredPanel>
       <h2 id="performance-research" className="scroll-mt-24 px-1 pt-3 text-base font-semibold text-foreground">Výzkum a archiv</h2>
       <ChecklistPerformancePanel value={checklist} />
       {backtest && <StrategyPanel backtest={backtest} market={market} venue={venue} minProb={minProb} settled={track?.n ?? 0} />}

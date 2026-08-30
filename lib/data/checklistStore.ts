@@ -20,6 +20,8 @@ export interface NewChecklistCandidate {
   sampleCount: number;
 }
 
+type ChecklistMarket = "1X2" | "OVER_25" | "BTTS" | "CORNERS" | "CARDS";
+
 function priceFor(books: BookOdds[], market: SignalMarket, side: SignalSide, line: number | null) {
   if (market === "1X2") return bestPrice(books, side === "HOME" ? "home" : side === "DRAW" ? "draw" : "away");
   if (market === "OVER_25") return bestPrice(books, side === "OVER" ? "over25" : "under25");
@@ -44,7 +46,9 @@ export async function captureChecklistDecisions(
   });
   const created: NewChecklistCandidate[] = [];
   for (const signal of signals) {
-    const market = signal.market as SignalMarket;
+    // Dotaz výše týmové totaly záměrně nečte; checklist je jejich výzkumným ledgerem
+    // nenahrazuje a typ tak zůstává omezený na původních pět trhů.
+    const market = signal.market as ChecklistMarket;
     // BTTS ma vlastni autonomni strategii; checklist v1 je zamerne jen 1X2/Over/rohy/karty.
     if (market === "BTTS") continue;
     const side = signal.side as SignalSide;

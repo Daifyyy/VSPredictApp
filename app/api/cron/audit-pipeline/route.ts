@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireCronAuth } from "@/lib/cronAuth";
 import { auditPipeline, withCronRun } from "@/lib/operations";
 import { logError } from "@/lib/logError";
+import { monitorModelLab } from "@/lib/data/modelLabMonitoring";
 
 export const maxDuration = 60;
 
@@ -11,14 +12,16 @@ export async function GET(req: Request) {
   try {
     const result = await withCronRun("audit-pipeline", async () => {
       const health = await auditPipeline();
+      const modelLab = await monitorModelLab();
       return {
         ...health,
+        modelLab,
         candidates: health.coverage.reduce((sum, row) => sum + row.eligible, 0),
         processed: health.coverage.reduce((sum, row) => sum + row.covered, 0),
         // NalezenĂ˝ incident nenĂ­ chyba samotnĂ©ho auditu. Jinak audit vytvĂˇĹ™Ă­
         // rekurzivnĂ­ faleĹˇnĂ˝ poplach pokaĹľdĂ©, kdy korektnÄ› odhalĂ­ problĂ©m jinde.
         errors: 0,
-        findings: health.incidents.length,
+        findings: health.incidents.length + modelLab.findings,
         remaining: health.overdue,
       };
     });

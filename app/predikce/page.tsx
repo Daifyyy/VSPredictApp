@@ -1,6 +1,7 @@
 import { PicksApp } from "../_components/PicksApp";
 import { getCurrentUser } from "@/lib/authUser";
 import type { SessionUser } from "../_components/sessionUser";
+import { isAdminEmail } from "@/lib/entitlements";
 
 export const metadata = {
   title: "Predikce — Football Insight",
@@ -17,6 +18,7 @@ export default async function PredikcePage() {
         image: cu.image,
         tier: cu.tier,
         proTrialUsed: cu.proTrialUsed,
+        isAdmin: isAdminEmail(cu.email),
       }
     : null;
   return (

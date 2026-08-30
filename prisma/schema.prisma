@@ -487,6 +487,90 @@ model AutonomousTipSnapshot {
   @@index([capturedAt])
 }
 
+/// Ručně řízený stav verzované strategie. Výpočty mohou doporučit změnu, nikdy ji však
+/// samy neprovedou; tím se živá politika nemůže přelaďovat podle již známých výsledků.
+model ModelStrategyDefinition {
+  id                 String   @id @default(cuid())
+  strategy           String
+  policyVersion      Int
+  market             String
+  modelContext       String
+  modelVersion       Int
+  status             String
+  title              String
+  rules              Json
+  decisionCriteria   Json
+  minimumSample      Int
+  startedAt          DateTime
+  endedAt            DateTime?
+  updatedAt          DateTime @updatedAt
+
+  audits ModelStrategyStatusAudit[]
+  reports ModelStrategyReviewReport[]
+  incidents ModelDegradationIncident[]
+
+  @@unique([strategy, policyVersion, modelContext, modelVersion])
+  @@index([status, modelContext])
+}
+
+model ModelStrategyStatusAudit {
+  id           String   @id @default(cuid())
+  definitionId String
+  fromStatus   String?
+  toStatus     String
+  reason       String
+  changedBy    String
+  createdAt    DateTime @default(now())
+
+  definition ModelStrategyDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  @@index([definitionId, createdAt])
+}
+
+/// Neměnný kontrolní report pro milníky 50/100/200. Dataset, časová hranice i brány
+/// jsou uložené, takže pozdější změna kódu nepřepíše původní rozhodnutí.
+model ModelStrategyReviewReport {
+  id             String   @id @default(cuid())
+  definitionId   String
+  milestone      Int
+  datasetFrom    DateTime?
+  datasetTo      DateTime?
+  trainingTo     DateTime?
+  holdoutFrom    DateTime?
+  sampleSize     Int
+  pricedSample   Int
+  closingSample  Int
+  metrics        Json
+  gates          Json
+  recommendation String
+  createdAt      DateTime @default(now())
+
+  definition ModelStrategyDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  @@unique([definitionId, milestone])
+  @@index([createdAt])
+}
+
+model ModelDegradationIncident {
+  id             String   @id @default(cuid())
+  definitionId   String
+  metric         String
+  windowSize     Int
+  baselineValue  Float?
+  recentValue    Float?
+  evidence       Json
+  consecutive    Int      @default(1)
+  status         String   @default("OPEN")
+  action         String
+  firstDetectedAt DateTime @default(now())
+  lastDetectedAt DateTime @default(now())
+  resolvedAt     DateTime?
+
+  definition ModelStrategyDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  @@index([definitionId, status, lastDetectedAt])
+}
+
 /// Nemenny vyber rychleho denniho prehledu. Radek vznikne pri prvnim splneni brany a
 /// pozdejsi pohyb modelu ani trhu jej nesmi prepsat; po zapase se pouze doplni audit vysledku.
 model QuickOverviewSelection {

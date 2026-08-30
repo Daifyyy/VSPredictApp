@@ -50,6 +50,7 @@ export async function appendMarketSignalPoints(fixtureId: number, books: BookOdd
   const rows = await prisma.marketSignalSnapshot.findMany({ where: { fixtureId, OR: [
     { market: { in: ["1X2", "OVER_25", "BTTS"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
     { market: { in: ["CORNERS", "CARDS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
+    { market: { in: ["TEAM_HOME_05", "TEAM_HOME_15", "TEAM_AWAY_05", "TEAM_AWAY_15"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
   ] } });
   for (const row of rows) {
     const probability = marketProbabilityAt(books, row.market as never, row.side as never, row.line);
@@ -74,6 +75,7 @@ export async function closeMarketSignals(fixtureId: number, books: BookOdds[], a
   const rows = await prisma.marketSignalSnapshot.findMany({ where: { fixtureId, OR: [
     { market: { in: ["1X2", "OVER_25", "BTTS"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
     { market: { in: ["CORNERS", "CARDS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
+    { market: { in: ["TEAM_HOME_05", "TEAM_HOME_15", "TEAM_AWAY_05", "TEAM_AWAY_15"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
   ] } });
   for (const row of rows) {
     const probability = marketProbabilityAt(books, row.market as never, row.side as never, row.line);
