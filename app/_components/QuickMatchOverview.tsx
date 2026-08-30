@@ -21,6 +21,8 @@ interface QuickItem {
   reason: string; modelProbability: number | null; marketProbability: number | null; marketMove: number | null; marketSamples: number;
   experimental: boolean; referee: { name: string; factor: number | null; sample: number } | null; h2hMeetings: number;
   marketSignals: MarketSignal[];
+  matchState: "pending" | "live" | "settled";
+  result: { home: number; away: number; hit: boolean | null; actualCounts: { corners: number | null; cards: number | null; fouls: number | null } | null } | null;
   context: { home: TeamContext; away: TeamContext; restDifference: number | null; restRelevant: boolean; completeness: number; standingsUpdatedAt: string | null } | null;
 }
 interface Payload { date: string; generatedAt: string; categories: Record<QuickFocus, QuickItem[]> }
@@ -105,6 +107,8 @@ function QuickCard({ item, focus, open, pro, favorite, onFavorite, onToggle }: {
         <Team team={item.home} /><div className="rounded-lg bg-surface px-2 py-1 text-xs font-black tabular-nums">{item.expectedScore.home.toFixed(1)}–{item.expectedScore.away.toFixed(1)}</div><Team team={item.away} />
       </div>
       <div className="mt-3 rounded-lg bg-accent/15 px-3 py-2 text-center text-xs font-bold text-foreground">{!pro && focus === "market" ? "Výrazný rozdíl modelu a trhu" : item.reason}</div>
+      {item.result && <div className={`mt-2 rounded-lg px-3 py-2 text-center text-xs font-bold ${item.result.hit == null ? "bg-surface text-foreground" : item.result.hit ? "bg-positive/10 text-positive" : "bg-negative/10 text-negative"}`}>{resultLabel(item, focus)}</div>}
+      {!item.result && item.matchState === "live" && <div className="mt-2 rounded-lg bg-warning/10 px-3 py-2 text-center text-xs font-bold text-warning">Zápas právě probíhá</div>}
       {pro && <div className="mt-3 grid grid-cols-3 gap-2 text-center text-[10px]">
         <SmallMetric label="Model" value={percent(item.modelProbability)} />
         <SmallMetric label="Otevření trhu" value={percent(relevantSignal(item, focus)?.openMarketProbability ?? null)} />
@@ -162,6 +166,7 @@ function percent(value: number | null) { return value == null ? "—" : `${Math.
 function movement(value: number | null) { return value == null ? "bez srovnání" : `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)} p. b. od otevření`; }
 function signed(value: number | null) { return value == null ? "—" : `${value >= 0 ? "+" : ""}${value.toFixed(2)}/záp.`; }
 function decimal(value: number | null) { return value == null ? "—" : value.toFixed(1); }
+function resultLabel(item: QuickItem, focus: QuickFocus) { const result = item.result!; const count = focus === "corners" ? result.actualCounts?.corners : focus === "cards" ? result.actualCounts?.cards : null; const base = count == null ? `Konečný stav ${result.home}:${result.away}` : `Skutečnost ${count} ${focus === "corners" ? "rohů" : "karet"}`; return `${base}${result.hit == null ? "" : result.hit ? " · původní scénář vyšel" : " · původní scénář nevyšel"}`; }
 function formatRate(value: number | null, sample: number) { return value == null ? "—" : `${Math.round(value * 100)} % z ${sample} záp.`; }
 
 function compareLink(item: QuickItem) {

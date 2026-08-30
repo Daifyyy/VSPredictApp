@@ -377,3 +377,7 @@ body {
   .director-causal-grid { grid-template-columns: 1fr; }
   .director-event-context { grid-template-columns: 1fr; }
 }
+@keyframes nav-progress {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(210%); }
+}

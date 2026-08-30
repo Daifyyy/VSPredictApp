@@ -69,6 +69,7 @@ export function scoreQuickCandidate(candidate: QuickCandidate, focus: QuickFocus
     const best = ordered[0];
     if (best.side === "Remíza") return null;
     const gap = best.value - ordered[1].value;
+    if (best.value + 1e-9 < 0.58 || gap + 1e-9 < 0.1 || row.readinessSample < 6 || row.lowConfidence) return null;
     const marketSignal = signal(candidate, "1X2");
     return make(best.value * 0.65 + gap * 0.25 + ready * 0.1, `${best.side} ${pct(best.value)} · náskok ${Math.round(gap * 100)} p. b.`, best.value, marketSignal?.openMarketProbability ?? null, marketSignal ? marketSignal.currentMarketProbability - marketSignal.openMarketProbability : null, marketSignal?.samples ?? 0);
   }
@@ -77,6 +78,7 @@ export function scoreQuickCandidate(candidate: QuickCandidate, focus: QuickFocus
     const over = row.over25;
     const model = Math.max(over, 1 - over);
     const side = over >= 0.5 ? "Over 2,5" : "Under 2,5";
+    if (model < 0.6 || row.readinessSample < 6 || row.lowConfidence) return null;
     const marketSignal = signal(candidate, "OVER_25");
     return make(model * 0.85 + ready * 0.15, `${side} · ${pct(model)}`, model, marketSignal?.openMarketProbability ?? null, marketSignal ? marketSignal.currentMarketProbability - marketSignal.openMarketProbability : null, marketSignal?.samples ?? 0);
   }
@@ -85,6 +87,7 @@ export function scoreQuickCandidate(candidate: QuickCandidate, focus: QuickFocus
     const yes = row.bttsYes;
     const model = Math.max(yes, 1 - yes);
     const side = yes >= 0.5 ? "Oba skórují – Ano" : "Oba skórují – Ne";
+    if (model < 0.6 || row.readinessSample < 6 || row.lowConfidence) return null;
     const marketSignal = signal(candidate, "BTTS");
     return make(model * 0.85 + ready * 0.15, `${side} · ${pct(model)}`, model, marketSignal?.openMarketProbability ?? null, marketSignal ? marketSignal.currentMarketProbability - marketSignal.openMarketProbability : null, marketSignal?.samples ?? 0);
   }
@@ -93,6 +96,7 @@ export function scoreQuickCandidate(candidate: QuickCandidate, focus: QuickFocus
     const marketSignal = signal(candidate, focus === "corners" ? "CORNERS" : "CARDS");
     if (!marketSignal || marketSignal.line == null) return null;
     const model = Math.max(marketSignal.modelProbability, 1 - marketSignal.modelProbability);
+    if (Math.abs(marketSignal.line % 1) !== 0.5 || model < 0.6 || row.readinessSample < 6 || row.lowConfidence) return null;
     const side = marketSignal.modelProbability >= 0.5 ? "Over" : "Under";
     const referee = focus === "cards" && row.refereeSample && row.refereeSample >= 10
       ? ` · rozhodčí ${row.refereeFactor && row.refereeFactor > 1.03 ? "zvyšuje" : row.refereeFactor && row.refereeFactor < 0.97 ? "snižuje" : "neutrální"}`
@@ -105,6 +109,7 @@ export function scoreQuickCandidate(candidate: QuickCandidate, focus: QuickFocus
     if (!eligible.length) return null;
     const best = eligible.sort((a, b) => Math.abs(b.modelProbability - b.currentMarketProbability) - Math.abs(a.modelProbability - a.currentMarketProbability))[0];
     const edge = best.modelProbability - best.currentMarketProbability;
+    if (Math.abs(edge) < 0.04 || row.readinessSample < 6 || row.lowConfidence) return null;
     const move = best.currentMarketProbability - best.openMarketProbability;
     return make(Math.abs(edge) * 0.75 + Math.min(best.samples, 6) / 6 * 0.15 + ready * 0.1, `${marketLabel(best.market)} · model vs. trh ${pp(edge)}`, best.modelProbability, best.currentMarketProbability, move, best.samples);
   }

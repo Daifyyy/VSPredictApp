@@ -3,6 +3,8 @@ import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { PWARegister } from "./_components/PWARegister";
 import { InstallPrompt } from "./_components/InstallPrompt";
+import { NavigationFeedback } from "./_components/NavigationFeedback";
+import { Suspense } from "react";
 
 const TITLE = "Football Insight — zápasy, analýzy a fotbalové statistiky";
 const DESCRIPTION =
@@ -70,6 +72,7 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         {children}
         <PWARegister />
+        <Suspense fallback={null}><NavigationFeedback /></Suspense>
         <InstallPrompt />
         <Analytics />
       </body>

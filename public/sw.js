@@ -1,79 +1,15 @@
-// Minimální service worker pro PWA: app-shell cache + offline fallback.
-// Záměrně konzervativní – necachuje API ani HTML porovnání (vždy z čerstva přes síť);
-// jen statické assety a kořenovou stránku jako offline shell.
-
-const CACHE = "football-insight-shell-v3";
-const SHELL = ["/", "/manifest.webmanifest", "/icon-192.png", "/logoapp.png"];
-
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => {})
-  );
-  self.skipWaiting();
-});
-
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-      )
-  );
-  self.clients.claim();
-});
-
+const CACHE = "football-insight-shell-v4";
+const SHELL = ["/manifest.webmanifest", "/icon-192.png", "/logoapp.png"];
+self.addEventListener("install", (event) => event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).catch(() => undefined)));
+self.addEventListener("message", (event) => { if (event.data?.type === "SKIP_WAITING") self.skipWaiting(); });
+self.addEventListener("activate", (event) => event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)))).then(() => self.clients.claim())));
+async function networkFirst(request, timeoutMs = 7000) { const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), timeoutMs); try { const response = await fetch(request, { signal: controller.signal }); if (!response.ok || response.type === "opaque") throw new Error("invalid response"); return response; } finally { clearTimeout(timeout); } }
 self.addEventListener("fetch", (event) => {
-  const req = event.request;
-  if (req.method !== "GET") return;
-  const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return; // cizí (logoCDN, API-Football) neřeš
-  if (url.pathname.startsWith("/api/")) return; // dynamická data vždy ze sítě
-
-  // Navigace: síť napřed, při výpadku offline shell (kořen z cache).
-  if (req.mode === "navigate") {
-    event.respondWith(
-      fetch(req).catch(() => caches.match("/").then((r) => r || Response.error()))
-    );
-    return;
-  }
-
-  // Statické assety: cache napřed, jinak síť (a doplň do cache).
-  event.respondWith(
-    caches.match(req).then(
-      (cached) =>
-        cached ||
-        fetch(req).then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
-          return res;
-        })
-    )
-  );
+  const request = event.request; if (request.method !== "GET") return;
+  const url = new URL(request.url); if (url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
+  if (request.mode === "navigate") { event.respondWith(networkFirst(request).then((response) => { caches.open(CACHE).then((cache) => cache.put(request, response.clone())).catch(() => undefined); return response; }).catch(() => caches.match(request).then((cached) => cached || new Response("Aplikaci se nepodařilo obnovit.", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } })))); return; }
+  const cacheable = SHELL.includes(url.pathname) || url.pathname.startsWith("/_next/static/"); if (!cacheable) return;
+  event.respondWith(caches.match(request).then((cached) => cached || fetch(request).then((response) => { if (response.ok && response.type !== "opaque") caches.open(CACHE).then((cache) => cache.put(request, response.clone())).catch(() => undefined); return response; })));
 });
-
-self.addEventListener("push", (event) => {
-  let payload = {};
-  try { payload = event.data ? event.data.json() : {}; } catch {}
-  event.waitUntil(self.registration.showNotification(payload.title || "Football Insight", {
-    body: payload.body || "Nové upozornění",
-    icon: "/icon-192.png",
-    badge: "/icon-192.png",
-    tag: payload.tag || "football-insight",
-    data: { url: payload.url || "/" },
-  }));
-});
-
-self.addEventListener("notificationclick", (event) => {
-  event.notification.close();
-  const target = new URL(event.notification.data?.url || "/", self.location.origin).href;
-  event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
-    for (const client of clients) {
-      if ("focus" in client) {
-        client.navigate(target);
-        return client.focus();
-      }
-    }
-    return self.clients.openWindow(target);
-  }));
-});
+self.addEventListener("push", (event) => { let payload = {}; try { payload = event.data ? event.data.json() : {}; } catch {} event.waitUntil(self.registration.showNotification(payload.title || "Football Insight", { body: payload.body || "Nové upozornění", icon: "/icon-192.png", badge: "/icon-192.png", tag: payload.tag || "football-insight", data: { url: payload.url || "/" } })); });
+self.addEventListener("notificationclick", (event) => { event.notification.close(); const target = new URL(event.notification.data?.url || "/", self.location.origin).href; event.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => { for (const client of clients) if ("focus" in client) { client.navigate(target); return client.focus(); } return self.clients.openWindow(target); })); });

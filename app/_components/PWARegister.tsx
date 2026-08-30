@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 /** Zaregistruje service worker (jen v produkci) a nabídne obnovu při aktualizaci. */
 export function PWARegister() {
   const [updateReady, setUpdateReady] = useState(false);
+  const [waitingWorker, setWaitingWorker] = useState<ServiceWorker | null>(null);
 
   useEffect(() => {
     if (process.env.NODE_ENV !== "production") return;
@@ -13,7 +14,7 @@ export function PWARegister() {
     let reg: ServiceWorkerRegistration | undefined;
     const onLoad = () => {
       navigator.serviceWorker
-        .register("/sw.js")
+        .register("/sw.js", { updateViaCache: "none" })
         .then((r) => {
           reg = r;
           // Nově nalezený worker → sleduj, až bude nainstalovaný. Pokud už nějaký
@@ -23,6 +24,7 @@ export function PWARegister() {
             if (!sw) return;
             sw.addEventListener("statechange", () => {
               if (sw.state === "installed" && navigator.serviceWorker.controller) {
+                setWaitingWorker(sw);
                 setUpdateReady(true);
               }
             });
@@ -44,7 +46,13 @@ export function PWARegister() {
       <span className="text-foreground">Je dostupná nová verze.</span>
       <button
         type="button"
-        onClick={() => window.location.reload()}
+        onClick={() => {
+          const waiting = waitingWorker;
+          if (!waiting) return window.location.reload();
+          let reloaded = false;
+          navigator.serviceWorker.addEventListener("controllerchange", () => { if (!reloaded) { reloaded = true; window.location.reload(); } }, { once: true });
+          waiting.postMessage({ type: "SKIP_WAITING" });
+        }}
         className="shrink-0 rounded-full bg-foreground px-3 py-1.5 text-xs font-semibold text-background transition hover:opacity-90"
       >
         Obnovit

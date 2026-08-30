@@ -84,6 +84,7 @@ import { getRefereeProfile, ingestRefereeHistory } from "./refereeStore";
 import { normalizeRefereeName, type RefereeEstimate } from "@/lib/picks/cards";
 import { FOUL_MODEL_VERSION, predictFouls } from "@/lib/picks/fouls";
 import { captureAutonomousPortfolio, closeAutonomousPortfolio } from "./autonomousPortfolioStore";
+import { captureQuickOverviewDay } from "./quickOverviewStore";
 import { invalidateCachedJson } from "./cache";
 
 /**
@@ -649,6 +650,7 @@ export async function runSnapshotOdds(
         await appendMarketSignalPoints(item.fixtureId, odds.books ?? [], now);
       }
       autonomousCandidates += await captureAutonomousPortfolio(item.fixtureId, odds.books ?? [], now);
+      await captureQuickOverviewDay(item.fixtureId, now);
       // Kandidat muze poprve vzniknout prave v zaviracim bode; nejdriv jej zmrazime a az
       // potom k nemu pripojime srovnatelne uzavreni stejne strany/linie.
       if (plan.close) await closeAutonomousPortfolio(item.fixtureId, odds.books ?? [], now);

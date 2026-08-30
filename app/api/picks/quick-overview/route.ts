@@ -3,7 +3,8 @@ import { prisma, isRealDataConfigured } from "@/lib/db";
 import { getUpcomingPredictions } from "@/lib/data/repository";
 import { catalogLeagueName, isPublicCompetition } from "@/lib/data/catalog";
 import { localDateKey } from "@/lib/competitionGrouping";
-import { h2hSnapshotCount, QUICK_FOCUS_IDS, rankQuickCandidates, restDaysBetween, selectRecentSeasonRows, type QuickCandidate, type QuickMarketSignal } from "@/lib/quickOverview";
+import { h2hSnapshotCount, QUICK_FOCUS_IDS, rankQuickCandidates, restDaysBetween, selectRecentSeasonRows, type QuickCandidate, type QuickMarketSignal, type QuickScore } from "@/lib/quickOverview";
+import type { PredictionRow } from "@/lib/types";
 import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
 import { logError } from "@/lib/logError";
 import type { ApiStandingRow } from "@/lib/data/apiFootball";
@@ -23,17 +24,27 @@ export async function GET(req: Request) {
   const date = new URL(req.url).searchParams.get("date") ?? "";
   if (!DATE_RE.test(date)) return NextResponse.json({ error: "Neplatné datum" }, { status: 400 });
   try {
-    const predictions = (await getUpcomingPredictions())
-      .filter((row) => row.available && isPublicCompetition(row.leagueId) && localDateKey(row.kickoff) === date);
+    const frozen = isRealDataConfigured() ? await prisma.quickOverviewSelection.findMany({ where: { dateKey: date, policyVersion: 1 }, orderBy: [{ category: "asc" }, { rank: "asc" }] }) : [];
+    const frozenIds = [...new Set(frozen.map((row) => row.fixtureId))];
+    const predictions = frozenIds.length
+      ? (await prisma.fixturePrediction.findMany({ where: { fixtureId: { in: frozenIds } } })).map(toPredictionRow)
+      : (await getUpcomingPredictions()).filter((row) => row.available && isPublicCompetition(row.leagueId) && localDateKey(row.kickoff) === date);
     if (!predictions.length) return response({ date, generatedAt: new Date().toISOString(), categories: emptyCategories() });
 
-    const [signalRows, fixtureCache] = isRealDataConfigured() ? await Promise.all([
+    const [signalRows, fixtureCache, actualRows] = isRealDataConfigured() ? await Promise.all([
       prisma.marketSignalSnapshot.findMany({ where: { fixtureId: { in: predictions.map((row) => row.fixtureId) } }, orderBy: [{ openedAt: "desc" }] }),
       prisma.apiCache.findUnique({ where: { key: `fixdate:${date}` }, select: { payload: true } }),
-    ]) : [[], null];
+      prisma.matchStatCache.findMany({ where: { fixtureId: { in: predictions.map((row) => row.fixtureId) } }, select: { fixtureId: true, teamId: true, corners: true, fouls: true, yellowCards: true, redCards: true } }),
+    ]) : [[], null, []];
     const rounds = new Map<number, string>();
     if (Array.isArray(fixtureCache?.payload)) for (const fixture of fixtureCache.payload as unknown as ApiFixture[]) if (fixture.league.round) rounds.set(fixture.fixture.id, fixture.league.round);
     const signals = new Map<number, QuickMarketSignal[]>();
+    const actualCounts = new Map<number, { corners: number | null; cards: number | null; fouls: number | null }>();
+    for (const fixtureId of predictions.map((row) => row.fixtureId)) {
+      const unique = [...new Map(actualRows.filter((row) => row.fixtureId === fixtureId).map((row) => [row.teamId, row])).values()];
+      const sum = (pick: (row: typeof unique[number]) => number | null) => { const values = unique.map(pick); return values.length >= 2 && values.every((value) => value != null) ? values.reduce<number>((total, value) => total + (value ?? 0), 0) : null; };
+      actualCounts.set(fixtureId, { corners: sum((row) => row.corners), fouls: sum((row) => row.fouls), cards: sum((row) => row.yellowCards == null && row.redCards == null ? null : (row.yellowCards ?? 0) + (row.redCards ?? 0)) });
+    }
     for (const item of signalRows) {
       const list = signals.get(item.fixtureId) ?? [];
       if (list.some((existing) => existing.market === item.market)) continue;
@@ -53,7 +64,13 @@ export async function GET(req: Request) {
     }
 
     const candidates: QuickCandidate[] = predictions.map((row) => ({ row, signals: signals.get(row.fixtureId) ?? [] }));
-    const ranked = Object.fromEntries(QUICK_FOCUS_IDS.map((focus) => [focus, rankQuickCandidates(candidates, focus)]));
+    const byFixture = new Map(candidates.map((candidate) => [candidate.row.fixtureId, candidate]));
+    const ranked = frozen.length
+      ? Object.fromEntries(QUICK_FOCUS_IDS.map((focus) => [focus, frozen.filter((item) => item.category === focus).flatMap((item) => {
+          const candidate = byFixture.get(item.fixtureId);
+          return candidate ? [{ candidate, result: { score: item.score, reason: item.reason, modelProbability: item.modelProbability, marketProbability: item.marketProbability, marketMove: item.marketMove, marketSamples: item.marketSamples, experimental: candidate.row.modelContext === "EURO_CUP" } satisfies QuickScore }] : [];
+        })]))
+      : Object.fromEntries(QUICK_FOCUS_IDS.map((focus) => [focus, rankQuickCandidates(candidates, focus)]));
     const selectedIds = [...new Set(Object.values(ranked).flatMap((items) => items.map((item) => item.candidate.row.fixtureId)))];
     const selected = candidates.filter((candidate) => selectedIds.includes(candidate.row.fixtureId));
     const contexts = await buildContexts(selected);
@@ -71,6 +88,8 @@ export async function GET(req: Request) {
         home: { id: row.homeTeamId, name: row.homeName, logoUrl: row.homeLogo },
         away: { id: row.awayTeamId, name: row.awayName, logoUrl: row.awayLogo },
         expectedScore: { home: row.lambdaHome, away: row.lambdaAway },
+        matchState: row.status === "FT" || row.status === "AET" || row.status === "PEN" ? "settled" : ["1H", "HT", "2H", "ET", "BT", "P"].includes(row.status) ? "live" : "pending",
+        result: row.homeGoals == null || row.awayGoals == null ? null : { home: row.homeGoals, away: row.awayGoals, hit: selectionHit(focus, row, item.candidate.signals, actualCounts.get(row.fixtureId) ?? null), actualCounts: actualCounts.get(row.fixtureId) ?? null },
         probabilities: { home: row.homeWin, draw: row.draw, away: row.awayWin, over25: row.over25, btts: row.bttsYes },
         counts: {
           corners: total(row.lambdaCornersHome, row.lambdaCornersAway),
@@ -92,6 +111,19 @@ export async function GET(req: Request) {
     logError("api/picks/quick-overview", error, { date });
     return NextResponse.json({ error: "Rychlý přehled se nepodařilo načíst" }, { status: 502 });
   }
+}
+
+function toPredictionRow(row: Awaited<ReturnType<typeof prisma.fixturePrediction.findMany>>[number]): PredictionRow {
+  return { ...row, kickoff: row.kickoff.toISOString(), modelContext: row.modelContext as PredictionRow["modelContext"], published1x2Side: row.published1x2Side as PredictionRow["published1x2Side"], publishedAt: row.publishedAt?.toISOString() ?? null, h2hSnapshot: row.h2hSnapshot as PredictionRow["h2hSnapshot"], h2hCapturedAt: row.h2hCapturedAt?.toISOString() ?? null, oddsFetchedAt: row.oddsFetchedAt?.toISOString() ?? null, oddsCloseAt: row.oddsCloseAt?.toISOString() ?? null, settledAt: row.settledAt?.toISOString() ?? null } as PredictionRow;
+}
+
+function selectionHit(focus: string, row: PredictionRow, signals: QuickMarketSignal[], actual: { corners: number | null; cards: number | null } | null): boolean | null {
+  if (row.homeGoals == null || row.awayGoals == null) return null;
+  if (focus === "1x2") return row.homeWin >= row.awayWin ? row.homeGoals > row.awayGoals : row.awayGoals > row.homeGoals;
+  if (focus === "goals") return (row.over25 >= 0.5) === (row.homeGoals + row.awayGoals > 2.5);
+  if (focus === "btts") return (row.bttsYes >= 0.5) === (row.homeGoals > 0 && row.awayGoals > 0);
+  if (focus === "corners" || focus === "cards") { const signal = signals.find((item) => item.market === (focus === "corners" ? "CORNERS" : "CARDS")); const count = focus === "corners" ? actual?.corners : actual?.cards; if (!signal || signal.line == null || count == null) return null; return signal.side === "OVER" ? count > signal.line : count < signal.line; }
+  return null;
 }
 
 function response(body: unknown) {

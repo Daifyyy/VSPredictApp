@@ -1253,7 +1253,9 @@ async function buildClubTeam(
     const previousFinished = onlyFinished(
       await listClubFixtures(teamId, leagueId, PREVIOUS_SEASON)
     );
-    formPool = [...currentFinished, ...previousFinished];
+    // Aktualni forma smi obsahovat jen letosni soutezni zapasy. Predchozi rocnik zustava
+    // oddelenym baseline priorem a nesmi se v UI tvarit jako posledni forma.
+    formPool = currentFinished;
     baselinePool = previousFinished;
   }
 
@@ -1280,7 +1282,7 @@ async function buildClubTeam(
     // se pak dostanou jen zápasy baseline sezóny – `tagBaseline` třídí podle `season`,
     // takže druholigový ročník ano, letní příprava (už nová sezóna) ne. Ta zůstane
     // jen ve formě, a to se sníženou váhou (`matchWeight` – přátelák).
-    formPool = dedupeFixtures([...formPool, ...recent]);
+    formPool = dedupeFixtures([...formPool, ...recent.filter((fixture) => fixture.league.season === CURRENT_SEASON && !isFriendly(fixture.league.name))]);
     baselinePool = recent;
   }
 

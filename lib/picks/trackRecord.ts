@@ -153,6 +153,13 @@ export interface BacktestResult {
   hitRate: number | null; // null když n === 0
   /** Poslední vsazené tipy (auditace čísla úspěšnosti); seřazené dle kickoff sestupně. */
   samples: BacktestSample[];
+  priced: number;
+  staked: number;
+  profit: number;
+  roi: number | null;
+  averageOdds: number | null;
+  maxDrawdown: number;
+  roiConfidence95: { low: number; high: number } | null;
 }
 
 /** Jeden odehraný tip splňující pravidlo – co se tipovalo, jak to dopadlo. */
@@ -190,6 +197,8 @@ export function backtestRule(
   let n = 0;
   let hits = 0;
   const samples: BacktestSample[] = [];
+  const pricedReturns: number[] = [];
+  const pricedOdds: number[] = [];
   for (const r of rows) {
     if (!r.available || r.homeGoals == null || r.awayGoals == null) continue;
     const m = evaluateRule(r, rule);
@@ -197,6 +206,8 @@ export function backtestRule(
     n++;
     const hit = pickHit(r.homeGoals, r.awayGoals, rule.market, m.side);
     if (hit) hits++;
+    const odds = rule.market === "win" ? (m.side === "home" ? r.oddsHome : r.oddsAway) : rule.market === "over25" ? r.oddsOver25 : r.oddsBtts;
+    if (odds != null && odds > 1) { pricedOdds.push(odds); pricedReturns.push(hit ? odds - 1 : -1); }
     samples.push({
       fixtureId: r.fixtureId,
       kickoff: r.kickoff,
@@ -212,10 +223,30 @@ export function backtestRule(
   }
   // Vzorek = poslední okno (nespoléhat na pořadí vstupu); n/hits zůstávají přes celou historii.
   samples.sort((a, b) => b.kickoff.localeCompare(a.kickoff));
+  const profit = pricedReturns.reduce((sum, value) => sum + value, 0);
+  let equity = 0, peak = 0, maxDrawdown = 0;
+  for (const value of pricedReturns) { equity += value; peak = Math.max(peak, equity); maxDrawdown = Math.max(maxDrawdown, peak - equity); }
   return {
     n,
     hits,
     hitRate: n === 0 ? null : hits / n,
     samples: samples.slice(0, sampleLimit),
+    priced: pricedReturns.length,
+    staked: pricedReturns.length,
+    profit,
+    roi: pricedReturns.length ? profit / pricedReturns.length : null,
+    averageOdds: pricedOdds.length ? pricedOdds.reduce((sum, value) => sum + value, 0) / pricedOdds.length : null,
+    maxDrawdown,
+    roiConfidence95: bootstrapInterval(pricedReturns),
   };
+}
+
+function bootstrapInterval(returns: number[]): { low: number; high: number } | null {
+  if (returns.length < 10) return null;
+  let seed = 0x51f15e;
+  const random = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 0x100000000; };
+  const values: number[] = [];
+  for (let run = 0; run < 1000; run++) { let sum = 0; for (let i = 0; i < returns.length; i++) sum += returns[Math.floor(random() * returns.length)]; values.push(sum / returns.length); }
+  values.sort((a, b) => a - b);
+  return { low: values[24], high: values[974] };
 }

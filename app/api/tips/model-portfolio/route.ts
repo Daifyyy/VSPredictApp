@@ -6,6 +6,7 @@ import { summarizePortfolio } from "@/lib/picks/portfolioStats";
 import { PUBLIC_CLUB_LEAGUE_IDS } from "@/lib/data/catalog";
 import { logError } from "@/lib/logError";
 import { binaryOutcome, freshClosing } from "@/lib/picks/evaluation";
+import { pragueTwoDayStart } from "@/lib/recentWindow";
 
 export const dynamic = "force-dynamic";
 
@@ -16,13 +17,14 @@ export async function GET(req: Request) {
   if (!allowRequest(`model-portfolio:${user.id}`, 30, 60_000)) return tooMany();
   const page = Math.max(1, Number(new URL(req.url).searchParams.get("page")) || 1);
   const take = 40;
+  const recentFrom = pragueTwoDayStart();
   try {
     const [automatic, watches, checklist, legacy, total] = await Promise.all([
-      prisma.autonomousTipSnapshot.findMany({ where: { status: "candidate" }, orderBy: { qualifiedAt: "desc" }, skip: (page - 1) * take, take }),
-      prisma.autonomousTipSnapshot.findMany({ where: { status: { not: "candidate" }, kickoff: { gt: new Date() } }, orderBy: { kickoff: "asc" }, take: 60 }),
+      prisma.autonomousTipSnapshot.findMany({ where: { status: "candidate", capturedAt: { gte: recentFrom } }, orderBy: { qualifiedAt: "desc" }, skip: (page - 1) * take, take }),
+      prisma.autonomousTipSnapshot.findMany({ where: { status: { not: "candidate" }, capturedAt: { gte: recentFrom } }, orderBy: { kickoff: "asc" }, take: 24 }),
       prisma.checklistDecisionSnapshot.findMany({ where: { status: "candidate", checklistVersion: 1 }, orderBy: { candidateAt: "desc" } }),
       prisma.fixturePrediction.count({ where: { publicationPolicyVersion: 1, published1x2Side: { not: null } } }),
-      prisma.autonomousTipSnapshot.count({ where: { status: "candidate" } }),
+      prisma.autonomousTipSnapshot.count({ where: { status: "candidate", capturedAt: { gte: recentFrom } } }),
     ]);
     const fixtureIds = [...new Set([...automatic.map((x) => x.fixtureId), ...checklist.map((x) => x.fixtureId)])];
     const predictions = await prisma.fixturePrediction.findMany({ where: { fixtureId: { in: fixtureIds } }, select: { fixtureId: true, homeGoals: true, awayGoals: true, status: true, homeName: true, awayName: true, homeLogo: true, awayLogo: true, oddsCloseHome: true, oddsCloseAway: true, oddsCloseOver25: true, oddsCloseUnder25: true } });

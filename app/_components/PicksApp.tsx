@@ -39,7 +39,7 @@ type Venue = "home" | "away" | "any";
  * Dva pohledy nad **týmiž** načtenými daty: „Tipy" = k čemu tam člověk jde, „Model" =
  * jestli se tomu dá věřit. Přepnutí nic nedotahuje.
  */
-type View = "picks" | "market" | "model";
+type View = "picks" | "model";
 
 const MARKET_LABELS: Record<PickMarket, string> = {
   win: "Výhra",
@@ -192,7 +192,8 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
       const nextMarket = params.get("market") as PickMarket | null;
       const nextVenue = params.get("venue") as Venue | null;
       const nextProbability = Number(params.get("minProb"));
-      if (nextView === "picks" || nextView === "market" || nextView === "model") setView(nextView);
+      if (nextView === "model") setView("model");
+      else { setView("picks"); if (nextView === "market") setValueOnly(true); }
       if (nextMarket === "win" || nextMarket === "over25" || nextMarket === "btts") setMarket(nextMarket);
       if (nextVenue === "home" || nextVenue === "away" || nextVenue === "any") setVenue(nextVenue);
       if (Number.isFinite(nextProbability) && nextProbability >= 0.5 && nextProbability <= 0.95) setMinProb(nextProbability);
@@ -266,7 +267,6 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
       <ViewTabs
         tabs={[
           { value: "picks", label: "Nabídka zápasů" },
-          { value: "market", label: "Model vs. trh" },
           { value: "model", label: "Výkonnost modelů" },
         ]}
         active={view}
@@ -275,8 +275,8 @@ export function PicksApp({ user }: { user: SessionUser | null }) {
 
       <ViewPurpose view={view} />
 
-      {view === "picks" || view === "market" ? (
-        <PredictionOffers user={user} marketView={view === "market"} />
+      {view === "picks" ? (
+        <PredictionOffers user={user} marketView={valueOnly} />
       ) : (
         <ModelView
           isPro={user?.tier === "PRO"}
@@ -307,10 +307,6 @@ function ViewPurpose({ view }: { view: View }) {
     picks: {
       title: "Co model očekává",
       text: "Kompletní nabídka uložených prognóz. Rychlé výběry pouze filtrují scénáře; nejsou automatickým sázkovým tipem.",
-    },
-    market: {
-      title: "Kde se model liší od trhu",
-      text: "Stejné zápasy doplněné o odmaržované tržní pravděpodobnosti a jejich pohyb. Rozdíl model–trh sám nepotvrzuje výhodu.",
     },
     model: {
       title: "Jak přesné jsou výstupy",
@@ -403,7 +399,7 @@ function ModelView({
       <nav className="flex gap-2 overflow-x-auto rounded-xl border border-border bg-surface p-1" aria-label="Části výkonnosti">
         {[["performance-portfolio", "Portfolio"], ["performance-quality", "Kvalita modelů"], ["performance-clv", "CLV a trh"], ["performance-research", "Výzkum a archiv"]].map(([href, label]) => <a key={href} href={`#${href}`} className="min-h-11 shrink-0 rounded-lg px-3 py-2.5 text-xs font-semibold text-foreground transition hover:bg-background">{label}</a>)}
       </nav>
-      <section id="performance-portfolio" className="scroll-mt-24"><ModelPortfolio isPro={isPro} /></section>
+      <DeferredPanel id="performance-portfolio" title="Živě testované strategie"><ModelPortfolio isPro={isPro} /></DeferredPanel>
       <h2 id="performance-clv" className="scroll-mt-24 px-1 pt-3 text-base font-semibold text-foreground">CLV a trh</h2>
       <MarketClvDashboard rows={clvByMarket} />
       <h2 id="performance-research" className="scroll-mt-24 px-1 pt-3 text-base font-semibold text-foreground">Výzkum a archiv</h2>
@@ -412,7 +408,7 @@ function ModelView({
       <PublishedTipsPanel league={publishedTips} european={european?.publishedTips ?? null} />
       <h2 id="performance-quality" className="scroll-mt-24 px-1 pt-3 text-base font-semibold text-foreground">Kvalita modelů</h2>
       <ForecastOverview track={track} counts={countAccuracy} />
-      <PerformanceAudit />
+      <DeferredPanel id="performance-audit" title="Audit prognóz za poslední dva dny"><PerformanceAudit /></DeferredPanel>
       <GateHeadline gate={gate} />
       {gate.criteria.map((c, i) => (
         <CriterionCard key={c.key} index={i + 1} criterion={c} evidence={evidence[c.key]} />
@@ -562,6 +558,14 @@ function ChecklistPerformancePanel({ value }: { value: ChecklistPerformance | nu
   );
 }
 
+function DeferredPanel({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return <section id={id} className="scroll-mt-24 rounded-2xl border border-border bg-surface shadow-sm">
+    <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold text-foreground"><span>{title}</span><span aria-hidden className={`transition-transform ${open ? "rotate-180" : ""}`}>⌄</span></button>
+    {open && <div className="border-t border-border p-3">{children}</div>}
+  </section>;
+}
+
 function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
   return <div className="rounded-xl border border-border bg-background p-3"><p className="text-[10px] font-bold uppercase tracking-wide text-muted">{label}</p><strong className="mt-1 block text-lg text-foreground">{value}</strong><small className="mt-1 block text-muted">{detail}</small></div>;
 }
@@ -655,7 +659,7 @@ function PerformanceAudit() {
     return () => { active = false; };
   }, [model, result, page]);
   const choose = (next: AuditModel) => { setModel(next); setPage(1); const url = new URL(window.location.href); url.searchParams.set("audit", next); window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}#performance-audit`); };
-  return <section id="performance-audit" className="scroll-mt-24 rounded-2xl border border-border bg-surface p-4 shadow-sm">
+  return <section className="rounded-xl bg-surface p-1">
     <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="page-kicker text-muted">Výkon → konkrétní zápasy</p><h2 className="mt-1 text-lg font-bold text-foreground">Audit odehraných prognóz</h2><p className="mt-1 text-xs text-muted">Řádky používají stejnou zmrazenou historii jako výsledkové metriky; nic se nepřepočítává aktuální verzí.</p></div>{data && <span className="rounded-full bg-background px-2.5 py-1 text-xs text-muted">{data.total} zápasů</span>}</div>
     <div className="mt-3 flex gap-1.5 overflow-x-auto">{(["1X2", "OVER_25", "BTTS", "CORNERS", "CARDS", "FOULS"] as AuditModel[]).map((value) => <button type="button" key={value} onClick={() => choose(value)} className={`min-h-11 shrink-0 rounded-full border px-3 text-xs font-semibold ${model === value ? "border-accent bg-accent text-foreground" : "border-border bg-background text-muted"}`}>{value}</button>)}</div>
     <div className="mt-2 flex gap-1.5">{(["all", "hit", "miss"] as const).map((value) => <button type="button" key={value} onClick={() => { setResult(value); setPage(1); }} className={`rounded-full px-3 py-1.5 text-xs ${result === value ? "bg-foreground text-background" : "bg-background text-muted"}`}>{value === "all" ? "Vše" : value === "hit" ? "Vyšlo / tolerance" : "Nevyšlo"}</button>)}</div>
@@ -847,7 +851,7 @@ function StrategyPanel({
     <section className="mt-4 rounded-2xl border border-border bg-surface p-4 shadow-sm">
       <div className="flex items-center justify-between">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-          Historický simulátor pravidla
+          Test vlastního pravidla
         </p>
         <span className="text-[11px] text-muted">{backtest.n} vsazených tipů</span>
       </div>
@@ -881,6 +885,13 @@ function StrategyPanel({
               úspěšnost ({backtest.hits} / {backtest.n})
             </span>
           </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Metric label="Oceněno kurzem" value={`${backtest.priced}/${backtest.n}`} detail="bez kurzu se ROI nepočítá" />
+            <Metric label="Zisk" value={`${backtest.profit >= 0 ? "+" : ""}${backtest.profit.toFixed(2)} j`} detail={`${backtest.staked} j vloženo`} />
+            <Metric label="ROI" value={backtest.roi == null ? "—" : `${backtest.roi >= 0 ? "+" : ""}${(backtest.roi * 100).toFixed(1)} %`} detail={`prům. kurz ${backtest.averageOdds?.toFixed(2) ?? "—"}`} />
+            <Metric label="Max. propad" value={`${backtest.maxDrawdown.toFixed(2)} j`} detail="chronologicky" />
+          </div>
+          {backtest.roiConfidence95 && <p className="mt-2 text-[11px] text-muted">95% interval ROI: {(backtest.roiConfidence95.low * 100).toFixed(1)} až {(backtest.roiConfidence95.high * 100).toFixed(1)} %. Široký interval znamená, že výsledek není průkazný.</p>}
           {small && (
             <p className="mt-2 text-[11px] text-warning">
               Malý vzorek – čísla jsou zatím orientační.

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
 import { PUBLIC_CLUB_LEAGUE_IDS, EURO_LEAGUE_IDS } from "@/lib/data/catalog";
 import { logError } from "@/lib/logError";
+import { pragueTwoDayStart } from "@/lib/recentWindow";
 
 export const dynamic = "force-dynamic";
 const FINISHED = ["FT", "AET", "PEN"];
@@ -19,11 +20,11 @@ export async function GET(req: Request) {
   try {
     const predictions = await prisma.fixturePrediction.findMany({
       where: {
-        status: { in: FINISHED }, homeGoals: { not: null }, awayGoals: { not: null },
+        status: { in: FINISHED }, homeGoals: { not: null }, awayGoals: { not: null }, kickoff: { gte: pragueTwoDayStart() },
         ...(context === "EURO_CUP" ? { leagueId: { in: [...EURO_LEAGUE_IDS] } } : context === "LEAGUE" ? { leagueId: { in: [...PUBLIC_CLUB_LEAGUE_IDS] } } : { leagueId: { in: [...PUBLIC_CLUB_LEAGUE_IDS, ...EURO_LEAGUE_IDS] } }),
       },
       orderBy: { kickoff: "desc" },
-      take: 2000,
+      take: 240,
     });
     const countIds = model === "CORNERS" || model === "CARDS" || model === "FOULS" ? predictions.map((row) => row.fixtureId) : [];
     const stats = countIds.length ? await prisma.matchStatCache.findMany({ where: { fixtureId: { in: countIds } }, select: { fixtureId: true, teamId: true, corners: true, fouls: true, yellowCards: true, redCards: true } }) : [];

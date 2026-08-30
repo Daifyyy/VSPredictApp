@@ -441,6 +441,7 @@ model ChecklistDecisionSnapshot {
   @@unique([fixtureId, market, checklistVersion])
   @@index([status, kickoff])
   @@index([modelContext, market, candidateAt])
+  @@index([capturedAt])
 }
 
 /// Nemenny ucetni zaznam automaticke modelove strategie. Jeden radek = simulovana sazka 1u
@@ -483,6 +484,47 @@ model AutonomousTipSnapshot {
   @@index([strategy, modelContext, qualifiedAt])
   @@index([status, kickoff])
   @@index([kickoff])
+  @@index([capturedAt])
+}
+
+/// Nemenny vyber rychleho denniho prehledu. Radek vznikne pri prvnim splneni brany a
+/// pozdejsi pohyb modelu ani trhu jej nesmi prepsat; po zapase se pouze doplni audit vysledku.
+model QuickOverviewSelection {
+  id                String   @id @default(cuid())
+  dateKey           String
+  category          String
+  fixtureId         Int
+  rank              Int
+  reason            String
+  score             Float
+  modelProbability  Float?
+  marketProbability Float?
+  marketMove        Float?
+  marketSamples     Int      @default(0)
+  side              String?
+  line              Float?
+  modelVersion      Int
+  contextVersion    Int
+  policyVersion     Int      @default(1)
+  lowConfidence     Boolean  @default(false)
+  readinessSample   Float    @default(0)
+  qualifiedAt       DateTime @default(now())
+
+  @@unique([dateKey, category, fixtureId, policyVersion])
+  @@index([dateKey, category, rank])
+  @@index([fixtureId])
+}
+
+/// Anonymni diagnostika selhani PWA/app shellu. Neobsahuje URL parametry, session ani user-agent.
+model PwaDiagnostic {
+  id         String   @id @default(cuid())
+  kind       String
+  buildId    String?
+  swState    String?
+  durationMs Int?
+  createdAt  DateTime @default(now())
+
+  @@index([kind, createdAt])
 }
 
 /// Audit změn delegace. Uchovává i automatické nahrazení ruční volby údajem z API.

@@ -28,6 +28,12 @@ describe("quick overview ranking", () => {
     expect(scoreQuickCandidate(candidate({ homeWin: .3, draw: .4, awayWin: .3 }), "1x2")).toBeNull();
   });
 
+  it("1X2 vyžaduje 58 procent a náskok 10 bodů", () => {
+    expect(scoreQuickCandidate(candidate({ homeWin: .579, draw: .25, awayWin: .171 }), "1x2")).toBeNull();
+    expect(scoreQuickCandidate(candidate({ homeWin: .58, draw: .48, awayWin: -.06 }), "1x2")).not.toBeNull();
+    expect(scoreQuickCandidate(candidate({ homeWin: .58, draw: .481, awayWin: -.061 }), "1x2")).toBeNull();
+  });
+
   it("nenabízí neurčitou souhrnnou kategorii", () => {
     expect(scoreQuickCandidate(candidate(), "1x2")?.reason).toContain("Domácí");
   });
@@ -40,10 +46,11 @@ describe("quick overview ranking", () => {
     expect(scoreQuickCandidate(row, "market")).not.toBeNull();
   });
 
-  it("nízká spolehlivost snižuje skóre", () => {
+  it("nízká spolehlivost vyřadí zápas z kvalitativního výběru", () => {
     const ready = scoreQuickCandidate(candidate(), "goals")!;
-    const weak = scoreQuickCandidate(candidate({ lowConfidence: true }), "goals")!;
-    expect(weak.score).toBeLessThan(ready.score);
+    const weak = scoreQuickCandidate(candidate({ lowConfidence: true }), "goals");
+    expect(ready.score).toBeGreaterThan(0);
+    expect(weak).toBeNull();
   });
 
   it("počítá celé dny odpočinku a bezpečně ošetří chybějící historii", () => {

@@ -138,7 +138,7 @@ function TeamRowDetail({ row, insight, leagueId }: { row: LeagueTableRow; insigh
       <MiniStat label="Body / zápas" value={row.played ? (row.points / row.played).toFixed(2) : "—"} />
       <MiniStat label="Góly / zápas" value={perMatch(row.goalsFor)} />
       <MiniStat label="Obdržené / zápas" value={perMatch(row.goalsAgainst)} />
-      <MiniStat label="Trend formy" value={formTrend(row.form).label} tone={formTrend(row.form).tone} />
+      <MiniStat label="Trend formy" value={formTrend(row).label} tone={formTrend(row).tone} />
     </div>
     <div className="flex flex-wrap items-center gap-2 lg:justify-end">
       {insight?.style && <span className="rounded-full bg-accent/25 px-3 py-1.5 text-xs font-semibold text-foreground">{insight.style.label} · {insight.style.score.toFixed(1)}/10</span>}
@@ -160,13 +160,14 @@ function FixtureBrief({ label, fixture }: { label: string; fixture: RoundFixture
   return <span><strong className="text-foreground">{label}:</strong> {fixture.home.name} {played ? `${fixture.homeGoals}:${fixture.awayGoals}` : "–"} {fixture.away.name}</span>;
 }
 
-function formTrend(form: string | null): { label: string; tone: string } {
-  if (!form || form.length < 3) return { label: "Málo dat", tone: "text-muted" };
+function formTrend(row: LeagueTableRow): { label: string; tone: string } {
+  const form = row.form;
+  if (!form || form.length < 4 || row.played < 4) return { label: "Málo dat", tone: "text-muted" };
   const points = (part: string) => [...part].reduce((sum, result) => sum + (result === "W" ? 3 : result === "D" ? 1 : 0), 0) / part.length;
-  const recent = points(form.slice(-2));
-  const earlier = points(form.slice(-5, -2));
-  if (recent > earlier + 0.45) return { label: "↗ Stoupá", tone: "text-positive" };
-  if (recent < earlier - 0.45) return { label: "↘ Klesá", tone: "text-negative" };
+  const recent = points(form.slice(-5));
+  const season = row.points / row.played;
+  if (recent > season + 0.4) return { label: "↗ Zlepšuje se", tone: "text-positive" };
+  if (recent < season - 0.4) return { label: "↘ Slábne", tone: "text-negative" };
   return { label: "→ Stabilní", tone: "text-muted" };
 }
 

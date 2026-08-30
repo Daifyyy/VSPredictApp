@@ -96,6 +96,20 @@ describe("backtestRule", () => {
     expect(r.hits).toBe(1);
   });
 
+  it("ROI používá pouze tehdy uložené kurzy a chybějící cenu nenahrazuje nulou", () => {
+    const rows = [
+      row({ fixtureId: 1, homeWin: 0.7, homeGoals: 2, awayGoals: 0, oddsHome: 2 }),
+      row({ fixtureId: 2, homeWin: 0.7, homeGoals: 0, awayGoals: 1, oddsHome: 1.8 }),
+      row({ fixtureId: 3, homeWin: 0.7, homeGoals: 2, awayGoals: 0, oddsHome: null }),
+    ];
+    const result = backtestRule(rows, { market: "win", venue: "home", minProb: 0.65 });
+    expect(result.n).toBe(3);
+    expect(result.priced).toBe(2);
+    expect(result.staked).toBe(2);
+    expect(result.profit).toBeCloseTo(0);
+    expect(result.roi).toBeCloseTo(0);
+  });
+
   it("prázdný vzorek → hitRate null", () => {
     const r = backtestRule([row({ homeWin: 0.4 })], {
       market: "win",
