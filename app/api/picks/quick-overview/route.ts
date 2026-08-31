@@ -68,9 +68,9 @@ export async function GET(req: Request) {
     const ranked = frozen.length
       ? Object.fromEntries(QUICK_FOCUS_IDS.map((focus) => [focus, frozen.filter((item) => item.category === focus).flatMap((item) => {
           const candidate = byFixture.get(item.fixtureId);
-          return candidate ? [{ candidate, result: { score: item.score, reason: item.reason, modelProbability: item.modelProbability, marketProbability: item.marketProbability, marketMove: item.marketMove, marketSamples: item.marketSamples, experimental: candidate.row.modelContext === "EURO_CUP" } satisfies QuickScore }] : [];
+          return candidate ? [{ candidate, result: { score: item.score, reason: item.reason, modelProbability: item.modelProbability, marketProbability: item.marketProbability, marketMove: item.marketMove, marketSamples: item.marketSamples, experimental: candidate.row.modelContext === "EURO_CUP" } satisfies QuickScore, frozenSide: item.side, frozenLine: item.line }] : [];
         })]))
-      : Object.fromEntries(QUICK_FOCUS_IDS.map((focus) => [focus, rankQuickCandidates(candidates, focus)]));
+      : Object.fromEntries(QUICK_FOCUS_IDS.map((focus) => [focus, rankQuickCandidates(candidates, focus).map((item) => ({ ...item, frozenSide: null, frozenLine: null }))]));
     const selectedIds = [...new Set(Object.values(ranked).flatMap((items) => items.map((item) => item.candidate.row.fixtureId)))];
     const selected = candidates.filter((candidate) => selectedIds.includes(candidate.row.fixtureId));
     const contexts = await buildContexts(selected);
@@ -89,7 +89,7 @@ export async function GET(req: Request) {
         away: { id: row.awayTeamId, name: row.awayName, logoUrl: row.awayLogo },
         expectedScore: { home: row.lambdaHome, away: row.lambdaAway },
         matchState: row.status === "FT" || row.status === "AET" || row.status === "PEN" ? "settled" : ["1H", "HT", "2H", "ET", "BT", "P"].includes(row.status) ? "live" : "pending",
-        result: row.homeGoals == null || row.awayGoals == null ? null : { home: row.homeGoals, away: row.awayGoals, hit: selectionHit(focus, row, item.candidate.signals, actualCounts.get(row.fixtureId) ?? null), actualCounts: actualCounts.get(row.fixtureId) ?? null },
+        result: row.homeGoals == null || row.awayGoals == null ? null : { home: row.homeGoals, away: row.awayGoals, hit: selectionHit(focus, row, item.candidate.signals, actualCounts.get(row.fixtureId) ?? null, item.frozenSide, item.frozenLine), actualCounts: actualCounts.get(row.fixtureId) ?? null },
         probabilities: { home: row.homeWin, draw: row.draw, away: row.awayWin, over25: row.over25, btts: row.bttsYes },
         counts: {
           corners: total(row.lambdaCornersHome, row.lambdaCornersAway),
@@ -117,12 +117,12 @@ function toPredictionRow(row: Awaited<ReturnType<typeof prisma.fixturePrediction
   return { ...row, kickoff: row.kickoff.toISOString(), modelContext: row.modelContext as PredictionRow["modelContext"], published1x2Side: row.published1x2Side as PredictionRow["published1x2Side"], publishedAt: row.publishedAt?.toISOString() ?? null, h2hSnapshot: row.h2hSnapshot as PredictionRow["h2hSnapshot"], h2hCapturedAt: row.h2hCapturedAt?.toISOString() ?? null, oddsFetchedAt: row.oddsFetchedAt?.toISOString() ?? null, oddsCloseAt: row.oddsCloseAt?.toISOString() ?? null, settledAt: row.settledAt?.toISOString() ?? null } as PredictionRow;
 }
 
-function selectionHit(focus: string, row: PredictionRow, signals: QuickMarketSignal[], actual: { corners: number | null; cards: number | null } | null): boolean | null {
+function selectionHit(focus: string, row: PredictionRow, signals: QuickMarketSignal[], actual: { corners: number | null; cards: number | null } | null, frozenSide: string | null, frozenLine: number | null): boolean | null {
   if (row.homeGoals == null || row.awayGoals == null) return null;
-  if (focus === "1x2") return row.homeWin >= row.awayWin ? row.homeGoals > row.awayGoals : row.awayGoals > row.homeGoals;
-  if (focus === "goals") return (row.over25 >= 0.5) === (row.homeGoals + row.awayGoals > 2.5);
-  if (focus === "btts") return (row.bttsYes >= 0.5) === (row.homeGoals > 0 && row.awayGoals > 0);
-  if (focus === "corners" || focus === "cards") { const signal = signals.find((item) => item.market === (focus === "corners" ? "CORNERS" : "CARDS")); const count = focus === "corners" ? actual?.corners : actual?.cards; if (!signal || signal.line == null || count == null) return null; return signal.side === "OVER" ? count > signal.line : count < signal.line; }
+  if (focus === "1x2") { const side = frozenSide ?? (row.homeWin >= row.awayWin ? "HOME" : "AWAY"); return side === "HOME" ? row.homeGoals > row.awayGoals : side === "AWAY" ? row.awayGoals > row.homeGoals : row.homeGoals === row.awayGoals; }
+  if (focus === "goals") { const side = frozenSide ?? (row.over25 >= 0.5 ? "OVER" : "UNDER"); return side === "OVER" ? row.homeGoals + row.awayGoals > 2.5 : row.homeGoals + row.awayGoals < 2.5; }
+  if (focus === "btts") { const side = frozenSide ?? (row.bttsYes >= 0.5 ? "OVER" : "UNDER"); const both = row.homeGoals > 0 && row.awayGoals > 0; return side === "OVER" ? both : !both; }
+  if (focus === "corners" || focus === "cards") { const signal = signals.find((item) => item.market === (focus === "corners" ? "CORNERS" : "CARDS")); const side = frozenSide ?? signal?.side; const line = frozenLine ?? signal?.line; const count = focus === "corners" ? actual?.corners : actual?.cards; if (!side || line == null || count == null) return null; return side === "OVER" ? count > line : count < line; }
   return null;
 }
 

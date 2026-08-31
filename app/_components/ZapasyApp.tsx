@@ -712,6 +712,7 @@ export function ZapasyApp({
               rememberPage("results", pastDays[index]?.date);
             }}
           />
+          <QuickMatchOverview date={activePast?.date ?? null} user={user} compact historical />
           {activePast && activePast.played.length > 0 ? (
             <ResultsList played={activePast.played} />
           ) : (
