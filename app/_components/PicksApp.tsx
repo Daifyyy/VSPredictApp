@@ -371,19 +371,23 @@ function ModelView({
 }) {
   // Verdikt se smí vykreslit až nad načtenými daty. Brána sama o sobě `null` vstupy snese
   // (vrátí „ZATÍM NEVÍME"), jenže to je tvrzení o modelu – ne o tom, že se ještě načítá.
-  if (state === "loading") return <ModelSkeleton />;
+  const primaryLab = <ModelLab isPro={isPro} isAdmin={isAdmin} />;
+  if (state === "loading") return <div className="mt-4 space-y-3">{primaryLab}<ModelSkeleton /></div>;
   if (state === "error") {
     return (
-      <Empty>
-        <p>Diagnostiku modelu se nepodařilo načíst.</p>
-        <button
-          type="button"
-          onClick={onRetry}
-          className="mt-3 rounded-full border border-border bg-surface px-4 py-1.5 text-sm font-medium text-foreground transition hover:bg-background"
-        >
-          ↻ Zkusit znovu
-        </button>
-      </Empty>
+      <div className="mt-4 space-y-3">
+        {primaryLab}
+        <Empty>
+          <p>Doplňkovou historickou diagnostiku se nepodařilo načíst.</p>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="mt-3 rounded-full border border-border bg-surface px-4 py-1.5 text-sm font-medium text-foreground transition hover:bg-background"
+          >
+            ↻ Zkusit znovu
+          </button>
+        </Empty>
+      </div>
     );
   }
 
@@ -400,7 +404,7 @@ function ModelView({
 
   return (
     <div className="mt-4 space-y-3">
-      <ModelLab isPro={isPro} isAdmin={isAdmin} />
+      {primaryLab}
       <nav className="flex gap-2 overflow-x-auto rounded-xl border border-border bg-surface p-1" aria-label="Části výkonnosti">
         {[["performance-detail", "Doplňková diagnostika"], ["performance-research", "Výzkum a archiv"], ["performance-quality", "Všechny prognózy"]].map(([href, label]) => <a key={href} href={`#${href}`} className="min-h-11 shrink-0 rounded-lg px-3 py-2.5 text-xs font-semibold text-foreground transition hover:bg-background">{label}</a>)}
       </nav>

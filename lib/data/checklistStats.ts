@@ -19,6 +19,13 @@ export async function checklistPerformance(version = 1): Promise<ChecklistPerfor
   const candidates = await prisma.checklistDecisionSnapshot.findMany({
     where: { status: "candidate", checklistVersion: version },
     orderBy: { candidateAt: "asc" },
+    select: {
+      fixtureId: true,
+      market: true,
+      side: true,
+      decimalOdds: true,
+      marketProbability: true,
+    },
   });
   if (!candidates.length) return { version, candidates: 0, settled: 0, won: 0, hitRate: null, pending: 0, measuredClv: 0, averageClv: null, positiveClvRate: null, priced: 0, hypotheticalRoi: null };
   const fixtureIds = [...new Set(candidates.map((row) => row.fixtureId))];

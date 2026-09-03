@@ -430,7 +430,6 @@ model ChecklistDecisionSnapshot {
   edge              Float
   decimalOdds       Float?
   bookmaker         String?
-  oddsAt             DateTime?
   sampleCount       Int
   modelContext      String
   modelVersion      Int
