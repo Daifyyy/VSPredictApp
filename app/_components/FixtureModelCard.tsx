@@ -5,7 +5,7 @@ import type { FixtureModelForecast } from "@/lib/types";
 import { COUNT_MARKET_PRESENTATION } from "@/lib/picks/countPresentation";
 import { useCurrentUser } from "./useCurrentUser";
 import { HeadToHeadCard } from "./HeadToHeadCard";
-import { buildDecisionChecklist, type DecisionStatus } from "@/lib/picks/decisionChecklist";
+import { buildModelPresentation, type ModelScenario } from "@/lib/picks/modelPresentation";
 
 type State =
   | { state: "loading" }
@@ -64,7 +64,11 @@ export function FixtureModelCard({
   if (data.state === "error") return <Message text="Model se teď nepodařilo načíst." />;
 
   const f = data.forecast;
-  const pct = (value: number) => `${Math.round(value * 100)} %`;
+  const presentation = buildModelPresentation(f);
+  if (countsOnly) return <div id={`model-${fixtureId}`} className="scroll-mt-20 space-y-3 rounded-xl border border-border bg-background/55 p-3 text-xs">
+    <TempoDiscipline corners={f.corners} fouls={f.fouls} cards={f.cards} referee={f.refereeProfile} />
+    <RefereeProfile profile={f.refereeProfile} expanded fixtureId={fixtureId} canEdit={user?.isAdmin === true} onAssigned={() => setRevision((value) => value + 1)} />
+  </div>;
   return (
     <div id={`model-${fixtureId}`} className="scroll-mt-20 space-y-3 rounded-xl border border-border bg-background/55 p-3 text-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -74,84 +78,59 @@ export function FixtureModelCard({
           {f.lowConfidence && <Badge>Omezený vzorek</Badge>}
         </div>
       </div>
-      {!countsOnly && (
-        <>
-          <div className="grid grid-cols-3 gap-2 text-center tabular-nums">
-            <Metric label="Domácí" value={pct(f.outcome.home)} />
-            <Metric label="Remíza" value={pct(f.outcome.draw)} />
-            <Metric label="Hosté" value={pct(f.outcome.away)} />
-          </div>
-          <div className="rounded-lg bg-surface px-3 py-3 text-muted">
-            <strong className="text-foreground">Model vs. trh</strong>
-            <dl className="mt-2 space-y-1.5">
-              {(["home", "draw", "away"] as const).map((side) => <CountRow key={side} label={side === "home" ? "Domácí" : side === "draw" ? "Remíza" : "Hosté"} value={`Model ${pct(f.outcome[side])} · otevření ${f.market.outcomeOpen ? pct(f.market.outcomeOpen[side]) : "—"} · uzavření ${f.market.outcomeClose ? pct(f.market.outcomeClose[side]) : "—"}`} />)}
-              <CountRow label="Góly · Over 2,5" value={`Model ${pct(f.goals.over25)} · otevření ${f.market.goalsOpen ? pct(f.market.goalsOpen.over) : "—"} · uzavření ${f.market.goalsClose ? pct(f.market.goalsClose.over) : "—"}`} />
-            </dl>
-          </div>
-          <CurrentMarketMovement signals={f.marketSignals} />
-          <div className="grid grid-cols-3 gap-2 text-center tabular-nums">
-            <Metric label="Očekávané góly" value={`${f.goals.home.toFixed(1)} : ${f.goals.away.toFixed(1)}`} />
-            <Metric label="Over 2.5" value={pct(f.goals.over25)} />
-            <Metric label="Oba skórují" value={pct(f.goals.btts)} />
-          </div>
-          <TeamGoals forecast={f.teamGoals} />
-        </>
-      )}
-      <div className="grid gap-2 tabular-nums lg:grid-cols-2">
-        <CountMetric market="corners" value={f.corners} />
-        <CountMetric market="cards" value={f.cards} />
-      </div>
-      <TempoDiscipline fouls={f.fouls} cards={f.cards} referee={f.refereeProfile} />
-      <RefereeProfile profile={f.refereeProfile} expanded={countsOnly} fixtureId={fixtureId} canEdit={user?.isAdmin === true} onAssigned={() => setRevision((value) => value + 1)} />
-      {!countsOnly && f.headToHead && <HeadToHeadCard summary={f.headToHead} teamAName={teamName(f.headToHead, f.headToHead.teamAId, "Domácí")} teamBName={teamName(f.headToHead, f.headToHead.teamBId, "Hosté")} compact />}
-      {!countsOnly && <DecisionChecklist forecast={f} />}
-      {(f.corners || f.cards || f.fouls) && (
-        <p className="text-[10px] leading-relaxed text-muted">
-          Jde o experimentální porovnání, nikoli publikovaný tip ani potvrzenou výhodu proti trhu.
-        </p>
-      )}
+      <DecisionOverview presentation={presentation} />
+      <ExpectedMatch forecast={f} />
+      <TempoDiscipline corners={f.corners} fouls={f.fouls} cards={f.cards} referee={f.refereeProfile} />
+      <TechnicalDetails forecast={f} fixtureId={fixtureId} canEditReferee={user?.isAdmin === true} onRefereeAssigned={() => setRevision((value) => value + 1)} />
     </div>
   );
 }
 
-function TeamGoals({ forecast }: { forecast: FixtureModelForecast["teamGoals"] }) {
-  const pct = (value: number | null) => value == null ? "—" : `${Math.round(value * 100)} %`;
-  return <section className="rounded-lg border border-border bg-background px-3 py-3" aria-label="Týmové góly">
-    <div className="flex flex-wrap items-start justify-between gap-2">
-      <div><strong className="text-foreground">Týmové góly</strong><p className="mt-1 text-[10px] text-muted">Pravděpodobnost, že konkrétní tým překročí hranici 0,5 nebo 1,5 gólu.</p></div>
-      <Badge>Výzkumný model</Badge>
+function pct(value: number | null) { return value == null ? "—" : `${Math.round(value * 100)} %`; }
+function pp(value: number | null) { return value == null ? "—" : `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)} p. b.`; }
+
+function ScenarioRow({ scenario, primary = false }: { scenario: ModelScenario; primary?: boolean }) {
+  const labels = { candidate: "Kandidát", watch: "Sledovat", reject: "Nevyhovuje" } as const;
+  const colors = { candidate: "bg-positive/10 text-positive", watch: "bg-warning/10 text-warning", reject: "bg-negative/10 text-negative" } as const;
+  const marketLabel = scenario.marketState === "closing" ? "Closing" : scenario.marketState === "early" ? "Předčasný vzorek" : scenario.marketState === "live" ? "Poslední vzorek" : "Trh chybí";
+  return <article className={`rounded-lg border px-3 py-2.5 ${primary ? "border-accent-strong/40 bg-accent/10" : "border-border bg-background"}`}>
+    <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-foreground">{scenario.label}</strong><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${colors[scenario.status]}`}>{labels[scenario.status]}</span></div>
+    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 tabular-nums text-[11px] text-muted">
+      <span>Model <strong className="text-foreground">{pct(scenario.modelProbability)}</strong></span>
+      <span>{marketLabel} <strong className="text-foreground">{pct(scenario.marketProbability)}</strong></span>
+      <span>Rozdíl <strong className="text-foreground">{pp(scenario.difference)}</strong></span>
+      <span>{scenario.decimalOdds == null ? "Bez kurzu" : `Kurz ${scenario.decimalOdds.toFixed(2)}`}</span>
     </div>
-    <div className="mt-3 grid gap-2 sm:grid-cols-2">
-      {(["home", "away"] as const).map((side) => <div key={side} className="rounded-lg bg-surface p-3">
-        <div className="flex items-center justify-between gap-2"><strong>{side === "home" ? "Domácí" : "Hosté"}</strong><span className="text-[10px] text-muted">xG {forecast[side].expected.toFixed(2)}</span></div>
-        <div className="mt-2 space-y-2">{forecast[side].lines.map((item) => <div key={item.line} className="flex items-start justify-between gap-3 border-t border-border/70 pt-2 first:border-0 first:pt-0">
-          <div><strong className="tabular-nums">Over {item.line.toFixed(1)} · {pct(item.overProbability)}</strong><p className="mt-0.5 text-[10px] text-muted">{item.marketOverProbability == null ? "Tržní linie není dostupná" : `trh ${pct(item.marketOverProbability)}${item.currentMarketProbability != null && Math.abs(item.currentMarketProbability - item.marketOverProbability) > .001 ? ` → poslední ${pct(item.currentMarketProbability)}` : ""}`}</p></div>
-          <span className="shrink-0 text-[10px] tabular-nums text-muted">{item.decimalOdds == null ? "bez kurzu" : `kurz ${item.decimalOdds.toFixed(2)}`}</span>
-        </div>)}</div>
-      </div>)}
+    {scenario.marketState !== "missing" && <p className="mt-1 text-[10px] text-muted">Otevření {pct(scenario.openingProbability)} · pohyb trhu {scenario.openingProbability == null || scenario.marketProbability == null ? "—" : pp(scenario.marketProbability - scenario.openingProbability)} · {scenario.samples} použitelných vzorků</p>}
+    <p className="mt-1.5 text-[11px] leading-4 text-muted">{scenario.reason}</p>
+  </article>;
+}
+
+function DecisionOverview({ presentation }: { presentation: ReturnType<typeof buildModelPresentation> }) {
+  const [all, setAll] = useState(false);
+  const primary = presentation.scenario;
+  const palette = presentation.verdict === "candidate" ? "border-positive/30 bg-positive/10" : presentation.verdict === "none" ? "border-border bg-surface" : "border-warning/30 bg-warning/10";
+  const visible = all ? presentation.scenarios : presentation.scenarios.slice(0, 3);
+  return <section aria-label="Modelový závěr" className="space-y-2">
+    <div className={`rounded-xl border px-4 py-3 ${palette}`}>
+      <small className="font-semibold uppercase tracking-wide text-muted">Co je na zápase zajímavé</small>
+      <h3 className="mt-1 text-base font-bold text-foreground">{presentation.title}</h3>
+      {primary ? <><p className="mt-1 tabular-nums text-sm text-foreground">Model {pct(primary.modelProbability)} · trh {pct(primary.marketProbability)} · rozdíl {pp(primary.difference)}</p><p className="mt-1 text-[11px] leading-4 text-muted">{primary.reason}</p></> : <p className="mt-1 text-[11px] text-muted">Žádný dostupný trh nyní neposkytuje použitelný modelový scénář.</p>}
     </div>
-    <p className="mt-2 text-[10px] leading-4 text-muted">Pravděpodobnosti jsou dostupné z gólového modelu vždy; kurz a tržní srovnání jen při uložené stejné půlkové linii. Zatím nejde o autonomní sázkový tip.</p>
+    <div className="space-y-2">{visible.map((scenario) => <ScenarioRow key={scenario.id} scenario={scenario} primary={scenario.id === primary?.id} />)}</div>
+    {presentation.scenarios.length > 3 && <button type="button" onClick={() => setAll((value) => !value)} className="min-h-10 rounded-lg border border-border bg-surface px-3 text-xs font-semibold text-foreground hover:bg-background" aria-expanded={all}>{all ? "Skrýt další scénáře" : `Zobrazit všechny scénáře (${presentation.scenarios.length})`}</button>}
+    <p className="text-[10px] leading-4 text-muted">Stav používá stejné pevné brány jako experimentální portfolio. Nejde o pokyn k uzavření sázky.</p>
   </section>;
 }
 
-function DecisionChecklist({ forecast }: { forecast: FixtureModelForecast }) {
-  const rows = buildDecisionChecklist(forecast);
-  const statusLabel: Record<DecisionStatus, string> = { candidate: "Kandidát", watch: "Sledovat", reject: "Nevyhovuje" };
-  const statusClass: Record<DecisionStatus, string> = {
-    candidate: "bg-positive/10 text-positive", watch: "bg-warning/10 text-warning", reject: "bg-negative/10 text-negative",
-  };
-  return <details className="group rounded-xl border border-border bg-surface">
-    <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
-      <span>Rozhodovací checklist</span><span className="text-muted transition-transform group-open:rotate-180" aria-hidden>⌄</span>
-    </summary>
-    <div className="space-y-2 border-t border-border p-3">
-      {rows.map((row) => <div key={row.market} className="rounded-lg border border-border bg-background px-3 py-2.5">
-        <div className="flex items-center justify-between gap-2"><strong>{row.label}</strong><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${statusClass[row.status]}`}>{statusLabel[row.status]}</span></div>
-        <p className="mt-1 text-[11px] leading-4 text-muted">{row.reason}</p>
-      </div>)}
-      <p className="text-[10px] leading-4 text-muted">Checklist je konzistentní analytický filtr, nikoli pokyn k sázce ani záruka výsledku.</p>
-    </div>
-  </details>;
+function ExpectedMatch({ forecast }: { forecast: FixtureModelForecast }) {
+  const total = forecast.outcome.home + forecast.outcome.draw + forecast.outcome.away;
+  return <section className="rounded-xl border border-border bg-surface p-3" aria-label="Očekávaný obraz zápasu">
+    <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-foreground">Očekávaný obraz zápasu</strong><strong className="tabular-nums text-foreground">xG {forecast.goals.home.toFixed(1)} : {forecast.goals.away.toFixed(1)}</strong></div>
+    <div className="mt-3 flex h-2.5 overflow-hidden rounded-full" aria-label={`Domácí ${pct(forecast.outcome.home)}, remíza ${pct(forecast.outcome.draw)}, hosté ${pct(forecast.outcome.away)}`}><span className="bg-positive" style={{ width: `${forecast.outcome.home / total * 100}%` }} /><span className="bg-warning" style={{ width: `${forecast.outcome.draw / total * 100}%` }} /><span className="bg-info" style={{ width: `${forecast.outcome.away / total * 100}%` }} /></div>
+    <div className="mt-1.5 flex justify-between gap-2 text-[10px] tabular-nums text-muted"><span>Domácí {pct(forecast.outcome.home)}</span><span>Remíza {pct(forecast.outcome.draw)}</span><span>Hosté {pct(forecast.outcome.away)}</span></div>
+    <div className="mt-3 grid gap-2 sm:grid-cols-2"><Metric label="Góly" value={`Over 2,5 ${pct(forecast.goals.over25)} · BTTS ${pct(forecast.goals.btts)}`} />{(["home", "away"] as const).map((side) => <Metric key={side} label={side === "home" ? "Góly domácích" : "Góly hostů"} value={forecast.teamGoals[side].lines.map((line) => `O${line.line.toFixed(1)} ${pct(line.overProbability)}`).join(" · ") || "—"} />)}</div>
+  </section>;
 }
 
 function teamName(summary: FixtureModelForecast["headToHead"], teamId: number, fallback: string) {
@@ -161,35 +140,67 @@ function teamName(summary: FixtureModelForecast["headToHead"], teamId: number, f
 }
 
 function TempoDiscipline({
+  corners,
   fouls,
   cards,
   referee,
 }: {
+  corners: FixtureModelForecast["corners"];
   fouls: FixtureModelForecast["fouls"];
   cards: FixtureModelForecast["cards"];
   referee: FixtureModelForecast["refereeProfile"];
 }) {
-  if (!fouls && !cards) return null;
+  if (!corners && !fouls && !cards) return null;
   const tempo = fouls
     ? fouls.total >= 25 ? "Často přerušovaný zápas" : fouls.total <= 20 ? "Plynulejší tempo" : "Běžná intenzita"
     : "Tempo bez dostatku dat";
   const discipline = cards
     ? cards.total >= 5 ? "Vyšší karetní intenzita" : cards.total <= 3.5 ? "Klidnější karetní profil" : "Běžný karetní profil"
     : "Karty bez dostatku dat";
+  const refereeInfluence = !referee
+    ? "Rozhodčí zatím neurčen"
+    : referee.sample <= 0
+      ? `${referee.name} · bez historických dat, do modelu se nezapočítal`
+      : Math.abs(referee.factor - 1) < .015
+        ? `${referee.name} · neutrální vliv · faktor ${referee.factor.toFixed(2)}`
+        : `${referee.name} · ${referee.factor > 1 ? "zvyšuje" : "snižuje"} očekávání karet o ${Math.abs(Math.round((referee.factor - 1) * 100))} %${referee.lambdaBefore != null && referee.lambdaAfter != null ? ` · ${referee.lambdaBefore.toFixed(1)} → ${referee.lambdaAfter.toFixed(1)}` : ""}`;
   return <section className="rounded-lg border border-border bg-background px-3 py-3 text-muted" aria-label="Tempo a disciplína">
     <div className="flex flex-wrap items-start justify-between gap-2">
       <div><strong className="text-foreground">Tempo a disciplína</strong><p className="mt-1 text-[10px]">Společný pohled na fauly, karty a známý vliv rozhodčího.</p></div>
       <Badge>Experimentální</Badge>
     </div>
     <div className="mt-3 grid gap-2 sm:grid-cols-3">
-      <Metric label="Očekávané fauly" value={fouls ? `${fouls.home.toFixed(1)} : ${fouls.away.toFixed(1)}` : "—"} />
-      <Metric label="Fauly celkem" value={fouls ? fouls.total.toFixed(1) : "—"} />
-      <Metric label="Karty celkem" value={cards ? cards.total.toFixed(1) : "—"} />
+      <Metric label="Rohy" value={corners ? `${corners.total.toFixed(1)}${corners.line != null ? ` · linie ${corners.line.toLocaleString("cs-CZ")}` : ""}` : "—"} />
+      <Metric label="Karty" value={cards ? `${cards.total.toFixed(1)}${cards.line != null ? ` · linie ${cards.line.toLocaleString("cs-CZ")}` : ""}` : "—"} />
+      <Metric label="Fauly" value={fouls ? `${fouls.total.toFixed(1)} · ${fouls.home.toFixed(1)} : ${fouls.away.toFixed(1)}` : "—"} />
     </div>
-    <div className="mt-2 flex flex-wrap gap-1.5"><Badge>{tempo}</Badge><Badge>{discipline}</Badge>{referee?.sample ? <Badge>Rozhodčí · {referee.sample} zápasů</Badge> : null}</div>
-    <p className="mt-2 text-[10px] leading-4">Fauly zatím nemají ověřenou tržní kalibraci. Ukazujeme předzápasové očekávání a po utkání měříme chybu; nejde o sázkový tip.</p>
-    {fouls && <p className="mt-1 text-[10px]">Vyhodnoceno {fouls.evaluatedSample} prognóz{fouls.mae != null ? ` · průměrná chyba ${fouls.mae.toFixed(1)} faulu` : ""}.</p>}
+    <div className="mt-2 flex flex-wrap gap-1.5"><Badge>{tempo}</Badge><Badge>{discipline}</Badge></div>
+    <p className="mt-2 text-[11px] leading-4 text-foreground">{refereeInfluence}</p>
+    <p className="mt-1 text-[10px] leading-4">Početní modely jsou výzkumné; nejde o publikovaný tip ani potvrzenou výhodu.</p>
   </section>;
+}
+
+function TechnicalDetails({ forecast, fixtureId, canEditReferee, onRefereeAssigned }: { forecast: FixtureModelForecast; fixtureId: number; canEditReferee: boolean; onRefereeAssigned: () => void }) {
+  return <details className="group rounded-xl border border-border bg-surface">
+    <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent">
+      <span>Technické podrobnosti</span><span className="text-muted transition-transform group-open:rotate-180" aria-hidden>⌄</span>
+    </summary>
+    <div className="space-y-3 border-t border-border p-3">
+      <div className="rounded-lg bg-background px-3 py-3 text-muted">
+        <strong className="text-foreground">Úplné pravděpodobnosti</strong>
+        <dl className="mt-2 space-y-1.5">
+          {(["home", "draw", "away"] as const).map((side) => <CountRow key={side} label={side === "home" ? "Domácí" : side === "draw" ? "Remíza" : "Hosté"} value={`Model ${pct(forecast.outcome[side])} · otevření ${forecast.market.outcomeOpen ? pct(forecast.market.outcomeOpen[side]) : "—"} · closing ${forecast.market.outcomeClose ? pct(forecast.market.outcomeClose[side]) : "—"}`} />)}
+          <CountRow label="Over 2,5" value={`Model ${pct(forecast.goals.over25)} · otevření ${forecast.market.goalsOpen ? pct(forecast.market.goalsOpen.over) : "—"} · closing ${forecast.market.goalsClose ? pct(forecast.market.goalsClose.over) : "—"}`} />
+        </dl>
+      </div>
+      <details className="group/market rounded-lg border border-border bg-background"><summary className="flex min-h-11 cursor-pointer list-none items-center justify-between px-3 font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><span>Historie trhu</span><span className="text-muted transition-transform group-open/market:rotate-180" aria-hidden>⌄</span></summary><div className="border-t border-border p-3"><CurrentMarketMovement signals={forecast.marketSignals} /></div></details>
+      <div className="grid gap-2 tabular-nums lg:grid-cols-2"><CountMetric market="corners" value={forecast.corners} /><CountMetric market="cards" value={forecast.cards} /></div>
+      <div className="rounded-lg bg-background px-3 py-3 text-muted"><strong className="text-foreground">Diagnostika modelu</strong><p className="mt-1">Efektivní vzorek {forecast.readinessSample.toFixed(1)} · {forecast.lowConfidence ? "omezená spolehlivost" : "standardní spolehlivost"}{forecast.experimental ? " · evropský experiment" : ""}.</p>{forecast.fouls && <p className="mt-1">Fauly v{forecast.fouls.version} · {forecast.fouls.evaluatedSample} vyhodnoceno{forecast.fouls.mae != null ? ` · MAE ${forecast.fouls.mae.toFixed(1)}` : ""}.</p>}</div>
+      <RefereeProfile profile={forecast.refereeProfile} expanded fixtureId={fixtureId} canEdit={canEditReferee} onAssigned={onRefereeAssigned} />
+      {forecast.headToHead && <HeadToHeadCard summary={forecast.headToHead} teamAName={teamName(forecast.headToHead, forecast.headToHead.teamAId, "Domácí")} teamBName={teamName(forecast.headToHead, forecast.headToHead.teamBId, "Hosté")} compact />}
+      <p className="text-[10px] leading-4 text-muted">Pravděpodobnost není sama o sobě doporučení. Rozhodovací stav navíc vyžaduje odpovídající trh, kurz, datovou připravenost a pevné publikační brány.</p>
+    </div>
+  </details>;
 }
 
 function CurrentMarketMovement({ signals }: { signals: FixtureModelForecast["marketSignals"] }) {
