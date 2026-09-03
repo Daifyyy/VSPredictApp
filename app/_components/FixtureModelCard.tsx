@@ -5,7 +5,6 @@ import type { FixtureModelForecast } from "@/lib/types";
 import { COUNT_MARKET_PRESENTATION } from "@/lib/picks/countPresentation";
 import { useCurrentUser } from "./useCurrentUser";
 import { HeadToHeadCard } from "./HeadToHeadCard";
-import { buildModelPresentation, type ModelScenario } from "@/lib/picks/modelPresentation";
 
 type State =
   | { state: "loading" }
@@ -64,7 +63,6 @@ export function FixtureModelCard({
   if (data.state === "error") return <Message text="Model se teď nepodařilo načíst." />;
 
   const f = data.forecast;
-  const presentation = buildModelPresentation(f);
   if (countsOnly) return <div id={`model-${fixtureId}`} className="scroll-mt-20 space-y-3 rounded-xl border border-border bg-background/55 p-3 text-xs">
     <TempoDiscipline corners={f.corners} fouls={f.fouls} cards={f.cards} referee={f.refereeProfile} />
     <RefereeProfile profile={f.refereeProfile} expanded fixtureId={fixtureId} canEdit={user?.isAdmin === true} onAssigned={() => setRevision((value) => value + 1)} />
@@ -78,7 +76,6 @@ export function FixtureModelCard({
           {f.lowConfidence && <Badge>Omezený vzorek</Badge>}
         </div>
       </div>
-      <DecisionOverview presentation={presentation} />
       <ExpectedMatch forecast={f} />
       <TempoDiscipline corners={f.corners} fouls={f.fouls} cards={f.cards} referee={f.refereeProfile} />
       <TechnicalDetails forecast={f} fixtureId={fixtureId} canEditReferee={user?.isAdmin === true} onRefereeAssigned={() => setRevision((value) => value + 1)} />
@@ -87,47 +84,12 @@ export function FixtureModelCard({
 }
 
 function pct(value: number | null) { return value == null ? "—" : `${Math.round(value * 100)} %`; }
-function pp(value: number | null) { return value == null ? "—" : `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)} p. b.`; }
-
-function ScenarioRow({ scenario, primary = false }: { scenario: ModelScenario; primary?: boolean }) {
-  const labels = { candidate: "Kandidát", watch: "Sledovat", reject: "Nevyhovuje" } as const;
-  const colors = { candidate: "bg-positive/10 text-positive", watch: "bg-warning/10 text-warning", reject: "bg-negative/10 text-negative" } as const;
-  const marketLabel = scenario.marketState === "closing" ? "Closing" : scenario.marketState === "early" ? "Předčasný vzorek" : scenario.marketState === "live" ? "Poslední vzorek" : "Trh chybí";
-  return <article className={`rounded-lg border px-3 py-2.5 ${primary ? "border-accent-strong/40 bg-accent/10" : "border-border bg-background"}`}>
-    <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-foreground">{scenario.label}</strong><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${colors[scenario.status]}`}>{labels[scenario.status]}</span></div>
-    <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 tabular-nums text-[11px] text-muted">
-      <span>Model <strong className="text-foreground">{pct(scenario.modelProbability)}</strong></span>
-      <span>{marketLabel} <strong className="text-foreground">{pct(scenario.marketProbability)}</strong></span>
-      <span>Rozdíl <strong className="text-foreground">{pp(scenario.difference)}</strong></span>
-      <span>{scenario.decimalOdds == null ? "Bez kurzu" : `Kurz ${scenario.decimalOdds.toFixed(2)}`}</span>
-    </div>
-    {scenario.marketState !== "missing" && <p className="mt-1 text-[10px] text-muted">Otevření {pct(scenario.openingProbability)} · pohyb trhu {scenario.openingProbability == null || scenario.marketProbability == null ? "—" : pp(scenario.marketProbability - scenario.openingProbability)} · {scenario.samples} použitelných vzorků</p>}
-    <p className="mt-1.5 text-[11px] leading-4 text-muted">{scenario.reason}</p>
-  </article>;
-}
-
-function DecisionOverview({ presentation }: { presentation: ReturnType<typeof buildModelPresentation> }) {
-  const [all, setAll] = useState(false);
-  const primary = presentation.scenario;
-  const palette = presentation.verdict === "candidate" ? "border-positive/30 bg-positive/10" : presentation.verdict === "none" ? "border-border bg-surface" : "border-warning/30 bg-warning/10";
-  const visible = all ? presentation.scenarios : presentation.scenarios.slice(0, 3);
-  return <section aria-label="Modelový závěr" className="space-y-2">
-    <div className={`rounded-xl border px-4 py-3 ${palette}`}>
-      <small className="font-semibold uppercase tracking-wide text-muted">Co je na zápase zajímavé</small>
-      <h3 className="mt-1 text-base font-bold text-foreground">{presentation.title}</h3>
-      {primary ? <><p className="mt-1 tabular-nums text-sm text-foreground">Model {pct(primary.modelProbability)} · trh {pct(primary.marketProbability)} · rozdíl {pp(primary.difference)}</p><p className="mt-1 text-[11px] leading-4 text-muted">{primary.reason}</p></> : <p className="mt-1 text-[11px] text-muted">Žádný dostupný trh nyní neposkytuje použitelný modelový scénář.</p>}
-    </div>
-    <div className="space-y-2">{visible.map((scenario) => <ScenarioRow key={scenario.id} scenario={scenario} primary={scenario.id === primary?.id} />)}</div>
-    {presentation.scenarios.length > 3 && <button type="button" onClick={() => setAll((value) => !value)} className="min-h-10 rounded-lg border border-border bg-surface px-3 text-xs font-semibold text-foreground hover:bg-background" aria-expanded={all}>{all ? "Skrýt další scénáře" : `Zobrazit všechny scénáře (${presentation.scenarios.length})`}</button>}
-    <p className="text-[10px] leading-4 text-muted">Stav používá stejné pevné brány jako experimentální portfolio. Nejde o pokyn k uzavření sázky.</p>
-  </section>;
-}
 
 function ExpectedMatch({ forecast }: { forecast: FixtureModelForecast }) {
   const total = forecast.outcome.home + forecast.outcome.draw + forecast.outcome.away;
   return <section className="rounded-xl border border-border bg-surface p-3" aria-label="Očekávaný obraz zápasu">
     <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-foreground">Očekávaný obraz zápasu</strong><strong className="tabular-nums text-foreground">xG {forecast.goals.home.toFixed(1)} : {forecast.goals.away.toFixed(1)}</strong></div>
-    <div className="mt-3 flex h-2.5 overflow-hidden rounded-full" aria-label={`Domácí ${pct(forecast.outcome.home)}, remíza ${pct(forecast.outcome.draw)}, hosté ${pct(forecast.outcome.away)}`}><span className="bg-positive" style={{ width: `${forecast.outcome.home / total * 100}%` }} /><span className="bg-warning" style={{ width: `${forecast.outcome.draw / total * 100}%` }} /><span className="bg-info" style={{ width: `${forecast.outcome.away / total * 100}%` }} /></div>
+    <div className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-border" aria-label={`Domácí ${pct(forecast.outcome.home)}, remíza ${pct(forecast.outcome.draw)}, hosté ${pct(forecast.outcome.away)}`}><span className="bg-home" style={{ width: `${forecast.outcome.home / total * 100}%` }} /><span className="bg-warning" style={{ width: `${forecast.outcome.draw / total * 100}%` }} /><span className="bg-away" style={{ width: `${forecast.outcome.away / total * 100}%` }} /></div>
     <div className="mt-1.5 flex justify-between gap-2 text-[10px] tabular-nums text-muted"><span>Domácí {pct(forecast.outcome.home)}</span><span>Remíza {pct(forecast.outcome.draw)}</span><span>Hosté {pct(forecast.outcome.away)}</span></div>
     <div className="mt-3 grid gap-2 sm:grid-cols-2"><Metric label="Góly" value={`Over 2,5 ${pct(forecast.goals.over25)} · BTTS ${pct(forecast.goals.btts)}`} />{(["home", "away"] as const).map((side) => <Metric key={side} label={side === "home" ? "Góly domácích" : "Góly hostů"} value={forecast.teamGoals[side].lines.map((line) => `O${line.line.toFixed(1)} ${pct(line.overProbability)}`).join(" · ") || "—"} />)}</div>
   </section>;
