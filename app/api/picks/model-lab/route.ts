@@ -9,6 +9,7 @@ import { publicCache } from "@/lib/cacheHeaders";
 import { MODEL_VERSION } from "@/lib/data/modelVersion";
 import { STRATEGY_CATALOG, modelLabSegments, modelLabSummary, type ModelLabContext, type ModelLabLedgerRow, type ModelLabStatus } from "@/lib/picks/modelLab";
 import { bestLinePrice, parseBooks } from "@/lib/picks/books";
+import { binaryOutcome, FINAL_STATUSES } from "@/lib/picks/evaluation";
 
 const querySchema = z.object({
   context: z.enum(["LEAGUE", "EURO_CUP", "NATIONAL"]).default("LEAGUE"),
@@ -40,7 +41,7 @@ export async function GET(request: Request) {
     const fixtureIds = [...new Set([...tips.map((row) => row.fixtureId), ...teamSignals.map((row) => row.fixtureId)])];
     const results = fixtureIds.length ? await prisma.fixturePrediction.findMany({
       where: { fixtureId: { in: fixtureIds } },
-      select: { fixtureId: true, homeGoals: true, awayGoals: true, oddsBooks: true },
+      select: { fixtureId: true, homeGoals: true, awayGoals: true, status: true, oddsBooks: true },
     }) : [];
     const byFixture = new Map(results.map((row) => [row.fixtureId, row]));
     const ledger: ModelLabLedgerRow[] = tips.map((row) => ({
@@ -62,6 +63,7 @@ export async function GET(request: Request) {
       foulResearch = { n: values.length, mae: values.length ? values.reduce((sum, row) => sum + Math.abs(row.error), 0) / values.length : null, bias: values.length ? values.reduce((sum, row) => sum + row.error, 0) / values.length : null, version: values.at(-1)?.version ?? null };
     }
     const overrideByKey = new Map(overrides.map((row) => [`${row.strategy}:${row.policyVersion}`, row]));
+    const liveFrom = new Date(Date.now() - 4 * 60 * 60_000);
     const cards = STRATEGY_CATALOG.filter((item) => !parsed.data.strategy || item.strategy === parsed.data.strategy).map((item) => {
       const rows = ledger.filter((row) => row.strategy === item.strategy && row.policyVersion === item.policyVersion);
       const override = overrideByKey.get(`${item.strategy}:${item.policyVersion}`);
@@ -72,6 +74,9 @@ export async function GET(request: Request) {
         modelVersion: override?.modelVersion ?? MODEL_VERSION,
         status: (override?.status as ModelLabStatus | undefined) ?? item.status,
         definitionId: override?.id ?? null,
+        currentCount: ["ONE_X_TWO", "OVER_25", "BTTS_YES"].includes(item.strategy)
+          ? rows.filter((row) => row.kickoff >= liveFrom && !FINAL_STATUSES.has(byFixture.get(row.fixtureId)?.status ?? "") && binaryOutcome(row.market, row.side, row.homeGoals, row.awayGoals, row.line) == null).length
+          : null,
         summary: item.strategy === "FOULS" && foulResearch ? { ...summary, verdict: foulResearch.bias == null ? "Fauly zatím nemají skutečná data." : `MAE ${foulResearch.mae!.toFixed(2)} · bias ${foulResearch.bias >= 0 ? "+" : ""}${foulResearch.bias.toFixed(2)} faulu.` } : summary,
         research: item.strategy === "FOULS" ? foulResearch : null,
       };
