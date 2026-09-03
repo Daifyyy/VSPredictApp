@@ -1,19 +1,21 @@
 import type { PredictionRow } from "@/lib/types";
+import { teamTotalProb } from "@/lib/picks/teamTotals";
 
-export const QUICK_FOCUS_IDS = ["1x2", "goals", "btts", "corners", "cards", "market"] as const;
+export const QUICK_FOCUS_IDS = ["1x2", "goals", "btts", "team_goals", "corners", "cards", "market"] as const;
 export type QuickFocus = (typeof QUICK_FOCUS_IDS)[number];
 
 export const QUICK_FOCUS_LABELS: Record<QuickFocus, string> = {
   "1x2": "Výsledek 1X2",
   goals: "Góly Over/Under 2,5",
   btts: "Oba týmy skórují",
+  team_goals: "Týmové góly",
   corners: "Rohy",
   cards: "Karty a rozhodčí",
   market: "Pohyb trhu",
 };
 
 export interface QuickMarketSignal {
-  market: "1X2" | "OVER_25" | "BTTS" | "CORNERS" | "CARDS";
+  market: "1X2" | "OVER_25" | "BTTS" | "CORNERS" | "CARDS" | "TEAM_HOME_05" | "TEAM_HOME_15" | "TEAM_AWAY_05" | "TEAM_AWAY_15";
   side: "HOME" | "DRAW" | "AWAY" | "OVER" | "UNDER";
   line: number | null;
   modelProbability: number;
@@ -44,6 +46,40 @@ const penalty = (row: PredictionRow) => row.lowConfidence ? 0.82 : 1;
 
 function signal(candidate: QuickCandidate, market: QuickMarketSignal["market"]) {
   return candidate.signals.find((item) => item.market === market) ?? null;
+}
+
+export interface QuickFocusSelection {
+  market: QuickMarketSignal["market"];
+  side: QuickMarketSignal["side"];
+  line: number | null;
+  signal: QuickMarketSignal | null;
+}
+
+/** Jediná definice konkrétního scénáře, který karta rychlého přehledu sleduje. */
+export function quickFocusSelection(candidate: QuickCandidate, focus: QuickFocus): QuickFocusSelection | null {
+  if (focus === "1x2") {
+    const ordered = [
+      { side: "HOME" as const, value: candidate.row.homeWin },
+      { side: "DRAW" as const, value: candidate.row.draw },
+      { side: "AWAY" as const, value: candidate.row.awayWin },
+    ].sort((a, b) => b.value - a.value);
+    const picked = ordered[0];
+    if (picked.side === "DRAW") return null;
+    return { market: "1X2", side: picked.side, line: null, signal: signal(candidate, "1X2") };
+  }
+  if (focus === "goals") return { market: "OVER_25", side: candidate.row.over25 >= .5 ? "OVER" : "UNDER", line: 2.5, signal: signal(candidate, "OVER_25") };
+  if (focus === "btts") return { market: "BTTS", side: candidate.row.bttsYes >= .5 ? "OVER" : "UNDER", line: null, signal: signal(candidate, "BTTS") };
+  if (focus === "team_goals") {
+    const picked = bestTeamGoalScenario(candidate);
+    return picked ? { market: picked.market, side: "OVER", line: picked.line, signal: signal(candidate, picked.market) } : null;
+  }
+  if (focus === "corners" || focus === "cards") {
+    const picked = signal(candidate, focus === "corners" ? "CORNERS" : "CARDS");
+    return picked ? { market: picked.market, side: picked.side, line: picked.line, signal: picked } : null;
+  }
+  const eligible = candidate.signals.filter((item) => item.samples >= 3);
+  const picked = [...eligible].sort((a, b) => Math.abs(b.modelProbability - b.currentMarketProbability) - Math.abs(a.modelProbability - a.currentMarketProbability))[0];
+  return picked ? { market: picked.market, side: picked.side, line: picked.line, signal: picked } : null;
 }
 
 export function scoreQuickCandidate(candidate: QuickCandidate, focus: QuickFocus): QuickScore | null {
@@ -92,6 +128,13 @@ export function scoreQuickCandidate(candidate: QuickCandidate, focus: QuickFocus
     return make(model * 0.85 + ready * 0.15, `${side} · ${pct(model)}`, model, marketSignal?.openMarketProbability ?? null, marketSignal ? marketSignal.currentMarketProbability - marketSignal.openMarketProbability : null, marketSignal?.samples ?? 0);
   }
 
+  if (focus === "team_goals") {
+    const picked = bestTeamGoalScenario(candidate);
+    if (!picked || row.readinessSample < 6 || row.lowConfidence) return null;
+    const marketSignal = signal(candidate, picked.market);
+    return make(picked.probability * .85 + ready * .15, `${picked.teamName} Over ${picked.line.toFixed(1)} · ${pct(picked.probability)}`, picked.probability, marketSignal?.openMarketProbability ?? null, marketSignal ? marketSignal.currentMarketProbability - marketSignal.openMarketProbability : null, marketSignal?.samples ?? 0);
+  }
+
   if (focus === "corners" || focus === "cards") {
     const marketSignal = signal(candidate, focus === "corners" ? "CORNERS" : "CARDS");
     if (!marketSignal || marketSignal.line == null) return null;
@@ -118,7 +161,20 @@ export function scoreQuickCandidate(candidate: QuickCandidate, focus: QuickFocus
 }
 
 function marketLabel(market: QuickMarketSignal["market"]) {
-  return market === "1X2" ? "1X2" : market === "OVER_25" ? "Góly" : market === "BTTS" ? "Oba skórují" : market === "CORNERS" ? "Rohy" : "Karty";
+  return market === "1X2" ? "1X2" : market === "OVER_25" ? "Góly" : market === "BTTS" ? "Oba skórují" : market === "CORNERS" ? "Rohy" : market === "CARDS" ? "Karty" : "Týmové góly";
+}
+
+function bestTeamGoalScenario(candidate: QuickCandidate) {
+  const { row } = candidate;
+  const scenarios = ([
+    { market: "TEAM_HOME_15", side: "home", line: 1.5, teamName: row.homeName, threshold: .6 },
+    { market: "TEAM_AWAY_15", side: "away", line: 1.5, teamName: row.awayName, threshold: .6 },
+    { market: "TEAM_HOME_05", side: "home", line: .5, teamName: row.homeName, threshold: .78 },
+    { market: "TEAM_AWAY_05", side: "away", line: .5, teamName: row.awayName, threshold: .78 },
+  ] as const).map((item) => ({ ...item, probability: teamTotalProb(row, item.side, item.line) }))
+    .filter((item) => item.probability + 1e-9 >= item.threshold)
+    .sort((a, b) => b.line - a.line || (b.probability - b.threshold) - (a.probability - a.threshold));
+  return scenarios[0] ?? null;
 }
 
 export function rankQuickCandidates(candidates: QuickCandidate[], focus: QuickFocus, limit = 3) {

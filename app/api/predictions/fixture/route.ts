@@ -16,6 +16,7 @@ import { isRealDataConfigured, prisma } from "@/lib/db";
 import { COUNT_MARKET_SIGNAL_POLICY_VERSION, MARKET_SIGNAL_POLICY_VERSION } from "@/lib/picks/marketSignals";
 import { getRefereeProfile } from "@/lib/data/refereeStore";
 import { getHeadToHead } from "@/lib/data/h2h";
+import { teamTotalProb } from "@/lib/picks/teamTotals";
 
 const countSamples = unstable_cache(async () => {
   if (!isRealDataConfigured()) return {};
@@ -136,7 +137,7 @@ export async function GET(req: Request) {
     const closeGoals = sharpFairTotal(closeBooks);
     const signalRows = isRealDataConfigured()
       ? await prisma.marketSignalSnapshot.findMany({ where: { fixtureId, OR: [
-          { market: { in: ["1X2", "OVER_25", "BTTS"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
+          { market: { in: ["1X2", "OVER_25", "BTTS", "TEAM_HOME_05", "TEAM_HOME_15", "TEAM_AWAY_05", "TEAM_AWAY_15"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
           { market: { in: ["CORNERS", "CARDS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
         ] }, orderBy: { market: "asc" } })
       : [];
@@ -159,7 +160,7 @@ export async function GET(req: Request) {
             ? bestPrice(books, signal.side === "OVER" ? "btts" : "bttsNo")
             : signal.line == null
               ? null
-              : bestLinePrice(books, signal.market === "CORNERS" ? "corners" : "cards", signal.line, signal.side === "OVER" ? "over" : "under");
+              : bestLinePrice(books, signal.market === "CORNERS" ? "corners" : signal.market === "CARDS" ? "cards" : signal.market.startsWith("TEAM_HOME") ? "totalHome" : "totalAway", signal.line, signal.side === "OVER" ? "over" : "under");
       return {
         market: signal.market as FixtureModelForecast["marketSignals"][number]["market"],
         side: signal.side as FixtureModelForecast["marketSignals"][number]["side"],
@@ -183,6 +184,17 @@ export async function GET(req: Request) {
         minutesToKickoff: (signal.kickoff.getTime() - Date.now()) / 60_000,
       };
     });
+    const teamGoalForecast = (side: "home" | "away") => ({
+      expected: side === "home" ? row.lambdaHome : row.lambdaAway,
+      lines: ([0.5, 1.5] as const).map((line) => {
+        const market = `TEAM_${side === "home" ? "HOME" : "AWAY"}_${line === 0.5 ? "05" : "15"}` as FixtureModelForecast["marketSignals"][number]["market"];
+        const stored = marketSignals.find((signal) => signal.market === market);
+        const lineMarket = side === "home" ? "totalHome" : "totalAway";
+        const fair = sharpLineFair(books, lineMarket, line);
+        const price = bestLinePrice(books, lineMarket, line, "over");
+        return { line, overProbability: teamTotalProb(row, side, line), marketOverProbability: fair?.over ?? null, currentMarketProbability: stored?.currentMarketProbability ?? fair?.over ?? null, decimalOdds: price?.odds ?? null, samples: stored?.samples ?? 0 };
+      }),
+    });
     const forecast: FixtureModelForecast = {
       fixtureId,
       experimental: isEuroCupLeague(row.leagueId),
@@ -195,6 +207,7 @@ export async function GET(req: Request) {
         over25: row.over25,
         btts: row.bttsYes,
       },
+      teamGoals: { home: teamGoalForecast("home"), away: teamGoalForecast("away") },
       market: {
         outcomeOpen: openOutcome ? { home: openOutcome.home, draw: openOutcome.draw, away: openOutcome.away } : null,
         outcomeClose: closeOutcome ? { home: closeOutcome.home, draw: closeOutcome.draw, away: closeOutcome.away } : null,

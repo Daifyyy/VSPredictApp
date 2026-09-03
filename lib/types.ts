@@ -443,6 +443,10 @@ export interface FixtureModelForecast {
   readinessSample: number;
   outcome: { home: number; draw: number; away: number };
   goals: { home: number; away: number; over25: number; btts: number };
+  teamGoals: {
+    home: TeamGoalForecast;
+    away: TeamGoalForecast;
+  };
   market: {
     outcomeOpen: { home: number; draw: number; away: number } | null;
     outcomeClose: { home: number; draw: number; away: number } | null;
@@ -450,7 +454,7 @@ export interface FixtureModelForecast {
     goalsClose: { over: number; under: number } | null;
   };
   marketSignals: Array<{
-    market: "1X2" | "OVER_25" | "BTTS" | "CORNERS" | "CARDS";
+    market: "1X2" | "OVER_25" | "BTTS" | "CORNERS" | "CARDS" | "TEAM_HOME_05" | "TEAM_HOME_15" | "TEAM_AWAY_05" | "TEAM_AWAY_15";
     side: "HOME" | "DRAW" | "AWAY" | "OVER" | "UNDER";
     line: number | null;
     modelProbability: number;
@@ -472,6 +476,18 @@ export interface FixtureModelForecast {
   fouls: FoulModelForecast | null;
   refereeProfile: RefereeProfileForecast | null;
   headToHead: import("@/lib/h2h").HeadToHeadSummary;
+}
+
+export interface TeamGoalForecast {
+  expected: number;
+  lines: Array<{
+    line: 0.5 | 1.5;
+    overProbability: number;
+    marketOverProbability: number | null;
+    currentMarketProbability: number | null;
+    decimalOdds: number | null;
+    samples: number;
+  }>;
 }
 
 export interface FoulModelForecast {

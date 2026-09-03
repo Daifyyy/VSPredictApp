@@ -5,6 +5,7 @@ import type { FixtureModelForecast } from "@/lib/types";
 const forecast = (over: Partial<FixtureModelForecast> = {}): FixtureModelForecast => ({
   fixtureId: 1, experimental: false, lowConfidence: false, readinessSample: 10,
   outcome: { home: .6, draw: .23, away: .17 }, goals: { home: 1.8, away: 1, over25: .6, btts: .5 },
+  teamGoals: { home: { expected: 1.8, lines: [] }, away: { expected: 1, lines: [] } },
   market: { outcomeOpen: null, outcomeClose: null, goalsOpen: null, goalsClose: null },
   marketSignals: [{ market: "1X2", side: "HOME", line: null, modelProbability: .6, openMarketProbability: .51, currentMarketProbability: .53, currentMove: .02, samples: 4, sampleAttempts: 4, lastSampleMinutesToKickoff: 60, lastSampleAt: null, points: [], closed: false, closingQuality: "pending", decimalOdds: 1.9, minutesToKickoff: 60 }],
   corners: null, cards: null, fouls: null, refereeProfile: null,

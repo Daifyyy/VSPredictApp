@@ -94,6 +94,7 @@ export function FixtureModelCard({
             <Metric label="Over 2.5" value={pct(f.goals.over25)} />
             <Metric label="Oba skórují" value={pct(f.goals.btts)} />
           </div>
+          <TeamGoals forecast={f.teamGoals} />
         </>
       )}
       <div className="grid gap-2 tabular-nums lg:grid-cols-2">
@@ -111,6 +112,26 @@ export function FixtureModelCard({
       )}
     </div>
   );
+}
+
+function TeamGoals({ forecast }: { forecast: FixtureModelForecast["teamGoals"] }) {
+  const pct = (value: number | null) => value == null ? "—" : `${Math.round(value * 100)} %`;
+  return <section className="rounded-lg border border-border bg-background px-3 py-3" aria-label="Týmové góly">
+    <div className="flex flex-wrap items-start justify-between gap-2">
+      <div><strong className="text-foreground">Týmové góly</strong><p className="mt-1 text-[10px] text-muted">Pravděpodobnost, že konkrétní tým překročí hranici 0,5 nebo 1,5 gólu.</p></div>
+      <Badge>Výzkumný model</Badge>
+    </div>
+    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+      {(["home", "away"] as const).map((side) => <div key={side} className="rounded-lg bg-surface p-3">
+        <div className="flex items-center justify-between gap-2"><strong>{side === "home" ? "Domácí" : "Hosté"}</strong><span className="text-[10px] text-muted">xG {forecast[side].expected.toFixed(2)}</span></div>
+        <div className="mt-2 space-y-2">{forecast[side].lines.map((item) => <div key={item.line} className="flex items-start justify-between gap-3 border-t border-border/70 pt-2 first:border-0 first:pt-0">
+          <div><strong className="tabular-nums">Over {item.line.toFixed(1)} · {pct(item.overProbability)}</strong><p className="mt-0.5 text-[10px] text-muted">{item.marketOverProbability == null ? "Tržní linie není dostupná" : `trh ${pct(item.marketOverProbability)}${item.currentMarketProbability != null && Math.abs(item.currentMarketProbability - item.marketOverProbability) > .001 ? ` → poslední ${pct(item.currentMarketProbability)}` : ""}`}</p></div>
+          <span className="shrink-0 text-[10px] tabular-nums text-muted">{item.decimalOdds == null ? "bez kurzu" : `kurz ${item.decimalOdds.toFixed(2)}`}</span>
+        </div>)}</div>
+      </div>)}
+    </div>
+    <p className="mt-2 text-[10px] leading-4 text-muted">Pravděpodobnosti jsou dostupné z gólového modelu vždy; kurz a tržní srovnání jen při uložené stejné půlkové linii. Zatím nejde o autonomní sázkový tip.</p>
+  </section>;
 }
 
 function DecisionChecklist({ forecast }: { forecast: FixtureModelForecast }) {
@@ -173,7 +194,7 @@ function TempoDiscipline({
 
 function CurrentMarketMovement({ signals }: { signals: FixtureModelForecast["marketSignals"] }) {
   if (!signals.length) return <p className="rounded-lg bg-surface px-3 py-3 text-muted">Pohyb trhu zatím nelze ukázat – nemáme první použitelný kurzový snapshot.</p>;
-  const labels = { "1X2": "1X2", OVER_25: "Góly 2,5", BTTS: "Oba skórují", CORNERS: "⛳ Rohy", CARDS: "🟨 Karty" } as const;
+  const labels = { "1X2": "1X2", OVER_25: "Góly 2,5", BTTS: "Oba skórují", CORNERS: "⛳ Rohy", CARDS: "🟨 Karty", TEAM_HOME_05: "Domácí góly 0,5", TEAM_HOME_15: "Domácí góly 1,5", TEAM_AWAY_05: "Góly hostů 0,5", TEAM_AWAY_15: "Góly hostů 1,5" } as const;
   const sides = { HOME: "domácí", DRAW: "remíza", AWAY: "hosté", OVER: "Over", UNDER: "Under" } as const;
   const pct = (value: number) => `${Math.round(value * 100)} %`;
   return <section className="rounded-lg border border-border bg-background px-3 py-3 text-muted" aria-label="Dosavadní pohyb trhu">

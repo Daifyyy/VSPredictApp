@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
+import type { QuickOverviewSelection } from "@prisma/client";
 import { prisma, isRealDataConfigured } from "@/lib/db";
 import { getUpcomingPredictions } from "@/lib/data/repository";
 import { catalogLeagueName, isPublicCompetition } from "@/lib/data/catalog";
 import { localDateKey } from "@/lib/competitionGrouping";
-import { h2hSnapshotCount, QUICK_FOCUS_IDS, rankQuickCandidates, restDaysBetween, selectRecentSeasonRows, type QuickCandidate, type QuickMarketSignal, type QuickScore } from "@/lib/quickOverview";
+import { h2hSnapshotCount, QUICK_FOCUS_IDS, quickFocusSelection, rankQuickCandidates, restDaysBetween, selectRecentSeasonRows, type QuickCandidate, type QuickFocus, type QuickMarketSignal, type QuickScore } from "@/lib/quickOverview";
 import type { PredictionRow } from "@/lib/types";
 import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
 import { logError } from "@/lib/logError";
@@ -14,17 +15,22 @@ import { selectCurrentInjuries } from "@/lib/data/injuries";
 import type { ApiInjury } from "@/lib/data/apiFootball";
 import { fixtureEditorialTitle } from "@/lib/homeFeaturedFixture";
 import { isEuroCupLeague } from "@/lib/data/catalog";
+import { QUICK_OVERVIEW_POLICY_VERSION } from "@/lib/data/quickOverviewStore";
+import { freshClosing, portfolioProfit } from "@/lib/picks/evaluation";
 
 export const dynamic = "force-dynamic";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+type RankedQuickItem = { candidate: QuickCandidate; result: QuickScore; frozenSide: string | null; frozenLine: number | null; snapshot: QuickOverviewSelection | null };
 
 export async function GET(req: Request) {
   if (!allowRequest(`quick-overview:${clientKey(req)}`, 60, 60_000)) return tooMany();
   const date = new URL(req.url).searchParams.get("date") ?? "";
   if (!DATE_RE.test(date)) return NextResponse.json({ error: "Neplatné datum" }, { status: 400 });
   try {
-    const frozen = isRealDataConfigured() ? await prisma.quickOverviewSelection.findMany({ where: { dateKey: date, policyVersion: 1 }, orderBy: [{ category: "asc" }, { rank: "asc" }] }) : [];
+    const allFrozen = isRealDataConfigured() ? await prisma.quickOverviewSelection.findMany({ where: { dateKey: date, policyVersion: { in: [1, QUICK_OVERVIEW_POLICY_VERSION] } }, orderBy: [{ category: "asc" }, { policyVersion: "desc" }, { rank: "asc" }] }) : [];
+    const newestPolicy = new Map(QUICK_FOCUS_IDS.map((category) => [category, Math.max(0, ...allFrozen.filter((row) => row.category === category).map((row) => row.policyVersion))]));
+    const frozen = allFrozen.filter((row) => row.policyVersion === newestPolicy.get(row.category as typeof QUICK_FOCUS_IDS[number]));
     const frozenIds = [...new Set(frozen.map((row) => row.fixtureId))];
     const predictions = frozenIds.length
       ? (await prisma.fixturePrediction.findMany({ where: { fixtureId: { in: frozenIds } } })).map(toPredictionRow)
@@ -65,18 +71,21 @@ export async function GET(req: Request) {
 
     const candidates: QuickCandidate[] = predictions.map((row) => ({ row, signals: signals.get(row.fixtureId) ?? [] }));
     const byFixture = new Map(candidates.map((candidate) => [candidate.row.fixtureId, candidate]));
-    const ranked = frozen.length
+    const ranked = (frozen.length
       ? Object.fromEntries(QUICK_FOCUS_IDS.map((focus) => [focus, frozen.filter((item) => item.category === focus).flatMap((item) => {
           const candidate = byFixture.get(item.fixtureId);
-          return candidate ? [{ candidate, result: { score: item.score, reason: item.reason, modelProbability: item.modelProbability, marketProbability: item.marketProbability, marketMove: item.marketMove, marketSamples: item.marketSamples, experimental: candidate.row.modelContext === "EURO_CUP" } satisfies QuickScore, frozenSide: item.side, frozenLine: item.line }] : [];
+          return candidate ? [{ candidate, result: { score: item.score, reason: item.reason, modelProbability: item.modelProbability, marketProbability: item.marketProbability, marketMove: item.marketMove, marketSamples: item.marketSamples, experimental: candidate.row.modelContext === "EURO_CUP" } satisfies QuickScore, frozenSide: item.side, frozenLine: item.line, snapshot: item }] : [];
         })]))
-      : Object.fromEntries(QUICK_FOCUS_IDS.map((focus) => [focus, rankQuickCandidates(candidates, focus).map((item) => ({ ...item, frozenSide: null, frozenLine: null }))]));
+      : Object.fromEntries(QUICK_FOCUS_IDS.map((focus) => [focus, rankQuickCandidates(candidates, focus).map((item) => ({ ...item, frozenSide: null, frozenLine: null, snapshot: null }))]))) as Record<QuickFocus, RankedQuickItem[]>;
     const selectedIds = [...new Set(Object.values(ranked).flatMap((items) => items.map((item) => item.candidate.row.fixtureId)))];
     const selected = candidates.filter((candidate) => selectedIds.includes(candidate.row.fixtureId));
     const contexts = await buildContexts(selected);
 
     const categories = Object.fromEntries(QUICK_FOCUS_IDS.map((focus) => [focus, ranked[focus].map((item, index) => {
       const row = item.candidate.row;
+      const close = item.snapshot ? freshClosing(new Date(row.kickoff), item.snapshot.closedAt, item.snapshot.closingMarketProbability).close : null;
+      const hit = item.snapshot?.hit ?? selectionHit(focus, row, item.candidate.signals, actualCounts.get(row.fixtureId) ?? null, item.frozenSide, item.frozenLine, item.snapshot?.sourceMarket ?? null);
+      const profit = focus === "market" || focus === "team_goals" ? null : item.snapshot?.profit ?? portfolioProfit(hit, item.snapshot?.decimalOdds ?? null);
       return {
         rank: index + 1,
         fixtureId: row.fixtureId,
@@ -89,7 +98,7 @@ export async function GET(req: Request) {
         away: { id: row.awayTeamId, name: row.awayName, logoUrl: row.awayLogo },
         expectedScore: { home: row.lambdaHome, away: row.lambdaAway },
         matchState: row.status === "FT" || row.status === "AET" || row.status === "PEN" ? "settled" : ["1H", "HT", "2H", "ET", "BT", "P"].includes(row.status) ? "live" : "pending",
-        result: row.homeGoals == null || row.awayGoals == null ? null : { home: row.homeGoals, away: row.awayGoals, hit: selectionHit(focus, row, item.candidate.signals, actualCounts.get(row.fixtureId) ?? null, item.frozenSide, item.frozenLine), actualCounts: actualCounts.get(row.fixtureId) ?? null },
+        result: row.homeGoals == null || row.awayGoals == null ? null : { home: row.homeGoals, away: row.awayGoals, hit, actualCounts: actualCounts.get(row.fixtureId) ?? null },
         probabilities: { home: row.homeWin, draw: row.draw, away: row.awayWin, over25: row.over25, btts: row.bttsYes },
         counts: {
           corners: total(row.lambdaCornersHome, row.lambdaCornersAway),
@@ -102,11 +111,13 @@ export async function GET(req: Request) {
         referee: row.refereeName ? { name: row.refereeName, factor: row.refereeFactor ?? null, sample: row.refereeSample ?? 0 } : null,
         h2hMeetings: h2hSnapshotCount(row.h2hSnapshot),
         marketSignals: item.candidate.signals,
+        audit: item.snapshot ? { policyVersion: item.snapshot.policyVersion, sourceMarket: item.snapshot.sourceMarket, side: item.snapshot.side, line: item.snapshot.line, decimalOdds: item.snapshot.decimalOdds, bookmaker: item.snapshot.bookmaker, marketProbability: item.snapshot.marketProbability, closingMarketProbability: close, clv: close == null || item.snapshot.marketProbability == null ? null : close - item.snapshot.marketProbability, profit } : null,
         ...item.result,
         context: contexts.get(row.fixtureId) ?? null,
       };
     })]));
-    return response({ date, generatedAt: new Date().toISOString(), categories });
+    const summaries = Object.fromEntries(QUICK_FOCUS_IDS.map((focus) => [focus, dailySummary(categories[focus], focus === "market" || focus === "team_goals")]));
+    return response({ date, generatedAt: new Date().toISOString(), categories, summaries });
   } catch (error) {
     logError("api/picks/quick-overview", error, { date });
     return NextResponse.json({ error: "Rychlý přehled se nepodařilo načíst" }, { status: 502 });
@@ -117,11 +128,12 @@ function toPredictionRow(row: Awaited<ReturnType<typeof prisma.fixturePrediction
   return { ...row, kickoff: row.kickoff.toISOString(), modelContext: row.modelContext as PredictionRow["modelContext"], published1x2Side: row.published1x2Side as PredictionRow["published1x2Side"], publishedAt: row.publishedAt?.toISOString() ?? null, h2hSnapshot: row.h2hSnapshot as PredictionRow["h2hSnapshot"], h2hCapturedAt: row.h2hCapturedAt?.toISOString() ?? null, oddsFetchedAt: row.oddsFetchedAt?.toISOString() ?? null, oddsCloseAt: row.oddsCloseAt?.toISOString() ?? null, settledAt: row.settledAt?.toISOString() ?? null } as PredictionRow;
 }
 
-function selectionHit(focus: string, row: PredictionRow, signals: QuickMarketSignal[], actual: { corners: number | null; cards: number | null } | null, frozenSide: string | null, frozenLine: number | null): boolean | null {
+function selectionHit(focus: string, row: PredictionRow, signals: QuickMarketSignal[], actual: { corners: number | null; cards: number | null } | null, frozenSide: string | null, frozenLine: number | null, frozenMarket: string | null): boolean | null {
   if (row.homeGoals == null || row.awayGoals == null) return null;
   if (focus === "1x2") { const side = frozenSide ?? (row.homeWin >= row.awayWin ? "HOME" : "AWAY"); return side === "HOME" ? row.homeGoals > row.awayGoals : side === "AWAY" ? row.awayGoals > row.homeGoals : row.homeGoals === row.awayGoals; }
   if (focus === "goals") { const side = frozenSide ?? (row.over25 >= 0.5 ? "OVER" : "UNDER"); return side === "OVER" ? row.homeGoals + row.awayGoals > 2.5 : row.homeGoals + row.awayGoals < 2.5; }
   if (focus === "btts") { const side = frozenSide ?? (row.bttsYes >= 0.5 ? "OVER" : "UNDER"); const both = row.homeGoals > 0 && row.awayGoals > 0; return side === "OVER" ? both : !both; }
+  if (focus === "team_goals") { const picked = frozenMarket ? { market: frozenMarket, line: frozenLine } : quickFocusSelection({ row, signals }, "team_goals"); if (!picked || picked.line == null) return null; return (picked.market.startsWith("TEAM_HOME") ? row.homeGoals : row.awayGoals) > picked.line; }
   if (focus === "corners" || focus === "cards") { const signal = signals.find((item) => item.market === (focus === "corners" ? "CORNERS" : "CARDS")); const side = frozenSide ?? signal?.side; const line = frozenLine ?? signal?.line; const count = focus === "corners" ? actual?.corners : actual?.cards; if (!side || line == null || count == null) return null; return side === "OVER" ? count > line : count < line; }
   return null;
 }
@@ -140,6 +152,13 @@ function isSeriesPoint(value: unknown): value is { t: number; p: number } {
 
 function total(home: number | null | undefined, away: number | null | undefined) {
   return home == null || away == null ? null : home + away;
+}
+
+function dailySummary(items: Array<{ result: { hit: boolean | null } | null; audit: { decimalOdds: number | null; profit: number | null } | null }>, diagnostic: boolean) {
+  const settled = items.filter((item) => item.result?.hit != null);
+  const priced = diagnostic ? [] : settled.filter((item) => item.audit?.decimalOdds != null && item.audit.profit != null);
+  const profit = priced.reduce((sum, item) => sum + (item.audit?.profit ?? 0), 0);
+  return { total: items.length, settled: settled.length, hits: settled.filter((item) => item.result?.hit).length, priced: priced.length, profit, roi: priced.length ? profit / priced.length : null, diagnostic };
 }
 
 async function buildContexts(candidates: QuickCandidate[]) {

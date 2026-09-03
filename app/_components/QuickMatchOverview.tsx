@@ -11,7 +11,7 @@ import type { SessionUser } from "./sessionUser";
 interface FormItem { fixtureId: number; date: string; opponent: string | null; opponentLogo: string | null; result: "W" | "D" | "L" | null; goalsFor: number | null; goalsAgainst: number | null; xgFor: number | null; xgAgainst: number | null; venue: "HOME" | "AWAY" | "NEUTRAL" }
 interface Split { played: number; win: number; draw: number; lose: number; goalsFor: number; goalsAgainst: number; points: number; ppg: number | null }
 interface TeamContext { form: FormItem[]; formScore: number | null; points: number; xgDiff: number | null; restDays: number | null; cleanSheetPct: number | null; failedToScorePct: number | null; standing: { rank: number; points: number; played: number; ppg: number | null; home: Split; away: Split } | null; injuries: { playerId: number; name: string; reason: string }[] | null; injuriesUpdatedAt: string | null }
-interface MarketSignal { market: "1X2" | "OVER_25" | "BTTS" | "CORNERS" | "CARDS"; side: "HOME" | "DRAW" | "AWAY" | "OVER" | "UNDER"; line: number | null; modelProbability: number; openMarketProbability: number; currentMarketProbability: number; samples: number }
+interface MarketSignal { market: "1X2" | "OVER_25" | "BTTS" | "CORNERS" | "CARDS" | "TEAM_HOME_05" | "TEAM_HOME_15" | "TEAM_AWAY_05" | "TEAM_AWAY_15"; side: "HOME" | "DRAW" | "AWAY" | "OVER" | "UNDER"; line: number | null; modelProbability: number; openMarketProbability: number; currentMarketProbability: number; samples: number }
 interface QuickItem {
   rank: number; fixtureId: number; kickoff: string; leagueId: number; leagueName: string; round: string | null; editorialTitle: string | null;
   home: { id: number; name: string; logoUrl: string }; away: { id: number; name: string; logoUrl: string };
@@ -21,11 +21,13 @@ interface QuickItem {
   reason: string; modelProbability: number | null; marketProbability: number | null; marketMove: number | null; marketSamples: number;
   experimental: boolean; referee: { name: string; factor: number | null; sample: number } | null; h2hMeetings: number;
   marketSignals: MarketSignal[];
+  audit: { policyVersion: number; sourceMarket: string | null; side: string | null; line: number | null; decimalOdds: number | null; bookmaker: string | null; marketProbability: number | null; closingMarketProbability: number | null; clv: number | null; profit: number | null } | null;
   matchState: "pending" | "live" | "settled";
   result: { home: number; away: number; hit: boolean | null; actualCounts: { corners: number | null; cards: number | null; fouls: number | null } | null } | null;
   context: { home: TeamContext; away: TeamContext; restDifference: number | null; restRelevant: boolean; completeness: number; standingsUpdatedAt: string | null } | null;
 }
-interface Payload { date: string; generatedAt: string; categories: Record<QuickFocus, QuickItem[]> }
+interface DailySummary { total: number; settled: number; hits: number; priced: number; profit: number; roi: number | null; diagnostic: boolean }
+interface Payload { date: string; generatedAt: string; categories: Record<QuickFocus, QuickItem[]>; summaries?: Record<QuickFocus, DailySummary> }
 
 export function QuickMatchOverview({ date, user, compact = false, historical = false }: { date: string | null; user: SessionUser | null; compact?: boolean; historical?: boolean }) {
   const [payload, setPayload] = useState<Payload | null>(null);
@@ -88,6 +90,7 @@ export function QuickMatchOverview({ date, user, compact = false, historical = f
       <div className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Kategorie rychlého přehledu">
         {QUICK_FOCUS_IDS.map((id) => <button key={id} type="button" aria-pressed={focus === id} onClick={() => selectFocus(id)} className={`min-h-11 shrink-0 rounded-full border px-3 text-xs font-bold transition ${focus === id ? "border-accent bg-accent text-accent-ink" : "border-border bg-background text-muted hover:bg-accent/15 hover:text-foreground"}`}>{QUICK_FOCUS_LABELS[id]} <span className="opacity-65">{payload?.categories[id]?.length ?? 0}</span></button>)}
       </div>
+      {historical && payload?.summaries?.[focus] && <DailyResultSummary summary={payload.summaries[focus]} />}
     </div>
     {!payload && !error && <div className="grid gap-3 p-4 md:grid-cols-3">{[1,2,3].map((value) => <div key={value} className="h-48 animate-pulse rounded-xl bg-border/55" />)}</div>}
     {error && <p className="p-5 text-sm text-muted">Rychlý přehled se nyní nepodařilo načíst.</p>}
@@ -108,6 +111,8 @@ function QuickCard({ item, focus, open, pro, favorite, onFavorite, onToggle }: {
       </div>
       <div className="mt-3 rounded-lg bg-accent/15 px-3 py-2 text-center text-xs font-bold text-foreground">{!pro && focus === "market" ? "Výrazný rozdíl modelu a trhu" : item.reason}</div>
       {item.result && <div className={`mt-2 rounded-lg px-3 py-2 text-center text-xs font-bold ${item.result.hit == null ? "bg-surface text-foreground" : item.result.hit ? "bg-positive/10 text-positive" : "bg-negative/10 text-negative"}`}>{resultLabel(item, focus)}</div>}
+      {item.result && item.audit && focus !== "market" && <div className="mt-2 text-center text-[10px] text-muted">{item.audit.decimalOdds == null ? "Bez tehdy dostupného kurzu · do ROI nevstupuje" : <>Kurz {item.audit.decimalOdds.toFixed(2)}{item.audit.bookmaker ? ` · ${item.audit.bookmaker}` : ""}{item.audit.profit != null ? ` · ${item.audit.profit >= 0 ? "+" : ""}${item.audit.profit.toFixed(2)} u` : ""}{item.audit.clv != null ? ` · CLV ${item.audit.clv >= 0 ? "+" : ""}${(item.audit.clv * 100).toFixed(1)} p. b.` : ""}</>}</div>}
+      {item.audit && focus === "market" && <div className="mt-2 text-center text-[10px] text-muted">{marketName(item.audit.sourceMarket)} · při výběru {percent(item.audit.marketProbability)} · closing {percent(item.audit.closingMarketProbability)}{item.audit.clv != null ? ` · posun ${item.audit.clv >= 0 ? "+" : ""}${(item.audit.clv * 100).toFixed(1)} p. b.` : ""} · bez započtení do ROI</div>}
       {!item.result && item.matchState === "live" && <div className="mt-2 rounded-lg bg-warning/10 px-3 py-2 text-center text-xs font-bold text-warning">Zápas právě probíhá</div>}
       {pro && <div className="mt-3 grid grid-cols-3 gap-2 text-center text-[10px]">
         <SmallMetric label="Model" value={percent(item.modelProbability)} />
@@ -127,6 +132,12 @@ function QuickCard({ item, focus, open, pro, favorite, onFavorite, onToggle }: {
       <Link href={compareHref} className="ui-button-primary mt-3 min-h-11 w-full px-4 text-sm">Otevřít kompletní Porovnání</Link>
     </div>}
   </article>;
+}
+
+function DailyResultSummary({ summary }: { summary: DailySummary }) {
+  if (summary.diagnostic) return <p className="mt-3 rounded-lg bg-background px-3 py-2 text-xs text-muted">Tato výzkumná kategorie zatím nevstupuje do ROI.</p>;
+  if (!summary.total) return null;
+  return <p className="mt-3 rounded-lg bg-background px-3 py-2 text-xs font-semibold text-foreground">{summary.settled ? `${summary.hits}/${summary.settled} scénáře vyšly` : "Výběry zatím nejsou vyhodnocené"}{summary.roi == null ? " · bez oceněných výběrů pro ROI" : ` · zisk ${summary.profit >= 0 ? "+" : ""}${summary.profit.toFixed(2)} u · ROI ${summary.roi >= 0 ? "+" : ""}${(summary.roi * 100).toFixed(1)} %`} {summary.priced < summary.settled && <span className="font-normal text-muted">· ROI z {summary.priced}/{summary.settled} oceněných</span>}</p>;
 }
 
 function Team({ team }: { team: QuickItem["home"] }) { return <div className="min-w-0"><TeamLogo src={team.logoUrl} alt={team.name} size={34} /><strong className="mt-1 block truncate text-xs">{team.name}</strong></div>; }
@@ -161,7 +172,8 @@ function ContextRow({ label, value }: { label: string; value: string }) { return
 function TempoDiscipline({ item }: { item: QuickItem }) { const cardChange = item.counts.cards != null && item.counts.cardsBeforeReferee != null ? item.counts.cards - item.counts.cardsBeforeReferee : null; return <section className="rounded-xl border border-border bg-surface p-3 md:col-span-2"><div className="flex flex-wrap items-center justify-between gap-2"><div><strong className="text-sm">Tempo a disciplína</strong><p className="mt-1 text-[10px] text-muted">Zjednodušený odhad průběhu bez sázkového doporučení.</p></div><Badge tone="warn">Experimentální</Badge></div><div className="mt-3 grid grid-cols-3 gap-2 text-center text-[10px]"><SmallMetric label="Rohy" value={decimal(item.counts.corners)} /><SmallMetric label="Karty" value={decimal(item.counts.cards)} /><SmallMetric label="Fauly" value={decimal(item.counts.fouls)} /></div><p className="mt-2 text-[10px] text-muted">{refereeEffect(item, cardChange)}</p></section>; }
 
 function refereeEffect(item: QuickItem, change: number | null) { if (!item.referee) return "Rozhodčí zatím není určen; karetní odhad jej nezohledňuje."; if (!item.referee.sample) return `${item.referee.name}: bez dostatečné historie, do odhadu karet nevstupuje.`; if (change == null || Math.abs(change) < .05) return `${item.referee.name}: neutrální vliv na karetní odhad.`; return `${item.referee.name}: ${change > 0 ? "zvyšuje" : "snižuje"} očekávání karet o ${Math.abs(change).toFixed(1)} (${item.counts.cardsBeforeReferee?.toFixed(1)} → ${item.counts.cards?.toFixed(1)}).`; }
-function relevantSignal(item: QuickItem, focus: QuickFocus) { const market = focus === "goals" ? "OVER_25" : focus === "btts" ? "BTTS" : focus === "corners" ? "CORNERS" : focus === "cards" ? "CARDS" : focus === "1x2" ? "1X2" : null; return (market ? item.marketSignals.find((signal) => signal.market === market) : null) ?? item.marketSignals.find((signal) => signal.modelProbability === item.modelProbability) ?? item.marketSignals[0] ?? null; }
+function relevantSignal(item: QuickItem, focus: QuickFocus) { const market = focus === "goals" ? "OVER_25" : focus === "btts" ? "BTTS" : focus === "corners" ? "CORNERS" : focus === "cards" ? "CARDS" : focus === "1x2" ? "1X2" : null; return (market ? item.marketSignals.find((signal) => signal.market === market) : null) ?? item.marketSignals.find((signal) => Math.abs(signal.modelProbability - (item.modelProbability ?? -1)) < 1e-9) ?? item.marketSignals[0] ?? null; }
+function marketName(market: string | null) { return market === "1X2" ? "Výsledek 1X2" : market === "OVER_25" ? "Góly Over/Under 2,5" : market === "BTTS" ? "Oba týmy skórují" : market === "CORNERS" ? "Rohy" : market === "CARDS" ? "Karty" : market?.startsWith("TEAM_") ? "Týmové góly" : "Trh"; }
 function percent(value: number | null) { return value == null ? "—" : `${Math.round(value * 100)} %`; }
 function movement(value: number | null) { return value == null ? "bez srovnání" : `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)} p. b. od otevření`; }
 function signed(value: number | null) { return value == null ? "—" : `${value >= 0 ? "+" : ""}${value.toFixed(2)}/záp.`; }

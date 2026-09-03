@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { h2hSnapshotCount, rankQuickCandidates, restDaysBetween, scoreQuickCandidate, selectRecentSeasonRows, type QuickCandidate } from "./quickOverview";
+import { h2hSnapshotCount, quickFocusSelection, rankQuickCandidates, restDaysBetween, scoreQuickCandidate, selectRecentSeasonRows, type QuickCandidate } from "./quickOverview";
 import type { PredictionRow } from "./types";
 
 function candidate(overrides: Partial<PredictionRow> = {}): QuickCandidate {
@@ -26,6 +26,22 @@ describe("quick overview ranking", () => {
 
   it("nezahrne remízu jako hlavní 1X2 výběr", () => {
     expect(scoreQuickCandidate(candidate({ homeWin: .3, draw: .4, awayWin: .3 }), "1x2")).toBeNull();
+  });
+
+  it("zmrazí konkrétní stranu i bez dostupného trhu", () => {
+    expect(quickFocusSelection(candidate(), "1x2")).toMatchObject({ market: "1X2", side: "HOME", line: null });
+    expect(quickFocusSelection(candidate({ over25: .42 }), "goals")).toMatchObject({ market: "OVER_25", side: "UNDER", line: 2.5 });
+  });
+
+  it("vybere užitečný týmový gólový scénář a ne pouze samozřejmou nízkou hranici", () => {
+    const strong = candidate({ lambdaHome: 2.1, lambdaAway: 0.7 });
+    expect(quickFocusSelection(strong, "team_goals")).toMatchObject({ market: "TEAM_HOME_15", side: "OVER", line: 1.5 });
+    expect(scoreQuickCandidate(strong, "team_goals")?.reason).toContain("Home Over 1.5");
+  });
+
+  it("týmové góly respektují připravenost modelu", () => {
+    expect(scoreQuickCandidate(candidate({ lambdaHome: 2.1, readinessSample: 5 }), "team_goals")).toBeNull();
+    expect(scoreQuickCandidate(candidate({ lambdaHome: 2.1, lowConfidence: true }), "team_goals")).toBeNull();
   });
 
   it("1X2 vyžaduje 58 procent a náskok 10 bodů", () => {

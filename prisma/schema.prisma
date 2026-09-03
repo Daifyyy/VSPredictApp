@@ -430,6 +430,7 @@ model ChecklistDecisionSnapshot {
   edge              Float
   decimalOdds       Float?
   bookmaker         String?
+  oddsAt             DateTime?
   sampleCount       Int
   modelContext      String
   modelVersion      Int
@@ -578,6 +579,8 @@ model QuickOverviewSelection {
   dateKey           String
   category          String
   fixtureId         Int
+  leagueId          Int?
+  kickoff           DateTime?
   rank              Int
   reason            String
   score             Float
@@ -587,16 +590,38 @@ model QuickOverviewSelection {
   marketSamples     Int      @default(0)
   side              String?
   line              Float?
+  /// Konkrétní podkladový trh. U kategorie `market` brání záměně pohybu 1X2 za total.
+  sourceMarket      String?
+  /// Kontext a skutečná cena dostupná v okamžiku kvalifikace. U historické v1 zůstává null.
+  modelContext      String?
+  openingMarketProbability Float?
+  decimalOdds       Float?
+  bookmaker         String?
   modelVersion      Int
   contextVersion    Int
   policyVersion     Int      @default(1)
   lowConfidence     Boolean  @default(false)
   readinessSample   Float    @default(0)
   qualifiedAt       DateTime @default(now())
+  /// Closing se smí použít jen pro stejný trh, stranu a linii.
+  closingMarketProbability Float?
+  closedAt          DateTime?
+  closingQuality    String?
+  /// Faktické vypořádání; chybějící počet rohů/karet není nula.
+  settlementStatus  String   @default("PENDING")
+  homeGoals         Int?
+  awayGoals         Int?
+  actualCount       Int?
+  hit               Boolean?
+  profit            Float?
+  settledAt         DateTime?
 
   @@unique([dateKey, category, fixtureId, policyVersion])
   @@index([dateKey, category, rank])
   @@index([fixtureId])
+  @@index([category, policyVersion, qualifiedAt])
+  @@index([settledAt])
+  @@index([leagueId, kickoff])
 }
 
 /// Anonymni diagnostika selhani PWA/app shellu. Neobsahuje URL parametry, session ani user-agent.

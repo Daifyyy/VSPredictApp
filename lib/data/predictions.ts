@@ -84,7 +84,7 @@ import { getRefereeProfile, ingestRefereeHistory } from "./refereeStore";
 import { normalizeRefereeName, type RefereeEstimate } from "@/lib/picks/cards";
 import { FOUL_MODEL_VERSION, predictFouls } from "@/lib/picks/fouls";
 import { captureAutonomousPortfolio, closeAutonomousPortfolio } from "./autonomousPortfolioStore";
-import { captureQuickOverviewDay } from "./quickOverviewStore";
+import { captureQuickOverviewDay, closeQuickOverviewSelections, settleQuickOverviewSelections } from "./quickOverviewStore";
 import { invalidateCachedJson } from "./cache";
 
 /**
@@ -650,10 +650,13 @@ export async function runSnapshotOdds(
         await appendMarketSignalPoints(item.fixtureId, odds.books ?? [], now);
       }
       autonomousCandidates += await captureAutonomousPortfolio(item.fixtureId, odds.books ?? [], now);
-      await captureQuickOverviewDay(item.fixtureId, now);
+      await captureQuickOverviewDay(item.fixtureId, odds.books ?? [], now);
       // Kandidat muze poprve vzniknout prave v zaviracim bode; nejdriv jej zmrazime a az
       // potom k nemu pripojime srovnatelne uzavreni stejne strany/linie.
-      if (plan.close) await closeAutonomousPortfolio(item.fixtureId, odds.books ?? [], now);
+      if (plan.close) {
+        await closeAutonomousPortfolio(item.fixtureId, odds.books ?? [], now);
+        await closeQuickOverviewSelections(item.fixtureId, odds.books ?? [], now);
+      }
       // Checklist v2 pouze vysvětluje stejné brány jako portfolio. Nevytváří vlastní
       // účetní výběr ani push; v1 zůstává v DB jako neměnný historický archiv.
     } catch (e) {
@@ -751,6 +754,12 @@ export async function runSettleResults(): Promise<{
       } catch (error) {
         statsErrors++;
         logError("predictions.runSettleResults.statistics", error, { fixtureId: f.fixture.id });
+      }
+      try {
+        await settleQuickOverviewSelections(f.fixture.id, ft?.home ?? null, ft?.away ?? null, new Date());
+      } catch (error) {
+        errors++;
+        logError("predictions.runSettleResults.quickOverview", error, { fixtureId: f.fixture.id });
       }
     }
     await ingestRefereeHistory(fixtures);
