@@ -8,8 +8,11 @@ export function binaryOutcome(
   side: string,
   home: number | null,
   away: number | null,
-  line: number | null = null
+  line: number | null = null,
+  actualCount: number | null = null
 ): boolean | null {
+  if ((market === "CORNERS" || market === "CARDS") && line != null && actualCount != null)
+    return side === "OVER" ? actualCount > line : side === "UNDER" ? actualCount < line : null;
   if (home == null || away == null) return null;
   if (market === "1X2")
     return side === "HOME" ? home > away : side === "AWAY" ? away > home : home === away;

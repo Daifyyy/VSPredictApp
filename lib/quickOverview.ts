@@ -1,7 +1,7 @@
 import type { PredictionRow } from "@/lib/types";
 import { teamTotalProb } from "@/lib/picks/teamTotals";
 
-export const QUICK_FOCUS_IDS = ["1x2", "goals", "btts", "team_goals", "corners", "cards", "market"] as const;
+export const QUICK_FOCUS_IDS = ["1x2", "goals", "btts", "team_goals", "corners", "cards"] as const;
 export type QuickFocus = (typeof QUICK_FOCUS_IDS)[number];
 
 export const QUICK_FOCUS_LABELS: Record<QuickFocus, string> = {
@@ -11,7 +11,6 @@ export const QUICK_FOCUS_LABELS: Record<QuickFocus, string> = {
   team_goals: "Týmové góly",
   corners: "Rohy",
   cards: "Karty a rozhodčí",
-  market: "Pohyb trhu",
 };
 
 export interface QuickMarketSignal {
@@ -40,7 +39,6 @@ export interface QuickScore {
 }
 
 const pct = (value: number) => `${Math.round(value * 100)} %`;
-const pp = (value: number) => `${value >= 0 ? "+" : ""}${Math.round(value * 100)} p. b.`;
 const reliability = (row: PredictionRow) => Math.min(1, Math.max(0, row.readinessSample / 10));
 const penalty = (row: PredictionRow) => row.lowConfidence ? 0.82 : 1;
 
@@ -53,6 +51,23 @@ export interface QuickFocusSelection {
   side: QuickMarketSignal["side"];
   line: number | null;
   signal: QuickMarketSignal | null;
+}
+
+/**
+ * Zobrazený důvod zmrazeného count výběru se odvozuje z auditních polí, ne ze
+ * starého volného textu. Tím zůstávají správně čitelné i snapshoty vytvořené před
+ * opravou záměny Over/Under.
+ */
+export function frozenQuickSelectionReason(
+  snapshot: { category: string; reason: string; side: string | null; line: number | null; modelProbability: number | null },
+  candidate: QuickCandidate
+): string {
+  if ((snapshot.category !== "corners" && snapshot.category !== "cards") || snapshot.line == null || (snapshot.side !== "OVER" && snapshot.side !== "UNDER")) return snapshot.reason;
+  const probability = snapshot.modelProbability == null ? "—" : pct(snapshot.modelProbability);
+  const referee = snapshot.category === "cards" && candidate.row.refereeSample && candidate.row.refereeSample >= 10
+    ? ` · rozhodčí ${candidate.row.refereeFactor && candidate.row.refereeFactor > 1.03 ? "zvyšuje" : candidate.row.refereeFactor && candidate.row.refereeFactor < 0.97 ? "snižuje" : "neutrální"}`
+    : "";
+  return `${snapshot.side === "OVER" ? "Over" : "Under"} ${snapshot.line.toFixed(1)} · ${probability}${referee}`;
 }
 
 /** Jediná definice konkrétního scénáře, který karta rychlého přehledu sleduje. */
@@ -77,9 +92,7 @@ export function quickFocusSelection(candidate: QuickCandidate, focus: QuickFocus
     const picked = signal(candidate, focus === "corners" ? "CORNERS" : "CARDS");
     return picked ? { market: picked.market, side: picked.side, line: picked.line, signal: picked } : null;
   }
-  const eligible = candidate.signals.filter((item) => item.samples >= 3);
-  const picked = [...eligible].sort((a, b) => Math.abs(b.modelProbability - b.currentMarketProbability) - Math.abs(a.modelProbability - a.currentMarketProbability))[0];
-  return picked ? { market: picked.market, side: picked.side, line: picked.line, signal: picked } : null;
+  return null;
 }
 
 export function scoreQuickCandidate(candidate: QuickCandidate, focus: QuickFocus): QuickScore | null {
@@ -138,30 +151,20 @@ export function scoreQuickCandidate(candidate: QuickCandidate, focus: QuickFocus
   if (focus === "corners" || focus === "cards") {
     const marketSignal = signal(candidate, focus === "corners" ? "CORNERS" : "CARDS");
     if (!marketSignal || marketSignal.line == null) return null;
-    const model = Math.max(marketSignal.modelProbability, 1 - marketSignal.modelProbability);
+    // MarketSignal ukládá pravděpodobnost už pro zvolenou stranu (`side`), nikoli
+    // vždy pravděpodobnost Overu. Opětovné odvození strany z hodnoty >= 50 % proto
+    // historicky zobrazovalo silný Under jako Over, přestože settlement četl správné
+    // uložené `side`.
+    const model = marketSignal.modelProbability;
     if (Math.abs(marketSignal.line % 1) !== 0.5 || model < 0.6 || row.readinessSample < 6 || row.lowConfidence) return null;
-    const side = marketSignal.modelProbability >= 0.5 ? "Over" : "Under";
+    const side = marketSignal.side === "OVER" ? "Over" : "Under";
     const referee = focus === "cards" && row.refereeSample && row.refereeSample >= 10
       ? ` · rozhodčí ${row.refereeFactor && row.refereeFactor > 1.03 ? "zvyšuje" : row.refereeFactor && row.refereeFactor < 0.97 ? "snižuje" : "neutrální"}`
       : "";
     return make(model * 0.7 + Math.min(marketSignal.samples, 5) / 5 * 0.15 + ready * 0.15, `${side} ${marketSignal.line.toFixed(1)} · ${pct(model)}${referee}`, model, marketSignal.openMarketProbability, marketSignal.currentMarketProbability - marketSignal.openMarketProbability, marketSignal.samples);
   }
 
-  if (focus === "market") {
-    const eligible = candidate.signals.filter((item) => item.samples >= 3);
-    if (!eligible.length) return null;
-    const best = eligible.sort((a, b) => Math.abs(b.modelProbability - b.currentMarketProbability) - Math.abs(a.modelProbability - a.currentMarketProbability))[0];
-    const edge = best.modelProbability - best.currentMarketProbability;
-    if (Math.abs(edge) < 0.04 || row.readinessSample < 6 || row.lowConfidence) return null;
-    const move = best.currentMarketProbability - best.openMarketProbability;
-    return make(Math.abs(edge) * 0.75 + Math.min(best.samples, 6) / 6 * 0.15 + ready * 0.1, `${marketLabel(best.market)} · model vs. trh ${pp(edge)}`, best.modelProbability, best.currentMarketProbability, move, best.samples);
-  }
-
   return null;
-}
-
-function marketLabel(market: QuickMarketSignal["market"]) {
-  return market === "1X2" ? "1X2" : market === "OVER_25" ? "Góly" : market === "BTTS" ? "Oba skórují" : market === "CORNERS" ? "Rohy" : market === "CARDS" ? "Karty" : "Týmové góly";
 }
 
 function bestTeamGoalScenario(candidate: QuickCandidate) {

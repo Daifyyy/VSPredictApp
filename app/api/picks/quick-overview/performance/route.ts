@@ -6,6 +6,7 @@ import { publicCache } from "@/lib/cacheHeaders";
 import { logError } from "@/lib/logError";
 import { QUICK_BET_CATEGORIES, quickOverviewSummary } from "@/lib/picks/quickOverviewPerformance";
 import { QUICK_OVERVIEW_POLICY_VERSION } from "@/lib/data/quickOverviewStore";
+import { FIXTURE_LIST_LEAGUE_IDS } from "@/lib/data/catalog";
 
 const querySchema = z.object({ context: z.enum(["LEAGUE", "EURO_CUP", "NATIONAL"]).default("LEAGUE") });
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Neplatný kontext" }, { status: 400 });
   try {
     const rows = await prisma.quickOverviewSelection.findMany({
-      where: { policyVersion: QUICK_OVERVIEW_POLICY_VERSION, category: { in: [...QUICK_BET_CATEGORIES] }, modelContext: parsed.data.context },
+      where: { policyVersion: QUICK_OVERVIEW_POLICY_VERSION, category: { in: [...QUICK_BET_CATEGORIES] }, modelContext: parsed.data.context, leagueId: { in: [...FIXTURE_LIST_LEAGUE_IDS] } },
       orderBy: { qualifiedAt: "asc" },
     });
     const cards = QUICK_BET_CATEGORIES.map((category) => {

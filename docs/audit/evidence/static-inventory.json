@@ -1,0 +1,977 @@
+{
+  "generatedAt": "2026-08-29T07:49:28.861Z",
+  "scopeExclusions": [
+    "/hra",
+    "/api/game",
+    "/api/director"
+  ],
+  "totals": {
+    "apiRoutes": 54,
+    "apiMethods": 58,
+    "authenticatedRoutes": 25,
+    "cronRoutes": 12,
+    "rateLimitedRoutes": 33,
+    "explicitPublicCacheRoutes": 13,
+    "explicitPrivateNoStoreRoutes": 4,
+    "clientFetchCalls": 53
+  },
+  "routes": [
+    {
+      "file": "app/api/account/route.ts",
+      "methods": [
+        "DELETE"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": false,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": true,
+      "upstream": false
+    },
+    {
+      "file": "app/api/auth/[...nextauth]/route.ts",
+      "methods": [],
+      "auth": false,
+      "cronAuth": false,
+      "rateLimit": false,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/compare/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": true,
+      "upstream": false
+    },
+    {
+      "file": "app/api/cron/audit-pipeline/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": true,
+      "rateLimit": false,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/cron/import-transfers/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": true,
+      "rateLimit": false,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/cron/predict-upcoming/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": true,
+      "rateLimit": false,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/cron/refresh-league-styles/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": true,
+      "rateLimit": false,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/cron/refresh-referees/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": true,
+      "rateLimit": false,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/cron/refresh-tactics/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": true,
+      "rateLimit": false,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/cron/refresh-transfers/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": true,
+      "rateLimit": false,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/cron/send-notifications/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": true,
+      "rateLimit": false,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": true,
+      "upstream": false
+    },
+    {
+      "file": "app/api/cron/settle-results/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": true,
+      "rateLimit": false,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/cron/settle-tips/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": true,
+      "rateLimit": false,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/cron/snapshot-odds/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": true,
+      "rateLimit": false,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/digest/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/favorites/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": true,
+      "upstream": false
+    },
+    {
+      "file": "app/api/favorites/[id]/route.ts",
+      "methods": [
+        "DELETE"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": false,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": true,
+      "upstream": false
+    },
+    {
+      "file": "app/api/fixtures/favorites/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/fixtures/live/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": true,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/fixtures/today/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": true,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/injuries/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/leagues/route.ts",
+      "methods": [],
+      "auth": false,
+      "cronAuth": false,
+      "rateLimit": false,
+      "publicCache": true,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/live-report/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": true,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/match-report/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": true,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/me/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": false,
+      "publicCache": false,
+      "privateNoStore": true,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/operations/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": false,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/picks/audit/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": true,
+      "upstream": false
+    },
+    {
+      "file": "app/api/picks/clv/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/picks/offers/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/picks/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/picks/stats/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": true,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/predictions/fixture/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": true,
+      "upstream": false
+    },
+    {
+      "file": "app/api/push/route.ts",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": false,
+      "privateNoStore": true,
+      "prisma": true,
+      "upstream": false
+    },
+    {
+      "file": "app/api/push/test/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": true,
+      "upstream": false
+    },
+    {
+      "file": "app/api/referees/assign/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/referees/search/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": false,
+      "privateNoStore": true,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/scorers/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": true,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/search/teams/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/standings/round/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": true,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/standings/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": true,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/standings/scorers/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": true,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/standings/style/full/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": false,
+      "privateNoStore": true,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/standings/style/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": true,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/standings/table/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": true,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/stripe/checkout/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": true,
+      "upstream": false
+    },
+    {
+      "file": "app/api/stripe/portal/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": false,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": true,
+      "upstream": false
+    },
+    {
+      "file": "app/api/stripe/webhook/route.ts",
+      "methods": [
+        "POST"
+      ],
+      "auth": false,
+      "cronAuth": false,
+      "rateLimit": false,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": true,
+      "upstream": false
+    },
+    {
+      "file": "app/api/teams/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": true,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/teams/[teamId]/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/tips/model-portfolio/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": true,
+      "upstream": false
+    },
+    {
+      "file": "app/api/tips/route.ts",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/tips/[id]/route.ts",
+      "methods": [
+        "DELETE"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": false,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/transfers/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": true,
+      "cronAuth": false,
+      "rateLimit": true,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    },
+    {
+      "file": "app/api/warm/route.ts",
+      "methods": [
+        "GET"
+      ],
+      "auth": false,
+      "cronAuth": true,
+      "rateLimit": false,
+      "publicCache": false,
+      "privateNoStore": false,
+      "prisma": false,
+      "upstream": false
+    }
+  ],
+  "clientFetches": [
+    {
+      "file": "app/provoz/OperationsActions.tsx",
+      "count": 1,
+      "endpoints": [
+        "/api/operations"
+      ]
+    },
+    {
+      "file": "app/_components/AccountMenu.tsx",
+      "count": 2,
+      "endpoints": [
+        "/api/stripe/portal",
+        "/api/account"
+      ]
+    },
+    {
+      "file": "app/_components/CompareApp.tsx",
+      "count": 5,
+      "endpoints": [
+        "/api/teams?league=${leagueId}",
+        "/api/injuries?team=${teamId}&league=${leagueId}",
+        "/api/standings?team=${teamId}&league=${leagueId}",
+        "/api/standings/table?league=${leagueId}",
+        "/api/scorers?team=${teamId}&league=${leagueId}"
+      ]
+    },
+    {
+      "file": "app/_components/DigestApp.tsx",
+      "count": 1,
+      "endpoints": [
+        "/api/digest"
+      ]
+    },
+    {
+      "file": "app/_components/DirectorApp.tsx",
+      "count": 4,
+      "endpoints": [
+        "/api/director",
+        "/api/director",
+        "/api/game/leagues",
+        "/api/game/league?id=${value}"
+      ]
+    },
+    {
+      "file": "app/_components/FavoritesSection.tsx",
+      "count": 4,
+      "endpoints": [
+        "/api/favorites",
+        "/api/favorites",
+        "/api/favorites",
+        "/api/favorites/${id}"
+      ]
+    },
+    {
+      "file": "app/_components/FixtureModelCard.tsx",
+      "count": 3,
+      "endpoints": [
+        "/api/predictions/fixture?fixture=${fixtureId}",
+        "/api/referees/search?q=${encodeURIComponent(trimmed)}",
+        "/api/referees/assign"
+      ]
+    },
+    {
+      "file": "app/_components/HraApp.tsx",
+      "count": 5,
+      "endpoints": [
+        "/api/game",
+        "/api/game",
+        "/api/game/leagues",
+        "/api/game/league?id=${l.id}",
+        "/api/game/league?id=${id}"
+      ]
+    },
+    {
+      "file": "app/_components/LiveReportPanel.tsx",
+      "count": 1,
+      "endpoints": [
+        "/api/live-report?${queryFor(fixture)}"
+      ]
+    },
+    {
+      "file": "app/_components/MatchReportPanel.tsx",
+      "count": 2,
+      "endpoints": [
+        "/api/match-report?${p}",
+        "/api/standings?team=${teamId}&league=${match.leagueId}"
+      ]
+    },
+    {
+      "file": "app/_components/ModelPortfolio.tsx",
+      "count": 1,
+      "endpoints": [
+        "/api/tips/model-portfolio?page=${page}"
+      ]
+    },
+    {
+      "file": "app/_components/PicksApp.tsx",
+      "count": 3,
+      "endpoints": [
+        "/api/picks/stats?${q.toString()}",
+        "/api/picks/clv?limit=20",
+        "/api/picks/audit?${query}"
+      ]
+    },
+    {
+      "file": "app/_components/PredictionOffers.tsx",
+      "count": 1,
+      "endpoints": [
+        "/api/picks/offers"
+      ]
+    },
+    {
+      "file": "app/_components/ProLock.tsx",
+      "count": 1,
+      "endpoints": [
+        "/api/stripe/checkout"
+      ]
+    },
+    {
+      "file": "app/_components/PushSettings.tsx",
+      "count": 5,
+      "endpoints": [
+        "/api/push",
+        "/api/push",
+        "/api/push",
+        "/api/push",
+        "/api/push/test"
+      ]
+    },
+    {
+      "file": "app/_components/TabulkyApp.tsx",
+      "count": 4,
+      "endpoints": [
+        "/api/standings/table?league=${leagueId}",
+        "${endpoint}?league=${leagueId}",
+        "/api/standings/round?league=${leagueId}",
+        "/api/standings/scorers?league=${leagueId}"
+      ]
+    },
+    {
+      "file": "app/_components/TeamSearch.tsx",
+      "count": 1,
+      "endpoints": [
+        "/api/search/teams?q=${encodeURIComponent(query)}"
+      ]
+    },
+    {
+      "file": "app/_components/TipovackaApp.tsx",
+      "count": 3,
+      "endpoints": [
+        "/api/tips",
+        "/api/tips",
+        "/api/tips/${tip.id}"
+      ]
+    },
+    {
+      "file": "app/_components/TransfersApp.tsx",
+      "count": 1,
+      "endpoints": [
+        "/api/transfers${q}"
+      ]
+    },
+    {
+      "file": "app/_components/useCurrentUser.ts",
+      "count": 1,
+      "endpoints": [
+        "/api/me"
+      ]
+    },
+    {
+      "file": "app/_components/ZapasyApp.tsx",
+      "count": 4,
+      "endpoints": [
+        "/api/fixtures/today",
+        "/api/fixtures/live",
+        "/api/fixtures/favorites",
+        "/api/fixtures/favorites"
+      ]
+    }
+  ],
+  "heuristicFindings": [
+    {
+      "severity": "P1",
+      "code": "AUTH_GET_WITHOUT_EXPLICIT_NO_STORE",
+      "file": "app/api/compare/route.ts"
+    },
+    {
+      "severity": "P1",
+      "code": "AUTH_GET_WITHOUT_EXPLICIT_NO_STORE",
+      "file": "app/api/digest/route.ts"
+    },
+    {
+      "severity": "P1",
+      "code": "AUTH_GET_WITHOUT_EXPLICIT_NO_STORE",
+      "file": "app/api/favorites/route.ts"
+    },
+    {
+      "severity": "P1",
+      "code": "AUTH_GET_WITHOUT_EXPLICIT_NO_STORE",
+      "file": "app/api/fixtures/favorites/route.ts"
+    },
+    {
+      "severity": "P1",
+      "code": "AUTH_GET_WITHOUT_EXPLICIT_NO_STORE",
+      "file": "app/api/injuries/route.ts"
+    },
+    {
+      "severity": "P1",
+      "code": "AUTH_GET_WITHOUT_EXPLICIT_NO_STORE",
+      "file": "app/api/operations/route.ts"
+    },
+    {
+      "severity": "P1",
+      "code": "AUTH_GET_WITHOUT_EXPLICIT_NO_STORE",
+      "file": "app/api/picks/clv/route.ts"
+    },
+    {
+      "severity": "P1",
+      "code": "AUTH_GET_WITHOUT_EXPLICIT_NO_STORE",
+      "file": "app/api/picks/offers/route.ts"
+    },
+    {
+      "severity": "P1",
+      "code": "AUTH_GET_WITHOUT_EXPLICIT_NO_STORE",
+      "file": "app/api/picks/route.ts"
+    },
+    {
+      "severity": "P1",
+      "code": "AUTH_GET_WITHOUT_EXPLICIT_NO_STORE",
+      "file": "app/api/predictions/fixture/route.ts"
+    },
+    {
+      "severity": "P1",
+      "code": "AUTH_GET_WITHOUT_EXPLICIT_NO_STORE",
+      "file": "app/api/teams/[teamId]/route.ts"
+    },
+    {
+      "severity": "P1",
+      "code": "AUTH_GET_WITHOUT_EXPLICIT_NO_STORE",
+      "file": "app/api/tips/model-portfolio/route.ts"
+    },
+    {
+      "severity": "P1",
+      "code": "AUTH_GET_WITHOUT_EXPLICIT_NO_STORE",
+      "file": "app/api/tips/route.ts"
+    },
+    {
+      "severity": "P1",
+      "code": "AUTH_GET_WITHOUT_EXPLICIT_NO_STORE",
+      "file": "app/api/transfers/route.ts"
+    }
+  ]
+}

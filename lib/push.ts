@@ -206,15 +206,22 @@ export async function sendKickoffReminders(now = new Date()) {
     `${delivery.userId}:${delivery.fixtureId}:${delivery.type}`
   ));
 
-  const signals = fixtures.length ? await prisma.marketSignalSnapshot.findMany({
-    where: {
-      fixtureId: { in: fixtures.map((fixture) => fixture.fixtureId) },
-      OR: [
-        { market: { in: ["1X2", "OVER_25"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
-        { market: { in: ["CORNERS", "CARDS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
-      ],
-    },
-  }) : [];
+  const [signals, portfolioCandidates] = fixtures.length ? await Promise.all([
+    prisma.marketSignalSnapshot.findMany({
+      where: {
+        fixtureId: { in: fixtures.map((fixture) => fixture.fixtureId) },
+        OR: [
+          { market: { in: ["1X2", "OVER_25"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
+          { market: { in: ["CORNERS", "CARDS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
+        ],
+      },
+    }),
+    prisma.autonomousTipSnapshot.findMany({
+      where: { fixtureId: { in: fixtures.map((fixture) => fixture.fixtureId) }, status: "candidate" },
+      select: { fixtureId: true, market: true },
+    }),
+  ]) : [[], []];
+  const portfolioMarketKeys = new Set(portfolioCandidates.map((row) => `${row.fixtureId}:${row.market}`));
   const signalsByFixture = new Map<number, typeof signals>();
   for (const signal of signals) {
     const rows = signalsByFixture.get(signal.fixtureId) ?? [];
@@ -320,6 +327,9 @@ export async function sendKickoffReminders(now = new Date()) {
       }
       if (preference.marketMovement) {
         for (const signal of signalsByFixture.get(fixture.fixtureId) ?? []) {
+          // Ligová oblíbenost sama nestačí k plošnému šumu. Pohyb je relevantní buď
+          // pro explicitně sledovaný zápas, nebo pro již zmrazený portfolio výběr.
+          if (!explicitFixtureFavorite && !portfolioMarketKeys.has(`${fixture.fixtureId}:${signal.market}`)) continue;
           const points = Array.isArray(signal.series)
             ? signal.series.filter((point): point is { t: number; p: number } => typeof point === "object" && point !== null && typeof (point as { t?: unknown }).t === "number" && typeof (point as { p?: unknown }).p === "number")
             : [];
@@ -328,10 +338,11 @@ export async function sendKickoffReminders(now = new Date()) {
           const move = current - signal.openMarketProbability;
           if (!isMeaningfulMarketMove({ samples: points.length, open: signal.openMarketProbability, current, model: signal.modelProbability, thresholdPoints: preference.movementThreshold })) continue;
           const label = signal.market === "OVER_25" ? "Góly 2,5" : signal.market === "CORNERS" ? "Rohy" : signal.market === "CARDS" ? "Karty" : "1X2";
+          const selection = signal.side === "HOME" ? fixture.homeName : signal.side === "AWAY" ? fixture.awayName : `${signal.side === "OVER" ? "Over" : "Under"}${signal.line == null ? "" : ` ${signal.line.toFixed(1)}`}`;
           events.push({
             type: `MARKET_MOVE_${signal.market}_P${signal.policyVersion}`,
             title: `Trh se přiblížil modelu · ${label}`,
-            body: `${fixture.homeName} – ${fixture.awayName} · posun ${move > 0 ? "+" : ""}${(move * 100).toFixed(1)} p. b.`,
+            body: `${fixture.homeName} – ${fixture.awayName} · ${selection} · opening → nyní ${move > 0 ? "+" : ""}${(move * 100).toFixed(1)} p. b.`,
             tag: `market-${fixture.fixtureId}-${signal.market}`,
           });
         }

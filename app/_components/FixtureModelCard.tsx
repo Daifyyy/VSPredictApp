@@ -171,7 +171,7 @@ function CurrentMarketMovement({ signals }: { signals: FixtureModelForecast["mar
   const sides = { HOME: "domácí", DRAW: "remíza", AWAY: "hosté", OVER: "Over", UNDER: "Under" } as const;
   const pct = (value: number) => `${Math.round(value * 100)} %`;
   return <section className="rounded-lg border border-border bg-background px-3 py-3 text-muted" aria-label="Dosavadní pohyb trhu">
-    <div><strong className="text-foreground">Dosavadní pohyb trhu</strong><p className="mt-1 text-[10px] leading-4">Průběžný stav z uložených vzorků. Konečným CLV se stane až poslední srovnatelný vzorek před výkopem.</p></div>
+    <div><strong className="text-foreground">Dosavadní pohyb trhu</strong><p className="mt-1 text-[10px] leading-4">Opening → poslední srovnatelný vzorek. Jde o tržní diagnostiku; CLV konkrétního výběru se počítá zvlášť od okamžiku jeho kvalifikace.</p></div>
     <div className="mt-2 space-y-2">
       {signals.map((signal) => <div key={signal.market} className="rounded-lg border border-border/70 bg-surface px-3 py-2">
         <CountRow label={`${labels[signal.market]} · ${sides[signal.side]}${signal.line != null ? ` ${signal.line.toLocaleString("cs-CZ")}` : ""}`} value={`model ${pct(signal.modelProbability)} · otevření ${pct(signal.openMarketProbability)} → ${signal.closed ? signal.closingQuality === "fresh" ? "poslední předvýkopový" : "předčasný referenční" : "poslední vzorek"} ${pct(signal.currentMarketProbability)} · ${signal.currentMove >= 0 ? "+" : ""}${(signal.currentMove * 100).toFixed(1)} p. b.`} />

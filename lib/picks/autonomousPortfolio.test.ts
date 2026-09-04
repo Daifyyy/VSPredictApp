@@ -18,6 +18,13 @@ describe("evaluateAutonomousTip", () => {
     expect(evaluateAutonomousTip({ ...base, strategy: "OVER_25", modelProbability: .6, marketProbability: .56, secondProbability: undefined, decimalOdds: 1.75 }).status).toBe("candidate");
     expect(evaluateAutonomousTip({ ...base, strategy: "BTTS_YES", modelProbability: .6, marketProbability: .58, secondProbability: undefined, decimalOdds: 1.75 }).status).toBe("candidate");
   });
+  it("použije konzervativní brány pro rohy", () => {
+    const corners = { ...base, strategy: "CORNERS" as const, modelProbability: .6, marketProbability: .55, secondProbability: undefined, decimalOdds: 1.72 };
+    expect(evaluateAutonomousTip(corners).status).toBe("candidate");
+    expect(evaluateAutonomousTip({ ...corners, modelProbability: .599 }).status).toBe("watch");
+    expect(evaluateAutonomousTip({ ...corners, marketProbability: .551 }).status).toBe("watch");
+    expect(evaluateAutonomousTip({ ...corners, decimalOdds: 1.71 }).status).toBe("watch");
+  });
   it("nikdy nepublikuje bez trhu nebo pri malem vzorku modelu", () => {
     expect(evaluateAutonomousTip({ ...base, marketProbability: null }).status).toBe("unavailable");
     expect(evaluateAutonomousTip({ ...base, readinessSample: 5.9 }).status).toBe("watch");

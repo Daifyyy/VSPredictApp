@@ -1,11 +1,15 @@
-export type AutonomousStrategy = "ONE_X_TWO" | "OVER_25" | "BTTS_YES";
+export type AutonomousStrategy = "ONE_X_TWO" | "OVER_25" | "BTTS_YES" | "CORNERS";
 export type AutonomousStatus = "candidate" | "watch" | "unavailable";
 
 export const AUTONOMOUS_POLICY_VERSION: Record<AutonomousStrategy, number> = {
   ONE_X_TWO: 2,
   OVER_25: 1,
   BTTS_YES: 1,
+  CORNERS: 1,
 };
+
+/** Count model zmrazený pro rohovou politiku v1; změna modelu vyžaduje novou politiku. */
+export const CORNERS_LIVE_COUNT_MODEL_VERSION = 2;
 
 export interface AutonomousInput {
   strategy: AutonomousStrategy;
@@ -27,9 +31,10 @@ export interface AutonomousDecision {
 }
 
 const CONFIG = {
-  ONE_X_TWO: { probability: 0.58, edge: 0.04 },
-  OVER_25: { probability: 0.6, edge: 0.04 },
-  BTTS_YES: { probability: 0.6, edge: 0.02 },
+  ONE_X_TWO: { probability: 0.58, edge: 0.04, expectedValue: 0.02 },
+  OVER_25: { probability: 0.6, edge: 0.04, expectedValue: 0.02 },
+  BTTS_YES: { probability: 0.6, edge: 0.02, expectedValue: 0.02 },
+  CORNERS: { probability: 0.6, edge: 0.05, expectedValue: 0.03 },
 } as const;
 
 /** Cista, verzovana publikacni brana. Poradi kontrol zaroven urcuje jednu vetu v UI. */
@@ -52,8 +57,8 @@ export function evaluateAutonomousTip(input: AutonomousInput): AutonomousDecisio
     return watch("Do vykopu zbyva mene nez 15 minut; novy vyber uz nelze publikovat.");
   if (edge! + Number.EPSILON < cfg.edge)
     return watch(`Proti trhu chybi ${((cfg.edge - edge!) * 100).toFixed(1)} p. b. k pozadovane hrane.`);
-  if (expectedValue! + Number.EPSILON < 0.02)
-    return watch(`Ocekavana hodnota je ${(expectedValue! * 100).toFixed(1)} %; potreba jsou alespon 2 %.`);
+  if (expectedValue! + Number.EPSILON < cfg.expectedValue)
+    return watch(`Ocekavana hodnota je ${(expectedValue! * 100).toFixed(1)} %; potreba jsou alespon ${Math.round(cfg.expectedValue * 100)} %.`);
   return {
     status: "candidate",
     reason: `Splneno: model ${Math.round(input.modelProbability * 100)} %, rozdil +${(edge! * 100).toFixed(1)} p. b., EV +${(expectedValue! * 100).toFixed(1)} %.`,

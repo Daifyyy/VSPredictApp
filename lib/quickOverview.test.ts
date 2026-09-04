@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { h2hSnapshotCount, quickFocusSelection, rankQuickCandidates, restDaysBetween, scoreQuickCandidate, selectRecentSeasonRows, type QuickCandidate } from "./quickOverview";
+import { frozenQuickSelectionReason, h2hSnapshotCount, quickFocusSelection, rankQuickCandidates, restDaysBetween, scoreQuickCandidate, selectRecentSeasonRows, type QuickCandidate } from "./quickOverview";
 import type { PredictionRow } from "./types";
 
 function candidate(overrides: Partial<PredictionRow> = {}): QuickCandidate {
@@ -54,12 +54,12 @@ describe("quick overview ranking", () => {
     expect(scoreQuickCandidate(candidate(), "1x2")?.reason).toContain("Domácí");
   });
 
-  it("pohyb trhu vyžaduje alespoň tři vzorky", () => {
+  it("zachová u početního trhu zmrazenou stranu místo odvození z pravděpodobnosti", () => {
     const row = candidate();
-    row.signals = [{ market: "OVER_25", side: "OVER", line: 2.5, modelProbability: .62, openMarketProbability: .55, currentMarketProbability: .57, samples: 2 }];
-    expect(scoreQuickCandidate(row, "market")).toBeNull();
-    row.signals[0].samples = 3;
-    expect(scoreQuickCandidate(row, "market")).not.toBeNull();
+    row.signals = [{ market: "CARDS", side: "UNDER", line: 4.5, modelProbability: .68, openMarketProbability: .52, currentMarketProbability: .55, samples: 4 }];
+    expect(quickFocusSelection(row, "cards")).toMatchObject({ market: "CARDS", side: "UNDER", line: 4.5 });
+    expect(scoreQuickCandidate(row, "cards")?.reason).toContain("Under 4.5 · 68 %");
+    expect(frozenQuickSelectionReason({ category: "cards", reason: "Over 4.5 · 68 %", side: "UNDER", line: 4.5, modelProbability: .68 }, row)).toBe("Under 4.5 · 68 %");
   });
 
   it("nízká spolehlivost vyřadí zápas z kvalitativního výběru", () => {

@@ -12,6 +12,8 @@ describe("quickOverviewSummary", () => {
   it("vyhodnotí výsledkové i početní trhy proti zmrazené straně a linii", () => {
     expect(quickOverviewOutcome({ market: "1X2", side: "HOME", line: null, homeGoals: 2, awayGoals: 1 })).toBe(true);
     expect(quickOverviewOutcome({ market: "CORNERS", side: "UNDER", line: 9.5, homeGoals: 1, awayGoals: 0, actualCount: 8 })).toBe(true);
+    expect(quickOverviewOutcome({ market: "CARDS", side: "OVER", line: 4.5, homeGoals: 1, awayGoals: 0, actualCount: 3 })).toBe(false);
+    expect(quickOverviewOutcome({ market: "CARDS", side: "UNDER", line: 4.5, homeGoals: 1, awayGoals: 0, actualCount: 3 })).toBe(true);
     expect(quickOverviewOutcome({ market: "CARDS", side: "OVER", line: 3.5, homeGoals: 1, awayGoals: 0, actualCount: null })).toBeNull();
   });
   it("počítá jednotkové ROI, CLV a drawdown společnou portfolio logikou", () => {

@@ -25,7 +25,7 @@ export async function GET(request: Request) {
   const parsed = querySchema.safeParse(Object.fromEntries(new URL(request.url).searchParams));
   if (!parsed.success) return NextResponse.json({ error: "Neplatný filtr" }, { status: 400 });
   const { strategy, context, policyVersion } = parsed.data;
-  if (!["ONE_X_TWO", "OVER_25", "BTTS_YES"].includes(strategy)) {
+  if (!["ONE_X_TWO", "OVER_25", "BTTS_YES", "CORNERS"].includes(strategy)) {
     return NextResponse.json({ kind: strategy === "FOULS" ? "unavailable" : "research", current: [], recent: [] }, { headers: { "Cache-Control": "private, no-store" } });
   }
 
@@ -41,9 +41,16 @@ export async function GET(request: Request) {
       select: { fixtureId: true, homeGoals: true, awayGoals: true, status: true },
     }) : [];
     const byFixture = new Map(results.map((row) => [row.fixtureId, row]));
+    const cornerStats = strategy === "CORNERS" && rows.length ? await prisma.matchStatCache.findMany({
+      where: { fixtureId: { in: rows.map((row) => row.fixtureId) } },
+      select: { fixtureId: true, teamId: true, corners: true },
+    }) : [];
     const activityRows = rows.map((row) => {
       const result = byFixture.get(row.fixtureId);
-      const hit = binaryOutcome(row.market, row.side, result?.homeGoals ?? null, result?.awayGoals ?? null, row.line);
+      const homeCorners = cornerStats.find((item) => item.fixtureId === row.fixtureId && item.teamId === row.homeTeamId)?.corners;
+      const awayCorners = cornerStats.find((item) => item.fixtureId === row.fixtureId && item.teamId === row.awayTeamId)?.corners;
+      const actualCount = row.actualCount ?? (homeCorners != null && awayCorners != null ? homeCorners + awayCorners : null);
+      const hit = row.hit ?? binaryOutcome(row.market, row.side, result?.homeGoals ?? null, result?.awayGoals ?? null, row.line, actualCount);
       const close = freshClosing(row.kickoff, row.closedAt, row.closingMarketProbability).close;
       return {
         id: row.id,
@@ -71,6 +78,7 @@ export async function GET(request: Request) {
         resultStatus: result?.status ?? null,
         homeGoals: result?.homeGoals ?? null,
         awayGoals: result?.awayGoals ?? null,
+        actualCount,
         hit,
         final: FINAL_STATUSES.has(result?.status ?? ""),
         profit: portfolioProfit(hit, row.decimalOdds, row.stake),

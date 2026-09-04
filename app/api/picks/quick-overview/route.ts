@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import type { QuickOverviewSelection } from "@prisma/client";
 import { prisma, isRealDataConfigured } from "@/lib/db";
 import { getUpcomingPredictions } from "@/lib/data/repository";
-import { catalogLeagueName, isPublicCompetition } from "@/lib/data/catalog";
+import { catalogLeagueName, FIXTURE_LIST_LEAGUE_IDS, isPublicCompetition } from "@/lib/data/catalog";
 import { localDateKey } from "@/lib/competitionGrouping";
-import { h2hSnapshotCount, QUICK_FOCUS_IDS, quickFocusSelection, rankQuickCandidates, restDaysBetween, selectRecentSeasonRows, type QuickCandidate, type QuickFocus, type QuickMarketSignal, type QuickScore } from "@/lib/quickOverview";
+import { frozenQuickSelectionReason, h2hSnapshotCount, QUICK_FOCUS_IDS, quickFocusSelection, rankQuickCandidates, restDaysBetween, selectRecentSeasonRows, type QuickCandidate, type QuickFocus, type QuickMarketSignal, type QuickScore } from "@/lib/quickOverview";
 import type { PredictionRow } from "@/lib/types";
 import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
 import { logError } from "@/lib/logError";
@@ -28,7 +28,7 @@ export async function GET(req: Request) {
   const date = new URL(req.url).searchParams.get("date") ?? "";
   if (!DATE_RE.test(date)) return NextResponse.json({ error: "Neplatné datum" }, { status: 400 });
   try {
-    const allFrozen = isRealDataConfigured() ? await prisma.quickOverviewSelection.findMany({ where: { dateKey: date, policyVersion: { in: [1, QUICK_OVERVIEW_POLICY_VERSION] } }, orderBy: [{ category: "asc" }, { policyVersion: "desc" }, { rank: "asc" }] }) : [];
+    const allFrozen = isRealDataConfigured() ? await prisma.quickOverviewSelection.findMany({ where: { dateKey: date, policyVersion: { in: [1, QUICK_OVERVIEW_POLICY_VERSION] }, leagueId: { in: [...FIXTURE_LIST_LEAGUE_IDS] } }, orderBy: [{ category: "asc" }, { policyVersion: "desc" }, { rank: "asc" }] }) : [];
     const newestPolicy = new Map(QUICK_FOCUS_IDS.map((category) => [category, Math.max(0, ...allFrozen.filter((row) => row.category === category).map((row) => row.policyVersion))]));
     const frozen = allFrozen.filter((row) => row.policyVersion === newestPolicy.get(row.category as typeof QUICK_FOCUS_IDS[number]));
     const frozenIds = [...new Set(frozen.map((row) => row.fixtureId))];
@@ -74,7 +74,7 @@ export async function GET(req: Request) {
     const ranked = (frozen.length
       ? Object.fromEntries(QUICK_FOCUS_IDS.map((focus) => [focus, frozen.filter((item) => item.category === focus).flatMap((item) => {
           const candidate = byFixture.get(item.fixtureId);
-          return candidate ? [{ candidate, result: { score: item.score, reason: item.reason, modelProbability: item.modelProbability, marketProbability: item.marketProbability, marketMove: item.marketMove, marketSamples: item.marketSamples, experimental: candidate.row.modelContext === "EURO_CUP" } satisfies QuickScore, frozenSide: item.side, frozenLine: item.line, snapshot: item }] : [];
+          return candidate ? [{ candidate, result: { score: item.score, reason: frozenQuickSelectionReason(item, candidate), modelProbability: item.modelProbability, marketProbability: item.marketProbability, marketMove: item.marketMove, marketSamples: item.marketSamples, experimental: candidate.row.modelContext === "EURO_CUP" } satisfies QuickScore, frozenSide: item.side, frozenLine: item.line, snapshot: item }] : [];
         })]))
       : Object.fromEntries(QUICK_FOCUS_IDS.map((focus) => [focus, rankQuickCandidates(candidates, focus).map((item) => ({ ...item, frozenSide: null, frozenLine: null, snapshot: null }))]))) as Record<QuickFocus, RankedQuickItem[]>;
     const selectedIds = [...new Set(Object.values(ranked).flatMap((items) => items.map((item) => item.candidate.row.fixtureId)))];
@@ -85,7 +85,7 @@ export async function GET(req: Request) {
       const row = item.candidate.row;
       const close = item.snapshot ? freshClosing(new Date(row.kickoff), item.snapshot.closedAt, item.snapshot.closingMarketProbability).close : null;
       const hit = item.snapshot?.hit ?? selectionHit(focus, row, item.candidate.signals, actualCounts.get(row.fixtureId) ?? null, item.frozenSide, item.frozenLine, item.snapshot?.sourceMarket ?? null);
-      const profit = focus === "market" || focus === "team_goals" ? null : item.snapshot?.profit ?? portfolioProfit(hit, item.snapshot?.decimalOdds ?? null);
+      const profit = focus === "team_goals" ? null : item.snapshot?.profit ?? portfolioProfit(hit, item.snapshot?.decimalOdds ?? null);
       return {
         rank: index + 1,
         fixtureId: row.fixtureId,
@@ -116,7 +116,7 @@ export async function GET(req: Request) {
         context: contexts.get(row.fixtureId) ?? null,
       };
     })]));
-    const summaries = Object.fromEntries(QUICK_FOCUS_IDS.map((focus) => [focus, dailySummary(categories[focus], focus === "market" || focus === "team_goals")]));
+    const summaries = Object.fromEntries(QUICK_FOCUS_IDS.map((focus) => [focus, dailySummary(categories[focus], focus === "team_goals")]));
     return response({ date, generatedAt: new Date().toISOString(), categories, summaries });
   } catch (error) {
     logError("api/picks/quick-overview", error, { date });

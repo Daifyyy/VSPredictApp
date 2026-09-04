@@ -1,0 +1,135 @@
+{
+  "surface": "report",
+  "manifest": {
+    "version": 1,
+    "surface": "report",
+    "title": "Kvalitativní audit Football Insight mimo sekci Hra",
+    "description": "Technický audit funkčnosti, dat, výkonu, cache, provozu, bezpečnosti a UX. Stav k 29. srpnu 2026.",
+    "generatedAt": "2026-08-29T08:00:00.000Z",
+    "blocks": [
+      {
+        "id": "title",
+        "type": "markdown",
+        "body": "# Kvalitativní audit Football Insight mimo sekci Hra"
+      },
+      {
+        "id": "summary",
+        "type": "markdown",
+        "body": "## Technický závěr\n\n**Aplikace má zdravý kompilovatelný základ, ale audit zatím nedoporučuje bezvýhradné produkční schválení.** TypeScript, ESLint, všech 1 204 unit testů a produkční mock build prošly. Nebyl nalezen otevřený P0. Byly však potvrzeny čtyři P1: nehermetický mock režim sahal do Neonu, E2E sada má dvě nefunkční hlavní kontroly, domovská stránka je proti vlastnímu kontraktu dynamická a Porovnání vytváří vícenásobný request waterfall.\n\nV této etapě byly opraveny hranice mock/DB, doplněny základní bezpečnostní hlavičky a explicitní CDN cache katalogů lig a týmů. Produkční Vercel smoke a Neon auditní větev nebylo možné z tohoto běhového prostředí ověřit kvůli síťové/TLS blokaci; tyto body proto nejsou vydávány za splněné."
+      },
+      {
+        "id": "findings",
+        "type": "markdown",
+        "body": "## Největší rizika jsou v datových hranicích a navigační odezvě\n\n### P1 — mock E2E četl produkčně nakonfigurovaný Neon\n`DATA_SOURCE=mock` přesto volal `FixturePrediction` a `MatchStatCache`; důkazem byly Prisma TLS chyby v E2E. **Opraveno v pracovním stromu.** Cíl: 0 DB dotazů v mock režimu.\n\n### P1 — dvě hlavní E2E kontroly selhávají\nGlobální hledání neotevřelo tým a ligový profil nenašel očekávaný obsah. **Otevřeno.** Cíl: 100 % hlavních toků zelených.\n\n### P1 — domovská stránka není deklarované ISR\n`connection()` ji činí dynamickou; odpověď měla `private, no-store` a cold mock probe 1 899 ms. **Otevřeno.** Cíl: veřejný shell z CDN a použitelný přechod do 2 s.\n\n### P1 — Porovnání má request waterfall\nKlient má pět samostatných fetch zdrojů; hlavní compare E2E trval 18,1 s v cold dev režimu. **Otevřeno.** Cíl: kritický payload do 1 s zahřátě, progres bez duplicit.\n\n### P1 — chybí request a DB observabilita\nExistuje cron evidence, ale ne request ID, Server-Timing a Prisma timing pro stránky/API. **Otevřeno.** Cíl: 100 % kritických API s request ID a server timing.\n\n### P2 — cache a bezpečnostní kontrakty\nKatalogy lig a týmů neměly explicitní CDN cache a globální bezpečnostní hlavičky nebyly centrálně definované. **Částečně opraveno v pracovním stromu.** CSP a explicitní privátní cache kontrakty zůstávají otevřené."
+      },
+      {
+        "id": "measurements",
+        "type": "markdown",
+        "body": "## Baseline potvrzuje stabilní build, ne však úplnou provozní připravenost\n\n- TypeScript: prošel.\n- ESLint: prošel.\n- Unit testy: **1 204 / 1 204** prošly ve 106 souborech.\n- Produkční mock build: prošel, vygeneroval 71 stránek.\n- Cílený desktop E2E: 6 prošlo, 2 selhaly, 1 bylo přeskočeno.\n- Statická inventura mimo Hru: 54 API rout, 58 metod, 25 autentizovaných rout, 12 cron rout, 33 rate-limitovaných rout a 53 staticky rozpoznaných klientských fetch volání.\n- Nejvíce klientských datových vstupů: Porovnání 5, Push nastavení 5, Zápasy 4, Tabulky 4 a Oblíbené 4.\n\nLokální HTTP probe byl spuštěn proti produkčnímu buildu s mock daty. Paralelní cold hodnoty kolem 1,8–1,9 s zahrnují start a souběh, takže nejsou náhradou p75 z Vercelu; jsou důkazem cache kontraktů a relativní blokující povahy dynamických stránek."
+      },
+      {
+        "id": "coverage-chart",
+        "type": "chart",
+        "chartId": "route-governance",
+        "layout": "full"
+      },
+      {
+        "id": "data-correctness",
+        "type": "markdown",
+        "body": "## Datová správnost má dobré dávkové základy, ale potřebuje reconciliation důkaz\n\nVýsledkové modelové review správně načítá predikce, skutečné statistiky, autonomní výběry a market signály po dávkách fixture ID. Cron autentizace je fail-closed a všech 12 nalezených cron rout používá sdílené ověření. Stripe webhook ověřuje podpis nad raw body a stav předplatného znovu načítá ze Stripe, což chrání proti doručení událostí mimo pořadí.\n\nNevyřešená část není známá matematická chyba, ale absence dokončeného produkčního reconciliation na izolované kopii: `program → predikce → kurzy → closing → settlement → skutečné statistiky → auditní kohorta`. Tento audit nesmí tvrdit shodu počtů, dokud ji nezměří nad Neon auditní větví."
+      },
+      {
+        "id": "performance",
+        "type": "markdown",
+        "body": "## Nejrychlejší výkonový přínos přinese oprava shellu a agregace Porovnání\n\n1. Odstranit rozpor domovské stránky: buď skutečné ISR/cached datové funkce, nebo statický shell se streamovaným dynamickým obsahem. `connection()` nesmí zůstat pod komentářem tvrdícím opak.\n2. Pro Porovnání dodat jeden základní serverový payload pro týmové identity, hlavní srovnání, ligový kontext a dostupnost sekundárních bloků. Těžké tabulky, střelci a absence mohou zůstat progresivní, ale musí se načítat až po otevření nebo v jedné deduplikované dávce.\n3. Tabulky sloučit minimálně na základní tabulku + dostupnost snapshotu; kolo a střelci mohou být lazy.\n4. Zavést request ID, `Server-Timing`, počty DB dotazů a cache hit/miss pouze v auditním režimu. Bez toho nelze bezpečně rozhodnout, zda je pomalost v Neonu, serializaci nebo waterfallu.\n5. Doplnit CI rozpočty pro počet requestů a velikost response u hlavních toků."
+      },
+      {
+        "id": "security-ux",
+        "type": "markdown",
+        "body": "## Bezpečnostní základ je rozumný, mobilní a oprávňovací matice však nejsou plně prokázané\n\nCrony jsou fail-closed, citlivé chybové detaily se logují serverově a Stripe podpis je ověřován. Doplněny byly `nosniff`, zákaz iframe, referrer policy a omezení oprávnění zařízení. CSP zatím chybí a má být nejprve nasazena v report-only režimu, aby nerozbila Auth.js, Stripe nebo PWA.\n\nSoučasný Playwright pokrývá Chromium desktop a Pixel 7 emulaci, ne WebKit/iPhone ani instalovanou PWA. Chybí automatizované session fixtures pro FREE, PRO a admin, Axe/Lighthouse brány, offline scénář a důkaz push deep-linku. To jsou mezery pokrytí, nikoliv potvrzené produkční chyby."
+      },
+      {
+        "id": "method",
+        "type": "markdown",
+        "body": "## Rozsah a metoda\n\nAudit vyloučil `/hra`, `/api/game`, `/api/director` a související herní implementaci. Použil statickou inventuru rout a fetchů, revizi autentizace/cache/Stripe/cronů, TypeScript, ESLint, Vitest, produkční mock build, cílený Playwright a read-only HTTP probe.\n\nMetriky výkonu z lokálního mock buildu nejsou Core Web Vitals ani Vercel p75. Produkční HTTP probe selhal před obdržením odpovědi kvůli TLS/síťovému omezení běhového prostředí. Neon větev ani Vercel Preview nelze bez přístupu vytvořit automaticky. Skutečný Google OAuth, Stripe test mode, fyzický iPhone a produkční PRO/admin smoke proto zůstávají manuální přejímací bránou.\n\nHTML balíček prošel validací a strukturální kontrolou přesné shody payloadu. Vestavěný Chromium verifier na Windows hlásil horizontální overflow sdíleného readeru, proto není vykázána plná interakční ani viewport certifikace samotného reportového obalu."
+      },
+      {
+        "id": "roadmap",
+        "type": "markdown",
+        "body": "## Rozhodnutý program oprav P0–P3\n\n### Vlna 1 — datové a bezpečnostní hranice\n\n- Dokončit hermetický mock režim a opravit dvě selhávající E2E kontroly.\n- Přidat explicitní `private, no-store` všem osobním GET odpovědím a regresní test hlaviček.\n- Zavést CSP report-only a ověřit OAuth, Stripe a PWA.\n- Na Neon auditní větvi provést reconciliation a oprávňovací matici.\n\n### Vlna 2 — výkon\n\n- Opravit domovský cache kontrakt.\n- Agregovat kritický payload Porovnání a odstranit duplicitní klientské requesty.\n- Profilovat Prisma přes auditní timing a doplnit indexy pouze podle naměřených plánů.\n\n### Vlna 3 — UX a mobil\n\n- Session fixtures pro anonymní/FREE/PRO/admin.\n- WebKit, iOS safe-area/back navigation, Android PWA, offline, push deep-link.\n- Axe a Lighthouse s rozpočty 360, 390, 768, 1280 a 1440 px.\n\n### Vlna 4 — trvalé brány\n\n- CI kontrakty cache/security, request count, bundle a kritické API.\n- Sedmidenní provozní baseline a srovnání před/po.\n- Produkční nasazení až bez P0 a s explicitně přijatými P1."
+      },
+      {
+        "id": "questions",
+        "type": "markdown",
+        "body": "## Zbývající ověření před produkčním verdiktem\n\n- Jaké jsou p75 TTFB/LCP/INP na Vercel Preview s produkčně velkou Neon větví?\n- Kolik DB dotazů a kolik serializovaných bajtů skutečně vytváří Porovnání, Predikce a Tabulky?\n- Odpovídají denní počty fixture, predikcí, openingů, closingů, settlementů a statistik po explicitních výjimkách?\n- Projdou stejné toky na fyzickém iPhone v instalované PWA a s návratovým gestem?\n- Jsou všechny PRO/admin endpointy zamítnuty serverově pro anonymní a FREE session fixture?"
+      }
+    ],
+    "cards": [],
+    "charts": [
+      {
+        "id": "route-governance",
+        "title": "Explicitní ochrany a cache kontrakty API rout",
+        "subtitle": "Počet rout mimo Hru; kategorie se překrývají, celkem 54 API rout.",
+        "type": "bar",
+        "dataset": "route_governance",
+        "sourceId": "static-inventory",
+        "valueFormat": "number",
+        "encodings": {
+          "x": { "field": "category", "type": "nominal", "label": "Kontrola" },
+          "y": { "field": "count", "type": "quantitative", "label": "Počet rout" },
+          "tooltip": []
+        }
+      }
+    ],
+    "tables": [],
+    "filters": [],
+    "sources": [
+      {
+        "id": "static-inventory",
+        "title": "Statická inventura aplikace",
+        "type": "file",
+        "path": "evidence/static-inventory.json",
+        "description": "Reprodukovatelný scan API rout, cache/auth guardů a klientských fetchů mimo Hru.",
+        "query": {
+          "engine": "static-inventory",
+          "language": "sql",
+          "sql": "SELECT category, count, count / 54.0 AS share FROM (VALUES ('Rate limit', 33), ('Auth', 25), ('Public cache', 13), ('Cron auth', 12), ('No-store', 4)) AS audit(category, count)",
+          "description": "Převádí ověřené souhrnné počty statické inventury na datovou sadu grafu.",
+          "executed_at": "2026-08-29T08:00:00.000Z",
+          "tables_used": ["audit.static_inventory"],
+          "filters": ["Herní routy byly z populace vyloučeny"]
+        }
+      },
+      {
+        "id": "local-probe",
+        "title": "Lokální produkční HTTP probe",
+        "type": "file",
+        "path": "evidence/local-production-surface.json",
+        "description": "Read-only odpovědi produkčního buildu v mock režimu."
+      },
+      {
+        "id": "production-probe",
+        "title": "Pokus o produkční HTTP probe",
+        "type": "file",
+        "path": "evidence/production-surface.json",
+        "description": "Síťově blokovaný read-only pokus; nelze interpretovat jako dostupnost produkce."
+      }
+    ]
+  },
+  "snapshot": {
+    "version": 1,
+    "status": "ready",
+    "generatedAt": "2026-08-29T08:00:00.000Z",
+    "datasets": {
+      "route_governance": [
+        { "category": "Rate limit", "count": 33, "share": 0.6111 },
+        { "category": "Auth", "count": 25, "share": 0.4630 },
+        { "category": "Public cache", "count": 13, "share": 0.2407 },
+        { "category": "Cron auth", "count": 12, "share": 0.2222 },
+        { "category": "No-store", "count": 4, "share": 0.0741 }
+      ]
+    },
+    "accessIssues": []
+  },
+  "sources": []
+}

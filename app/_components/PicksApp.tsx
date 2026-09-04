@@ -80,13 +80,13 @@ interface StatsSetters {
 
 interface MarketClvSummary {
   market: "1X2" | "OVER_25" | "CORNERS" | "CARDS";
-  context: "LEAGUE" | "EURO_CUP";
+  context: "LEAGUE" | "EURO_CUP" | "NATIONAL";
   publishedOnly: boolean;
   eligible: number;
   measured: number;
   completeness: number;
-  averageClv: number;
-  beatRate: number;
+  averageMarketMovement: number;
+  towardModelRate: number;
   averageModelVsOpen: number;
   averageModelVsClose: number;
 }
@@ -457,7 +457,7 @@ function MarketClvDashboard({ rows }: { rows: MarketClvSummary[] }) {
   const [history, setHistory] = useState<Array<{
     id: string; fixtureId: number; market: string; side: string; line: number | null;
     modelProbability: number; openMarketProbability: number; closeMarketProbability: number | null;
-    clv: number | null; kickoff: string; series: unknown;
+    marketMovement: number | null; kickoff: string; series: unknown;
     prediction: { homeName: string; awayName: string; homeGoals: number | null; awayGoals: number | null; status: string } | null;
     actual: { corners: number; cards: number } | null;
   }> | null>(null);
@@ -475,8 +475,8 @@ function MarketClvDashboard({ rows }: { rows: MarketClvSummary[] }) {
 
   return (
     <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
-      <p className="page-kicker">Pohyb trhu po prognóze</p>
-      <h2 className="mt-1 text-lg font-bold text-foreground">Closing line value (CLV)</h2>
+      <p className="page-kicker">Tržní diagnostika</p>
+      <h2 className="mt-1 text-lg font-bold text-foreground">Pohyb trhu a closing</h2>
       <p className="mt-1 max-w-3xl text-xs leading-5 text-muted">
         Sledujeme stejnou stranu a stejnou linii od prvního uloženého kurzu do uzavření.
         Kladný posun znamená, že se trh později přiklonil směrem k tehdejšímu názoru modelu;
@@ -491,7 +491,7 @@ function MarketClvDashboard({ rows }: { rows: MarketClvSummary[] }) {
           {historyLocked ? <p className="text-sm text-muted">Detailní historie a průběhy trhu jsou součástí PRO.</p>
             : history == null ? <p className="text-sm text-muted">Načítám historii…</p>
             : history.length === 0 ? <p className="text-sm text-muted">Zatím není uzavřený měřený zápas.</p>
-            : <div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left text-xs"><thead><tr className="text-muted"><th className="p-2">Zápas</th><th>Trh</th><th>Model</th><th>Otevření</th><th>Průběh</th><th>Uzavření</th><th>CLV</th><th>Výsledek</th></tr></thead><tbody>{history.map((row) => <ClvHistoryRow key={row.id} row={row} />)}</tbody></table></div>}
+            : <div className="overflow-x-auto"><table className="w-full min-w-[820px] text-left text-xs"><thead><tr className="text-muted"><th className="p-2">Zápas</th><th>Trh</th><th>Model</th><th>Otevření</th><th>Průběh</th><th>Uzavření</th><th>Pohyb trhu</th><th>Výsledek</th></tr></thead><tbody>{history.map((row) => <ClvHistoryRow key={row.id} row={row} />)}</tbody></table></div>}
         </div>
       </details>
     </section>
@@ -503,8 +503,8 @@ function ClvMarketCard({ row }: { row: MarketClvSummary }) {
   return <article className="rounded-xl border border-border bg-background p-3">
     <div className="flex items-start justify-between gap-2"><div><strong className="text-foreground">{CLV_MARKET_LABELS[row.market]}</strong><p className="text-[10px] text-muted">{row.context === "EURO_CUP" ? "Experimentální · Evropa" : "Ligové zápasy"}{row.publishedOnly ? " · publikované tipy" : " · všechny směry"}</p></div><span className="text-[10px] text-muted">{row.measured}/{row.eligible}</span></div>
     <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
-      <div><dt className="text-muted">Průměrný posun trhu</dt><dd className="font-bold tabular-nums text-foreground">{pct(row.averageClv)}</dd></div>
-      <div><dt className="text-muted">Před trhem</dt><dd className="font-bold tabular-nums text-foreground">{Math.round(row.beatRate * 100)} %</dd></div>
+      <div><dt className="text-muted">Opening → closing</dt><dd className="font-bold tabular-nums text-foreground">{pct(row.averageMarketMovement)}</dd></div>
+      <div><dt className="text-muted">Směrem k modelu</dt><dd className="font-bold tabular-nums text-foreground">{Math.round(row.towardModelRate * 100)} %</dd></div>
       <div><dt className="text-muted">Datová úplnost</dt><dd className="font-bold tabular-nums text-foreground">{Math.round(row.completeness * 100)} %</dd></div>
       <div><dt className="text-muted">Model vs. uzavření</dt><dd className="font-bold tabular-nums text-foreground">{pct(row.averageModelVsClose)}</dd></div>
     </dl>
@@ -514,7 +514,7 @@ function ClvMarketCard({ row }: { row: MarketClvSummary }) {
 
 function ClvHistoryRow({ row }: { row: {
   market: string; side: string; line: number | null; modelProbability: number; openMarketProbability: number;
-  closeMarketProbability: number | null; clv: number | null;
+  closeMarketProbability: number | null; marketMovement: number | null;
   closingMinutesToKickoff?: number | null;
   series?: unknown;
   prediction: { homeName: string; awayName: string; homeGoals: number | null; awayGoals: number | null } | null;
@@ -522,7 +522,7 @@ function ClvHistoryRow({ row }: { row: {
 } }) {
   const probability = (value: number | null) => value == null ? "—" : `${Math.round(value * 100)} %`;
   const result = row.market === "CORNERS" ? row.actual?.corners : row.market === "CARDS" ? row.actual?.cards : row.prediction?.homeGoals != null ? `${row.prediction.homeGoals}:${row.prediction.awayGoals}` : null;
-  return <tr className="border-t border-border"><td className="p-2 font-medium text-foreground">{row.prediction ? `${row.prediction.homeName} – ${row.prediction.awayName}` : "Zápas"}</td><td>{row.market}{row.line != null ? ` ${row.line}` : ""} · {row.side}</td><td>{probability(row.modelProbability)}</td><td>{probability(row.openMarketProbability)}</td><td><ClvSparkline value={row.series} /></td><td>{probability(row.closeMarketProbability)}{row.closingMinutesToKickoff != null ? <small className="block text-[9px] text-muted">{Math.round(row.closingMinutesToKickoff)} min před výkopem</small> : null}</td><td className={row.clv != null && row.clv > 0 ? "font-bold text-positive" : "text-warning"}>{row.clv == null ? "—" : `${row.clv >= 0 ? "+" : ""}${(row.clv * 100).toFixed(1)} p. b.`}</td><td>{result ?? "—"}</td></tr>;
+  return <tr className="border-t border-border"><td className="p-2 font-medium text-foreground">{row.prediction ? `${row.prediction.homeName} – ${row.prediction.awayName}` : "Zápas"}</td><td>{row.market}{row.line != null ? ` ${row.line}` : ""} · {row.side}</td><td>{probability(row.modelProbability)}</td><td>{probability(row.openMarketProbability)}</td><td><ClvSparkline value={row.series} /></td><td>{probability(row.closeMarketProbability)}{row.closingMinutesToKickoff != null ? <small className="block text-[9px] text-muted">{Math.round(row.closingMinutesToKickoff)} min před výkopem</small> : null}</td><td className={row.marketMovement != null && row.marketMovement > 0 ? "font-bold text-positive" : "text-warning"}>{row.marketMovement == null ? "—" : `${row.marketMovement >= 0 ? "+" : ""}${(row.marketMovement * 100).toFixed(1)} p. b.`}</td><td>{result ?? "—"}</td></tr>;
 }
 
 function ClvSparkline({ value }: { value: unknown }) {

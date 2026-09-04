@@ -82,7 +82,7 @@ test("hlavní analytické sekce jsou dosažitelné z navigace", async ({ page })
     await expect(analysisNav.getByRole("link", { name: "Porovnání" })).toBeVisible();
     await expect(analysisNav.getByRole("link", { name: "Tabulky" })).toBeVisible();
     await expect(analysisNav.getByRole("link", { name: "Predikce" })).toBeVisible();
-    await expect(analysisNav.getByRole("link", { name: "Model vs. trh" })).toBeVisible();
+    await expect(analysisNav.getByRole("link", { name: "Model vs. trh" })).toHaveCount(0);
     await expect(analysisNav.getByRole("link", { name: "Přestupy" })).toBeVisible();
   } else {
     await expect(navigation.getByRole("link", { name: /Tabulky/ })).toBeVisible();

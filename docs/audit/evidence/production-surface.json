@@ -1,0 +1,144 @@
+{
+  "generatedAt": "2026-08-29T07:45:27.681Z",
+  "baseUrl": "https://vs-predict-app.vercel.app",
+  "mode": "read-only",
+  "scopeExclusions": [
+    "/hra",
+    "/api/game",
+    "/api/director"
+  ],
+  "probes": [
+    {
+      "path": "/",
+      "status": null,
+      "durationMs": 420,
+      "bytes": 0,
+      "cacheControl": null,
+      "contentType": null,
+      "requestId": null,
+      "security": {},
+      "error": "fetch failed"
+    },
+    {
+      "path": "/porovnani",
+      "status": null,
+      "durationMs": 309,
+      "bytes": 0,
+      "cacheControl": null,
+      "contentType": null,
+      "requestId": null,
+      "security": {},
+      "error": "fetch failed"
+    },
+    {
+      "path": "/predikce",
+      "status": null,
+      "durationMs": 287,
+      "bytes": 0,
+      "cacheControl": null,
+      "contentType": null,
+      "requestId": null,
+      "security": {},
+      "error": "fetch failed"
+    },
+    {
+      "path": "/tabulky",
+      "status": null,
+      "durationMs": 307,
+      "bytes": 0,
+      "cacheControl": null,
+      "contentType": null,
+      "requestId": null,
+      "security": {},
+      "error": "fetch failed"
+    },
+    {
+      "path": "/transfers",
+      "status": null,
+      "durationMs": 287,
+      "bytes": 0,
+      "cacheControl": null,
+      "contentType": null,
+      "requestId": null,
+      "security": {},
+      "error": "fetch failed"
+    },
+    {
+      "path": "/tipovacka",
+      "status": null,
+      "durationMs": 288,
+      "bytes": 0,
+      "cacheControl": null,
+      "contentType": null,
+      "requestId": null,
+      "security": {},
+      "error": "fetch failed"
+    },
+    {
+      "path": "/api/leagues",
+      "status": null,
+      "durationMs": 270,
+      "bytes": 0,
+      "cacheControl": null,
+      "contentType": null,
+      "requestId": null,
+      "security": {},
+      "error": "fetch failed"
+    },
+    {
+      "path": "/api/teams?league=39",
+      "status": null,
+      "durationMs": 298,
+      "bytes": 0,
+      "cacheControl": null,
+      "contentType": null,
+      "requestId": null,
+      "security": {},
+      "error": "fetch failed"
+    },
+    {
+      "path": "/api/me",
+      "status": null,
+      "durationMs": 300,
+      "bytes": 0,
+      "cacheControl": null,
+      "contentType": null,
+      "requestId": null,
+      "security": {},
+      "error": "fetch failed"
+    },
+    {
+      "path": "/manifest.webmanifest",
+      "status": null,
+      "durationMs": 264,
+      "bytes": 0,
+      "cacheControl": null,
+      "contentType": null,
+      "requestId": null,
+      "security": {},
+      "error": "fetch failed"
+    },
+    {
+      "path": "/robots.txt",
+      "status": null,
+      "durationMs": 279,
+      "bytes": 0,
+      "cacheControl": null,
+      "contentType": null,
+      "requestId": null,
+      "security": {},
+      "error": "fetch failed"
+    },
+    {
+      "path": "/sitemap.xml",
+      "status": null,
+      "durationMs": 249,
+      "bytes": 0,
+      "cacheControl": null,
+      "contentType": null,
+      "requestId": null,
+      "security": {},
+      "error": "fetch failed"
+    }
+  ]
+}

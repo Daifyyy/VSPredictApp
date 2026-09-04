@@ -83,7 +83,7 @@ import { MODEL_CONTEXT_VERSION, modelContextForLeague } from "./modelContext";
 import { getRefereeProfile, ingestRefereeHistory } from "./refereeStore";
 import { normalizeRefereeName, type RefereeEstimate } from "@/lib/picks/cards";
 import { FOUL_MODEL_VERSION, predictFouls } from "@/lib/picks/fouls";
-import { captureAutonomousPortfolio, closeAutonomousPortfolio } from "./autonomousPortfolioStore";
+import { captureAutonomousPortfolio, closeAutonomousPortfolio, settleAutonomousCountPortfolio } from "./autonomousPortfolioStore";
 import { captureQuickOverviewDay, closeQuickOverviewSelections, settleQuickOverviewSelections } from "./quickOverviewStore";
 import { invalidateCachedJson } from "./cache";
 
@@ -760,6 +760,12 @@ export async function runSettleResults(): Promise<{
       } catch (error) {
         errors++;
         logError("predictions.runSettleResults.quickOverview", error, { fixtureId: f.fixture.id });
+      }
+      try {
+        await settleAutonomousCountPortfolio(f.fixture.id, new Date());
+      } catch (error) {
+        errors++;
+        logError("predictions.runSettleResults.autonomousCounts", error, { fixtureId: f.fixture.id });
       }
     }
     await ingestRefereeHistory(fixtures);

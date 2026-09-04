@@ -20,7 +20,7 @@ export const STRATEGY_CATALOG: StrategyCatalogItem[] = [
   { strategy: "ONE_X_TWO", policyVersion: 2, market: "1X2", title: "1X2 v2", status: "LIVE_TEST", minimumSample: 200, rules: "58 % · náskok 10 p. b. · edge 4 p. b. · EV 2 %", decision: "ROI, closing benchmark a kalibrace na stejné kohortě" },
   { strategy: "OVER_25", policyVersion: 1, market: "OVER_25", title: "Over 2,5 v1", status: "LIVE_TEST", minimumSample: 200, rules: "60 % · edge 4 p. b. · EV 2 %", decision: "Časový holdout, kladné CLV a stabilní kalibrace" },
   { strategy: "BTTS_YES", policyVersion: 1, market: "BTTS", title: "BTTS Ano v1", status: "LIVE_TEST", minimumSample: 200, rules: "60 % · edge 2 p. b. · EV 2 %", decision: "Časový holdout, kladné CLV a stabilita napříč ligami" },
-  { strategy: "CORNERS", policyVersion: 1, market: "CORNERS", title: "Rohy Over/Under", status: "RESEARCH", minimumSample: 200, rules: "Skutečná hlavní půlková linie", decision: "Nejdřív kalibrace λ a disperze, potom práh podle overroundu" },
+  { strategy: "CORNERS", policyVersion: 1, market: "CORNERS", title: "Rohy Over/Under v1", status: "RESEARCH", minimumSample: 200, rules: "60 % · edge 5 p. b. · EV 3 % · skutečná půlková linie", decision: "Po pre-launch auditu prospektivní ROI, čerstvé CLV a kalibrace proti stejnému trhu" },
   { strategy: "CARDS_REF", policyVersion: 1, market: "CARDS", title: "Karty · s rozhodčím", status: "RESEARCH", minimumSample: 200, rules: "Oddělená verze s auditním faktorem rozhodčího", decision: "Kalibrace a benchmark pouze v rámci stejné verze" },
   { strategy: "FOULS", policyVersion: 1, market: "FOULS", title: "Fauly", status: "RESEARCH", minimumSample: 150, rules: "Početní prognóza bez sázkového trhu", decision: "MAE a bias podle lig; bez ROI do dostupnosti trhu" },
   { strategy: "TEAM_GOALS", policyVersion: 1, market: "TEAM_TOTAL", title: "Týmové góly 0,5 / 1,5", status: "RESEARCH", minimumSample: 200, rules: "Kalibrace marginál gólového modelu", decision: "Cenové hodnocení až s konzistentními půlkovými liniemi" },
@@ -49,11 +49,15 @@ export interface ModelLabLedgerRow {
   closedAt: Date | null;
   homeGoals: number | null;
   awayGoals: number | null;
+  actualCount?: number | null;
 }
+
+const outcomeOf = (row: ModelLabLedgerRow) =>
+  binaryOutcome(row.market, row.side, row.homeGoals, row.awayGoals, row.line, row.actualCount ?? null);
 
 export interface ProbabilityMetrics { n: number; brier: number | null; logLoss: number | null; ece: number | null }
 
-function probabilityMetrics(rows: Array<{ probability: number; outcome: boolean }>): ProbabilityMetrics {
+export function probabilityMetrics(rows: Array<{ probability: number; outcome: boolean }>): ProbabilityMetrics {
   if (!rows.length) return { n: 0, brier: null, logLoss: null, ece: null };
   const bins = Array.from({ length: 10 }, () => ({ n: 0, p: 0, y: 0 }));
   let brier = 0, logLoss = 0;
@@ -74,7 +78,7 @@ function probabilityMetrics(rows: Array<{ probability: number; outcome: boolean 
 }
 
 function holdoutRows(rows: ModelLabLedgerRow[]) {
-  const ordered = [...rows].filter((row) => binaryOutcome(row.market, row.side, row.homeGoals, row.awayGoals, row.line) != null).sort((a, b) => a.kickoff.getTime() - b.kickoff.getTime());
+  const ordered = [...rows].filter((row) => outcomeOf(row) != null).sort((a, b) => a.kickoff.getTime() - b.kickoff.getTime());
   return ordered.slice(Math.floor(ordered.length * .7));
 }
 
@@ -82,7 +86,7 @@ export function bankrollSimulation(rows: ModelLabLedgerRow[], mode: "FLAT" | "PE
   let bankroll = initial, peak = initial, maxDrawdown = 0, longestLosingStreak = 0, losingStreak = 0;
   const returns: number[] = [];
   for (const row of [...rows].sort((a, b) => (a.qualifiedAt ?? a.kickoff).getTime() - (b.qualifiedAt ?? b.kickoff).getTime())) {
-    const hit = binaryOutcome(row.market, row.side, row.homeGoals, row.awayGoals, row.line);
+    const hit = outcomeOf(row);
     if (hit == null || row.decimalOdds == null || row.decimalOdds <= 1) continue;
     const fraction = mode === "FLAT" ? 1 / Math.max(bankroll, 1) : mode === "PERCENT" ? .01 : Math.min(.01, Math.max(0, ((row.modelProbability * row.decimalOdds - 1) / (row.decimalOdds - 1)) * .25));
     const stake = mode === "FLAT" ? 1 : bankroll * fraction;
@@ -109,7 +113,7 @@ function segmentLabel(row: ModelLabLedgerRow, kind: string) {
 
 export function modelLabSummary(rows: ModelLabLedgerRow[]) {
   const settled = rows.flatMap((row) => {
-    const hit = binaryOutcome(row.market, row.side, row.homeGoals, row.awayGoals, row.line);
+    const hit = outcomeOf(row);
     return hit == null ? [] : [{ row, hit }];
   });
   const closes = rows.flatMap((row) => {
@@ -122,10 +126,10 @@ export function modelLabSummary(rows: ModelLabLedgerRow[]) {
     const close = freshClosing(row.kickoff, row.closedAt, row.closingMarketProbability).close;
     return close == null ? [] : [{ probability: close, outcome: hit }];
   }));
-  const portfolioInput = rows.map((row) => ({ strategy: row.strategy, stake: row.stake, odds: row.decimalOdds, hit: binaryOutcome(row.market, row.side, row.homeGoals, row.awayGoals, row.line), marketProbability: row.marketProbability, closingMarketProbability: freshClosing(row.kickoff, row.closedAt, row.closingMarketProbability).close, qualifiedAt: row.qualifiedAt }));
+  const portfolioInput = rows.map((row) => ({ strategy: row.strategy, stake: row.stake, odds: row.decimalOdds, hit: outcomeOf(row), marketProbability: row.marketProbability, closingMarketProbability: freshClosing(row.kickoff, row.closedAt, row.closingMarketProbability).close, qualifiedAt: row.qualifiedAt }));
   const portfolio = summarizePortfolio(portfolioInput);
   const positiveClvRate = closes.length ? closes.filter(({ row, close }) => close > row.marketProbability).length / closes.length : null;
-  const holdout = summarizePortfolio(holdoutRows(rows).map((row) => ({ strategy: row.strategy, stake: row.stake, odds: row.decimalOdds, hit: binaryOutcome(row.market, row.side, row.homeGoals, row.awayGoals, row.line), marketProbability: row.marketProbability, closingMarketProbability: freshClosing(row.kickoff, row.closedAt, row.closingMarketProbability).close, qualifiedAt: row.qualifiedAt })));
+  const holdout = summarizePortfolio(holdoutRows(rows).map((row) => ({ strategy: row.strategy, stake: row.stake, odds: row.decimalOdds, hit: outcomeOf(row), marketProbability: row.marketProbability, closingMarketProbability: freshClosing(row.kickoff, row.closedAt, row.closingMarketProbability).close, qualifiedAt: row.qualifiedAt })));
   const gates = {
     frozenPolicy: rows.length > 0,
     sample: closes.length >= 200,
@@ -143,7 +147,7 @@ export function modelLabSegments(rows: ModelLabLedgerRow[]) {
   return ["league", "model", "odds", "edge", "side"].map((kind) => {
     const groups = new Map<string, ModelLabLedgerRow[]>();
     for (const row of rows) { const key = segmentLabel(row, kind); groups.set(key, [...(groups.get(key) ?? []), row]); }
-    return { kind, groups: [...groups].map(([label, values]) => ({ label, descriptiveOnly: values.filter((row) => row.homeGoals != null && row.awayGoals != null).length < 20, ...modelLabSummary(values) })) };
+    return { kind, groups: [...groups].map(([label, values]) => ({ label, descriptiveOnly: values.filter((row) => row.market === "CORNERS" ? row.actualCount != null : row.homeGoals != null && row.awayGoals != null).length < 20, ...modelLabSummary(values) })) };
   });
 }
 

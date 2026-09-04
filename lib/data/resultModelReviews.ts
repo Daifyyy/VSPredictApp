@@ -1,5 +1,5 @@
 import "server-only";
-import { prisma } from "@/lib/db";
+import { isRealDataConfigured, prisma } from "@/lib/db";
 import type { FixtureDay, ModelReviewChip, PlayedModelReview } from "@/lib/types";
 import { binaryOutcome, countTone, freshClosing, portfolioProfit } from "@/lib/picks/evaluation";
 
@@ -7,6 +7,10 @@ const pct = (value: number) => `${Math.round(value * 100)} %`;
 const one = (value: number) => value.toFixed(1).replace(".", ",");
 
 export async function getResultModelReviews(fixtureIds: number[]): Promise<Map<number, PlayedModelReview>> {
+  // Offline/mock E2E must be hermetic. Model reviews are an optional enrichment;
+  // reaching a configured production DATABASE_URL from DATA_SOURCE=mock made UI
+  // tests flaky and could accidentally read production data from a preview run.
+  if (!isRealDataConfigured()) return new Map();
   const ids = [...new Set(fixtureIds)];
   if (!ids.length) return new Map();
   const [predictions, stats, selections, signals] = await Promise.all([

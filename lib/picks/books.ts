@@ -237,6 +237,38 @@ export function sharpLineFair(
   };
 }
 
+/**
+ * Referenční dvoustranná nabídka jedné knihy na přesné linii. Kurz, odmaržovaná
+ * pravděpodobnost i overround tak pocházejí ze stejného trhu a nelze vytvořit
+ * falešnou výhodu smícháním různých bookmakerů.
+ */
+export function referenceLineQuote(
+  books: BookOdds[],
+  market: LineMarket,
+  line: number,
+  side: "over" | "under",
+  preferredBookmakerIds: readonly number[] = []
+): { odds: number; probability: number; bookmaker: string; overround: number } | null {
+  const ordered = [...books].sort((a, b) => {
+    const ai = preferredBookmakerIds.indexOf(a.id);
+    const bi = preferredBookmakerIds.indexOf(b.id);
+    return (ai < 0 ? Number.MAX_SAFE_INTEGER : ai) - (bi < 0 ? Number.MAX_SAFE_INTEGER : bi);
+  });
+  for (const book of ordered) {
+    const quote = linesOf(book, market).find((item) => item.line === line);
+    if (!quote || quote.over == null || quote.under == null) continue;
+    const sum = 1 / quote.over + 1 / quote.under;
+    const odds = side === "over" ? quote.over : quote.under;
+    return {
+      odds,
+      probability: (1 / odds) / sum,
+      bookmaker: book.name,
+      overround: sum - 1,
+    };
+  }
+  return null;
+}
+
 // Pojmenované zkratky pro rohy (čitelnost na volajících místech; žádná vlastní logika).
 export const cornerLines = (books: BookOdds[]) => marketLines(books, "corners");
 export const mainCornerLine = (books: BookOdds[]) => mainLine(books, "corners");

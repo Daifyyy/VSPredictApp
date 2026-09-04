@@ -56,8 +56,8 @@ export interface MarketClvSummary {
   eligible: number;
   measured: number;
   completeness: number;
-  averageClv: number;
-  beatRate: number;
+  averageMarketMovement: number;
+  towardModelRate: number;
   averageModelVsOpen: number;
   averageModelVsClose: number;
 }
@@ -106,8 +106,8 @@ export async function marketClvSummaries(): Promise<MarketClvSummary[]> {
       eligible: all.length,
       measured: measured.length,
       completeness: all.length ? measured.length / all.length : 0,
-      averageClv: average(clv),
-      beatRate: clv.length ? clv.filter((value) => value > 0).length / clv.length : 0,
+      averageMarketMovement: average(clv),
+      towardModelRate: clv.length ? clv.filter((value) => value > 0).length / clv.length : 0,
       averageModelVsOpen: average(measured.map(({ row }) => row.modelProbability - row.openMarketProbability)),
       averageModelVsClose: average(measured.map(({ row, close }) => row.modelProbability - close!.probability)),
     };
@@ -176,7 +176,7 @@ export async function marketSignalHistory(options: MarketSignalHistoryOptions) {
       closingMinutesToKickoff: close?.minutesToKickoff ?? null,
       prediction: predictionById.get(row.fixtureId) ?? null,
       actual: actual.get(row.fixtureId) ?? null,
-      clv: close == null ? null : close.probability - row.openMarketProbability,
+      marketMovement: close == null ? null : close.probability - row.openMarketProbability,
     })),
     nextCursor: directionRows.length > options.limit ? page.at(-1)?.row.id ?? null : null,
   };

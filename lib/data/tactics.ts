@@ -1,8 +1,9 @@
-import { prisma } from "@/lib/db";
+import { isRealDataConfigured, prisma } from "@/lib/db";
 import { buildTacticalProfile, type TacticalMatch, type TacticalProfile } from "@/lib/tactics";
 
 /** Pouze databázové čtení. Veřejné zobrazení nikdy nedotahuje sestavy z API-Football. */
 export async function getTeamTacticalProfile(teamId: number, before = new Date(), limit = 10): Promise<TacticalProfile> {
+  if (!isRealDataConfigured()) return buildTacticalProfile([], limit);
   const rows = await prisma.matchStatCache.findMany({
     where: { teamId, competitive: true, formation: { not: null }, date: { lt: before } },
     orderBy: { date: "desc" },

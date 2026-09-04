@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getTeamsByLeague } from "@/lib/data/repository";
 import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
 import { logError } from "@/lib/logError";
+import { publicCache } from "@/lib/cacheHeaders";
 
 export const revalidate = 86400;
 
@@ -14,7 +15,7 @@ export async function GET(req: Request) {
   }
   try {
     const teams = await getTeamsByLeague(leagueId);
-    return NextResponse.json({ teams });
+    return NextResponse.json({ teams }, { headers: publicCache(3600, 86400) });
   } catch (e) {
     logError("api/teams", e, { leagueId });
     return NextResponse.json({ error: "Chyba načtení týmů" }, { status: 502 });

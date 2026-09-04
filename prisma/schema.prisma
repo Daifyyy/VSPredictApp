@@ -474,17 +474,25 @@ model AutonomousTipSnapshot {
   modelContext             String
   modelVersion             Int
   contextVersion           Int
+  countModelVersion        Int?
+  referenceOverround       Float?
   status                   String
   capturedAt               DateTime
   qualifiedAt              DateTime?
   closingMarketProbability Float?
   closedAt                 DateTime?
+  settlementStatus         String    @default("PENDING")
+  actualCount              Int?
+  hit                      Boolean?
+  profit                   Float?
+  settledAt                DateTime?
 
   @@unique([fixtureId, strategy, policyVersion])
   @@index([strategy, modelContext, qualifiedAt])
   @@index([status, kickoff])
   @@index([kickoff])
   @@index([capturedAt])
+  @@index([settledAt])
 }
 
 /// Ručně řízený stav verzované strategie. Výpočty mohou doporučit změnu, nikdy ji však

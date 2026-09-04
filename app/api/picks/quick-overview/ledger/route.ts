@@ -9,6 +9,7 @@ import { freshClosing } from "@/lib/picks/evaluation";
 import { QUICK_BET_CATEGORIES } from "@/lib/picks/quickOverviewPerformance";
 import { QUICK_OVERVIEW_POLICY_VERSION } from "@/lib/data/quickOverviewStore";
 import { pragueDateBounds } from "@/lib/recentWindow";
+import { FIXTURE_LIST_LEAGUE_IDS } from "@/lib/data/catalog";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -32,13 +33,14 @@ export async function GET(request: Request) {
   const parsed = querySchema.safeParse(Object.fromEntries(new URL(request.url).searchParams));
   if (!parsed.success) return NextResponse.json({ error: "Neplatný filtr" }, { status: 400 });
   const q = parsed.data;
+  if (q.leagueId && !(FIXTURE_LIST_LEAGUE_IDS as readonly number[]).includes(q.leagueId)) return NextResponse.json({ error: "Nepodporovaná soutěž" }, { status: 400 });
   try {
     const dateRange = q.from || q.to ? { ...(q.from ? { gte: pragueDateBounds(q.from).start } : {}), ...(q.to ? { lt: pragueDateBounds(q.to).end } : {}) } : null;
     const scanLimit = q.clv ? Math.min(200, q.limit * 5) : q.limit;
     const rows = await prisma.quickOverviewSelection.findMany({
       where: {
         category: q.category, policyVersion: QUICK_OVERVIEW_POLICY_VERSION, modelContext: q.context,
-        ...(q.leagueId ? { leagueId: q.leagueId } : {}),
+        leagueId: q.leagueId ? q.leagueId : { in: [...FIXTURE_LIST_LEAGUE_IDS] },
         ...(q.result ? { hit: q.result === "hit" } : {}),
         ...(dateRange ? { qualifiedAt: dateRange } : {}),
       },

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getLeagues } from "@/lib/data/repository";
+import { publicCache } from "@/lib/cacheHeaders";
 
 // Seznam lig je prakticky statický → dlouhá CDN cache (§1.1).
 export const revalidate = 86400;
@@ -11,5 +12,5 @@ export function GET(req: Request) {
     kind === "CLUB_LEAGUE" || kind === "NATIONAL_COMP"
       ? all.filter((l) => l.kind === kind)
       : all;
-  return NextResponse.json({ leagues });
+  return NextResponse.json({ leagues }, { headers: publicCache(86400, 604800) });
 }

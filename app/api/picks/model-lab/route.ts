@@ -44,10 +44,22 @@ export async function GET(request: Request) {
       select: { fixtureId: true, homeGoals: true, awayGoals: true, status: true, oddsBooks: true },
     }) : [];
     const byFixture = new Map(results.map((row) => [row.fixtureId, row]));
+    const cornerTips = tips.filter((row) => row.market === "CORNERS");
+    const cornerStats = cornerTips.length ? await prisma.matchStatCache.findMany({
+      where: { fixtureId: { in: cornerTips.map((row) => row.fixtureId) } },
+      select: { fixtureId: true, teamId: true, corners: true },
+    }) : [];
+    const actualCorners = new Map<number, number>();
+    for (const tip of cornerTips) {
+      const home = cornerStats.find((row) => row.fixtureId === tip.fixtureId && row.teamId === tip.homeTeamId)?.corners;
+      const away = cornerStats.find((row) => row.fixtureId === tip.fixtureId && row.teamId === tip.awayTeamId)?.corners;
+      if (home != null && away != null) actualCorners.set(tip.fixtureId, home + away);
+    }
     const ledger: ModelLabLedgerRow[] = tips.map((row) => ({
       ...row,
       homeGoals: byFixture.get(row.fixtureId)?.homeGoals ?? null,
       awayGoals: byFixture.get(row.fixtureId)?.awayGoals ?? null,
+      actualCount: row.actualCount ?? actualCorners.get(row.fixtureId) ?? null,
     }));
     for (const signal of teamSignals) {
       const prediction = byFixture.get(signal.fixtureId);
@@ -74,8 +86,8 @@ export async function GET(request: Request) {
         modelVersion: override?.modelVersion ?? MODEL_VERSION,
         status: (override?.status as ModelLabStatus | undefined) ?? item.status,
         definitionId: override?.id ?? null,
-        currentCount: ["ONE_X_TWO", "OVER_25", "BTTS_YES"].includes(item.strategy)
-          ? rows.filter((row) => row.kickoff >= liveFrom && !FINAL_STATUSES.has(byFixture.get(row.fixtureId)?.status ?? "") && binaryOutcome(row.market, row.side, row.homeGoals, row.awayGoals, row.line) == null).length
+        currentCount: ["ONE_X_TWO", "OVER_25", "BTTS_YES", "CORNERS"].includes(item.strategy)
+          ? rows.filter((row) => row.kickoff >= liveFrom && !FINAL_STATUSES.has(byFixture.get(row.fixtureId)?.status ?? "") && binaryOutcome(row.market, row.side, row.homeGoals, row.awayGoals, row.line, row.actualCount ?? null) == null).length
           : null,
         summary: item.strategy === "FOULS" && foulResearch ? { ...summary, verdict: foulResearch.bias == null ? "Fauly zatím nemají skutečná data." : `MAE ${foulResearch.mae!.toFixed(2)} · bias ${foulResearch.bias >= 0 ? "+" : ""}${foulResearch.bias.toFixed(2)} faulu.` } : summary,
         research: item.strategy === "FOULS" ? foulResearch : null,

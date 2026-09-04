@@ -1,0 +1,204 @@
+{
+  "generatedAt": "2026-08-29T07:48:44.613Z",
+  "baseUrl": "http://127.0.0.1:3221",
+  "mode": "read-only",
+  "scopeExclusions": [
+    "/hra",
+    "/api/game",
+    "/api/director"
+  ],
+  "probes": [
+    {
+      "path": "/",
+      "status": 200,
+      "durationMs": 1899,
+      "bytes": 44149,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "contentType": "text/html; charset=utf-8",
+      "requestId": null,
+      "security": {
+        "contentTypeOptions": "nosniff",
+        "frameOptions": "DENY",
+        "referrerPolicy": "strict-origin-when-cross-origin",
+        "permissionsPolicy": "camera=(), microphone=(), geolocation=(), payment=(self)",
+        "contentSecurityPolicy": null
+      }
+    },
+    {
+      "path": "/porovnani",
+      "status": 200,
+      "durationMs": 1869,
+      "bytes": 40739,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "contentType": "text/html; charset=utf-8",
+      "requestId": null,
+      "security": {
+        "contentTypeOptions": "nosniff",
+        "frameOptions": "DENY",
+        "referrerPolicy": "strict-origin-when-cross-origin",
+        "permissionsPolicy": "camera=(), microphone=(), geolocation=(), payment=(self)",
+        "contentSecurityPolicy": null
+      }
+    },
+    {
+      "path": "/predikce",
+      "status": 200,
+      "durationMs": 1864,
+      "bytes": 36655,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "contentType": "text/html; charset=utf-8",
+      "requestId": null,
+      "security": {
+        "contentTypeOptions": "nosniff",
+        "frameOptions": "DENY",
+        "referrerPolicy": "strict-origin-when-cross-origin",
+        "permissionsPolicy": "camera=(), microphone=(), geolocation=(), payment=(self)",
+        "contentSecurityPolicy": null
+      }
+    },
+    {
+      "path": "/tabulky",
+      "status": 200,
+      "durationMs": 1852,
+      "bytes": 39565,
+      "cacheControl": "s-maxage=31536000",
+      "contentType": "text/html; charset=utf-8",
+      "requestId": null,
+      "security": {
+        "contentTypeOptions": "nosniff",
+        "frameOptions": "DENY",
+        "referrerPolicy": "strict-origin-when-cross-origin",
+        "permissionsPolicy": "camera=(), microphone=(), geolocation=(), payment=(self)",
+        "contentSecurityPolicy": null
+      }
+    },
+    {
+      "path": "/transfers",
+      "status": 200,
+      "durationMs": 1870,
+      "bytes": 36277,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "contentType": "text/html; charset=utf-8",
+      "requestId": null,
+      "security": {
+        "contentTypeOptions": "nosniff",
+        "frameOptions": "DENY",
+        "referrerPolicy": "strict-origin-when-cross-origin",
+        "permissionsPolicy": "camera=(), microphone=(), geolocation=(), payment=(self)",
+        "contentSecurityPolicy": null
+      }
+    },
+    {
+      "path": "/tipovacka",
+      "status": 200,
+      "durationMs": 1873,
+      "bytes": 38571,
+      "cacheControl": "private, no-cache, no-store, max-age=0, must-revalidate",
+      "contentType": "text/html; charset=utf-8",
+      "requestId": null,
+      "security": {
+        "contentTypeOptions": "nosniff",
+        "frameOptions": "DENY",
+        "referrerPolicy": "strict-origin-when-cross-origin",
+        "permissionsPolicy": "camera=(), microphone=(), geolocation=(), payment=(self)",
+        "contentSecurityPolicy": null
+      }
+    },
+    {
+      "path": "/api/leagues",
+      "status": 200,
+      "durationMs": 1246,
+      "bytes": 460,
+      "cacheControl": null,
+      "contentType": "application/json",
+      "requestId": null,
+      "security": {
+        "contentTypeOptions": "nosniff",
+        "frameOptions": "DENY",
+        "referrerPolicy": "strict-origin-when-cross-origin",
+        "permissionsPolicy": "camera=(), microphone=(), geolocation=(), payment=(self)",
+        "contentSecurityPolicy": null
+      }
+    },
+    {
+      "path": "/api/teams?league=39",
+      "status": 200,
+      "durationMs": 1210,
+      "bytes": 799,
+      "cacheControl": null,
+      "contentType": "application/json",
+      "requestId": null,
+      "security": {
+        "contentTypeOptions": "nosniff",
+        "frameOptions": "DENY",
+        "referrerPolicy": "strict-origin-when-cross-origin",
+        "permissionsPolicy": "camera=(), microphone=(), geolocation=(), payment=(self)",
+        "contentSecurityPolicy": null
+      }
+    },
+    {
+      "path": "/api/me",
+      "status": 200,
+      "durationMs": 1375,
+      "bytes": 13,
+      "cacheControl": "private, no-store",
+      "contentType": "application/json",
+      "requestId": null,
+      "security": {
+        "contentTypeOptions": "nosniff",
+        "frameOptions": "DENY",
+        "referrerPolicy": "strict-origin-when-cross-origin",
+        "permissionsPolicy": "camera=(), microphone=(), geolocation=(), payment=(self)",
+        "contentSecurityPolicy": null
+      }
+    },
+    {
+      "path": "/manifest.webmanifest",
+      "status": 200,
+      "durationMs": 1758,
+      "bytes": 541,
+      "cacheControl": "public, max-age=0, must-revalidate",
+      "contentType": "application/manifest+json",
+      "requestId": null,
+      "security": {
+        "contentTypeOptions": "nosniff",
+        "frameOptions": "DENY",
+        "referrerPolicy": "strict-origin-when-cross-origin",
+        "permissionsPolicy": "camera=(), microphone=(), geolocation=(), payment=(self)",
+        "contentSecurityPolicy": null
+      }
+    },
+    {
+      "path": "/robots.txt",
+      "status": 200,
+      "durationMs": 1770,
+      "bytes": 95,
+      "cacheControl": "public, max-age=0, must-revalidate",
+      "contentType": "text/plain",
+      "requestId": null,
+      "security": {
+        "contentTypeOptions": "nosniff",
+        "frameOptions": "DENY",
+        "referrerPolicy": "strict-origin-when-cross-origin",
+        "permissionsPolicy": "camera=(), microphone=(), geolocation=(), payment=(self)",
+        "contentSecurityPolicy": null
+      }
+    },
+    {
+      "path": "/sitemap.xml",
+      "status": 200,
+      "durationMs": 1762,
+      "bytes": 1433,
+      "cacheControl": "public, max-age=0, must-revalidate",
+      "contentType": "application/xml",
+      "requestId": null,
+      "security": {
+        "contentTypeOptions": "nosniff",
+        "frameOptions": "DENY",
+        "referrerPolicy": "strict-origin-when-cross-origin",
+        "permissionsPolicy": "camera=(), microphone=(), geolocation=(), payment=(self)",
+        "contentSecurityPolicy": null
+      }
+    }
+  ]
+}
