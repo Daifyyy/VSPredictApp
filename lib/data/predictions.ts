@@ -86,6 +86,7 @@ import { FOUL_MODEL_VERSION, predictFouls } from "@/lib/picks/fouls";
 import { captureAutonomousPortfolio, closeAutonomousPortfolio, settleAutonomousCountPortfolio } from "./autonomousPortfolioStore";
 import { captureQuickOverviewDay, closeQuickOverviewSelections, settleQuickOverviewSelections } from "./quickOverviewStore";
 import { invalidateCachedJson } from "./cache";
+import { captureCalibrationShadows } from "./calibrationShadowStore";
 
 /**
  * Orchestrace predikční pipeline (běží jen na pozadí / cron, real data).
@@ -453,6 +454,25 @@ export async function runPredictUpcoming(
           h2hSnapshotVersion: H2H_SNAPSHOT_VERSION,
           h2hCapturedAt: h2hCapturedAt.toISOString(),
         });
+        try {
+          await captureCalibrationShadows({
+            fixtureId: f.fixture.id,
+            modelContext,
+            modelVersion: MODEL_VERSION,
+            predictedAt: new Date(),
+            lambdaHome: p.lambdaHomeBase,
+            lambdaAway: p.lambdaAwayBase,
+            homeWin: p.homeWin,
+            draw: p.draw,
+            awayWin: p.awayWin,
+            over25: p.over25,
+            bttsYes: p.bttsYes,
+          });
+        } catch (error) {
+          // Shadow kalibrace je auditní paralelní stopa. Její výpadek nesmí zahodit
+          // primární předzápasový snapshot, ale musí zůstat viditelný v logu.
+          logError("predictions.calibration-shadow", error, { fixtureId: f.fixture.id, modelContext });
+        }
         predicted++;
         if (within24h) ready24h++;
 

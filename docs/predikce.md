@@ -174,15 +174,20 @@ navíc, propíše se i do `/digest` (sdílí `PickRow`).
 - **Dvě úrovně verzování (DŮLEŽITÉ):** `MODEL_VERSION` (`predictions.ts`) verzuje **jen to, co
   generuje λ** (okna, váhy, xG zpevnění, build týmů) – bump **vynuluje dataset** (kalibrace
   i track-record běží per verzi). **ρ a zostření λ pod něj nepatří**: jsou to post-parametry
-  aplikované až NA λ (`PREDICT_PARAMS` v `predict.ts`), takže po jejich změně stačí přepočítat
-  mřížku nad uloženými λ – čistá matematika, **0 API volání**, historie zůstane (`npm run reprice`).
+  aplikované až NA λ (`PREDICT_PARAMS` v `predict.ts`). Historické pravděpodobnosti jsou ale
+  neměnný předzápasový audit: `npm run reprice` je proto už jen suchá diagnostika a kandidát se
+  ukládá paralelně jako SHADOW přes `npm run calibrate:safe -- --persist` (**0 API volání**).
   Proto `FixturePrediction.lambdaHome/Away` drží **základní** λ (před zostřením; `MatchPrediction`
   má `lambdaHomeBase`/`lambdaAwayBase`) a řádek nese `rho`/`sharpen` = čím byly pravděpodobnosti
   odvozené → `reprice` pozná zastaralý řádek. Mřížku staví jediná čistá funkce `gridProbs`
   (sdílí ji živý `predictMatch` i `reprice`) → nemůžou se rozejít.
-- **Kalibrace:** `npm run calibrate` (`scripts/calibrate.ts`) = MLE `DC_RHO` z odehraných
+- **Bezpečná kalibrace:** `npm run calibrate:safe` používá několik expanding rolling-origin
+  holdoutů pro 1X2, Over 2,5, BTTS a společnou gólovou distribuci. Stejný kickoff nikdy neleží
+  současně v tréninku i holdoutu. Přijatý kandidát se nezapne v produkci: stav `SHADOW` ukládá
+  budoucí pravděpodobnosti vedle původní `FixturePrediction`; neúspěšný kandidát je `REJECTED`.
+- **Diagnostická kalibrace:** `npm run calibrate` (`scripts/calibrate.ts`) = MLE `DC_RHO` z odehraných
   predikcí (reuse exportů `drawTau`/`poissonVector`) + Brier/log-loss. Ladění = ruční
-  úprava `DC_RHO` v `predict.ts` + **`npm run reprice`** (žádný bump `MODEL_VERSION`!).
+  produkční úprava až po přijetí prospektivního SHADOW reportu; historie se nepřepisuje.
   Počítá **jen z `modelVersion=MODEL_VERSION`** a chce **≥30 odehraných**
   predikcí, jinak je výsledek orientační. `DC_RHO = −0.03` je **fitnuté backtestem**
   (3 511 klubových zápasů; publikovaný default −0.13 z DC 1997 seděl na jiná λ, na hold-out
@@ -202,8 +207,8 @@ navíc, propíše se i do `/digest` (sdílí `PickRow`).
   Platt scaling na logitu (`p' = σ(a·logit(p)+b)`) to umí: `a<1` stlačí favority i outsidery
   k 1/3 najednou. Aplikuje se AŽ na hotové V/R/P z mřížky (po ρ+zostření), Over 2.5/BTTS/
   topScores nedotčené. Stejný cyklus jako ρ/zostření: post-parametr nad λ (`FixturePrediction.
-  calibA/calibB`, **ne** pod `MODEL_VERSION`), `npm run reprice` ho umí dorovnat na historii
-  bez API volání. Fit `fitCalibration`/`outcomeScoreAtCalibration` (`lib/picks/fit.ts`, grid
+  calibA/calibB`, **ne** pod `MODEL_VERSION`); kandidát se ukládá vedle historie bez API volání.
+  Fit `fitCalibration`/`outcomeScoreAtCalibration` (`lib/picks/fit.ts`, grid
   search `a∈[0.4,1.6]`/`b∈[-0.3,0.3]`) sdílený mezi `calibrate.ts` (živá DB) a `backtest.ts`
   (offline historie) – stejná zásada jako u zostření: fituj na tisících zápasů z backtestu,
   ne na desítkách z DB. **`CALIB_A=1.0`/`CALIB_B=0.0` je zatím přesný no-op** (default) –

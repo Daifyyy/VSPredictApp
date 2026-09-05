@@ -17,6 +17,10 @@ npm run probe-events # sonda na /fixtures/events (průběh zápasu) – SPUSTIT 
                      # -- <fixtureId> | bez argumentu vezme první živý zápas našich lig.
                      # Past, kterou odhalila: `type` chodí „Goal"/„Card", ale „subst".
 npm run calibrate    # MLE DC_RHO + Brier/log-loss z odehraných predikcí (jen MODEL_VERSION)
+npm run calibrate:safe # rolling-origin 1X2/Over/BTTS + společná gólová distribuce;
+                       # -- --persist uloží neměnný SHADOW/REJECTED report, nikdy nepřepíše historii
+npm run audit:cards-research # model karet vs opening/closing + ablace vlivu rozhodčího
+npm run audit:fouls-research # časový holdout MAE/bias proti baseline naučenému jen z minulosti
 npm run backtest     # offline backtest na historii klubových lig (point-in-time, stejné jádro);
                      # 1 volání/liga+sezóna, pak .cache/backtest → další běhy offline
 npm run backtest -- --leagues=39,140 --seasons=2024,2025 --minMatches=5 --refresh
@@ -45,8 +49,7 @@ npm run backtest-national           # backtest REPREZENTACÍ (turnaje + Liga ná
                      # --ratings=1095,2,1 = globální ratingy, --grid, --from=/--to=
 npm run backfill-stats              # xG/střely k historii: 1 volání/zápas, --limit stropuje
                      # den; ukládá i do produkční MatchStatCache (= předehřeje appku)
-npm run reprice      # po změně DC_RHO/LAMBDA_SHARPEN přepočte uložené predikce z λ (0 API);
-                     # suchý běh, zápis až `-- --apply`. NAHRAZUJE bump MODEL_VERSION.
+npm run reprice      # pouze auditní suchý přepočet; zápis do historických snapshotů je zakázaný.
 npm run resettle     # přepočet uložených výsledků na skóre po 90 min (AET/PEN); suchý běh,
                      # zápis až `npm run resettle -- --apply`
 npm run audit-leagues      # herní ligy: odvozené vs. kurátorované pohárové/sestupové příčky

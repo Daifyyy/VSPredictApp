@@ -875,8 +875,8 @@ export interface MatchPrediction {
   lambdaAway: number; // očekávané góly hostů (po zostření)
   /**
    * λ **před** zostřením – to, co generuje model (`MODEL_VERSION`). Ukládá se do
-   * `FixturePrediction`, protože z něj jde predikci přepočítat při změně post-parametrů
-   * (ρ / zostření) bez nového fetchu. Při `sharpen = 1` shodné s `lambdaHome/Away`.
+   * `FixturePrediction`, protože z něj jde bez nového fetchu vyhodnotit paralelní SHADOW
+   * kandidát. Původní předzápasová pravděpodobnost se nepřepisuje.
    */
   lambdaHomeBase: number;
   lambdaAwayBase: number;
@@ -965,8 +965,8 @@ export interface PredictionRow {
   publishedAt?: string | null;
   /**
    * Post-parametry, kterými byly z λ odvozeny pravděpodobnosti výše (Dixon–Coles ρ a
-   * zostření λ). Mimo `modelVersion` schválně: jde je změnit a historii **přepočítat**
-   * z uložených λ (`npm run reprice`) místo zahození. `null` = řádek z doby před
+   * zostření λ). Mimo `modelVersion` schválně: z uložených λ lze postavit paralelní
+   * SHADOW kandidát bez přepsání historie. `null` = řádek z doby před
    * zavedením polí (spočítaný publikovaným defaultem ρ=−0.13, zostření 1.0).
    */
   rho: number | null;

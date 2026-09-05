@@ -118,8 +118,8 @@ async function main() {
   const best = fitRho(rows);
   console.log(`Doporučené ρ (max věrohodnost): ${best.rho}  (LL=${best.logLik.toFixed(2)})`);
   console.log(
-    "Dolaď DC_RHO v lib/stats/predict.ts → pak `npm run reprice` (přepočte historii z λ). " +
-      "MODEL_VERSION NEbumpuj – ρ je post-parametr, dataset se nemá zahazovat."
+    "Toto je in-sample diagnostika. Parametr neměň bez potvrzení přes `npm run calibrate:safe`; " +
+      "historické snapshoty se nepřepisují."
   );
 
   // Zostření λ (LAMBDA_SHARPEN): grid search minimalizující 1X2 log-loss. Drží součet λ
@@ -145,8 +145,8 @@ async function main() {
       );
     } else {
       console.log(
-        "Pozor: na malém vzorku může být v šumu – nastav LAMBDA_SHARPEN v predict.ts (a spusť " +
-          "`npm run reprice`) jen když to potvrdí i `npm run backtest`. MODEL_VERSION NEbumpuj."
+          "Pozor: na malém vzorku může být v šumu – kandidáta ověř přes `npm run calibrate:safe`. " +
+          "Historické snapshoty se nepřepisují."
       );
     }
   }
@@ -172,8 +172,8 @@ async function main() {
       );
     } else {
       console.log(
-        "Pozor: na malém vzorku může být v šumu – nastav CALIB_A/CALIB_B v predict.ts (a spusť " +
-          "`npm run reprice`) jen když to potvrdí i `npm run backtest`. MODEL_VERSION NEbumpuj."
+          "Pozor: na malém vzorku může být v šumu – kandidáta ověř přes `npm run calibrate:safe`. " +
+          "Historické snapshoty se nepřepisují."
       );
     }
   }
@@ -181,7 +181,7 @@ async function main() {
   // Ověř, že baseline sedí na produkční konstantu (jistota, že fit měří to, co běží).
   const check = outcomeScoreAtSharpen(rows, 1);
   if (Math.abs(check.logloss - ps.logloss) > 0.02) {
-    console.log("\n⚠ Baseline fitu se liší od uložených pravděpodobností → řádky nejsou přepočtené (`npm run reprice`).");
+    console.log("\n⚠ Baseline fitu se liší od uložených pravděpodobností → kohorta míchá jiné post-parametry; rozděl ji podle uložené verze, historii nepřepisuj.");
   }
 }
 

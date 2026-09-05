@@ -5,8 +5,8 @@
 // NA λ (`PREDICT_PARAMS` v lib/stats/predict.ts), takže po jejich změně stačí přepočítat
 // mřížku nad tím, co už v DB je – žádný reset datasetu, historie zůstane použitelná.
 //
-// Spuštění: npm run reprice            (suchý běh – vypíše, co by se změnilo)
-//           npm run reprice -- --apply (zapíše do DB)
+// Spuštění: npm run reprice (pouze auditní suchý běh)
+// Historie je neměnná; kandidátní parametry se ověřují přes `calibrate:safe` jako SHADOW.
 import { prisma } from "../lib/db.ts";
 import { MODEL_VERSION } from "../lib/data/predictions.ts";
 import { gridProbs, PREDICT_PARAMS } from "../lib/stats/predict.ts";
@@ -36,10 +36,16 @@ function isCurrent(
 const pct = (x: number) => `${(x * 100).toFixed(1)} %`;
 
 async function main() {
+  if (apply) {
+    throw new Error(
+      "Přepis historických predikcí je zakázaný. Použij `npm run calibrate:safe -- --persist`; " +
+      "přijatý kandidát se bude prospektivně ukládat jako SHADOW vedle původního snapshotu."
+    );
+  }
   console.log(
     `Model v${MODEL_VERSION} | post-parametry: ρ=${PREDICT_PARAMS.rho}, zostření=${PREDICT_PARAMS.sharpen}, ` +
       `kalibrace a=${PREDICT_PARAMS.calibA}/b=${PREDICT_PARAMS.calibB}` +
-      (apply ? "" : "  [suchý běh – zapiš přes -- --apply]")
+      "  [pouze auditní suchý běh]"
   );
 
   // Jen aktuální verze modelu: ρ/zostření se fitují k DANÝM λ, takže je nemá smysl
@@ -115,7 +121,7 @@ async function main() {
     `\n${apply ? "Přepočteno" : "K přepočtu"}: ${stale.length} řádků ` +
       `(z toho s posunem 1X2 > 0.5 p.b.: ${moved})`
   );
-  if (!apply) console.log("Zapiš: npm run reprice -- --apply, pak npm run calibrate.");
+  console.log("Historie zůstává neměnná; kandidáta vytvoř přes npm run calibrate:safe -- --persist.");
 }
 
 main()
