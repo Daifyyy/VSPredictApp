@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { BookOdds } from "@/lib/data/apiFootball";
 import type { PredictionRow } from "@/lib/types";
-import { freezeMarketSignals, marketProbabilityAt } from "./marketSignals";
+import { freezeMarketSignals, marketProbabilityAt, marketSignalPolicyVersion, MARKET_SIGNAL_POLICY_VERSION, TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION, teamMarketProbabilityAtBookmaker } from "./marketSignals";
 
 const books: BookOdds[] = [{
   id: 1,
@@ -50,5 +50,15 @@ describe("freezeMarketSignals", () => {
     expect(marketProbabilityAt(books, "CORNERS", "OVER", 9.5)).toBeCloseTo(0.5);
     expect(marketProbabilityAt(books, "CORNERS", "OVER", 10.5)).toBeNull();
     expect(marketProbabilityAt(books, "TEAM_HOME_15", "OVER", 1.5)).toBeCloseTo(1 / 2.1 / (1 / 2.1 + 1 / 1.7));
+  });
+
+  it("oddělí prospektivní týmové góly v2 od historické politiky", () => {
+    expect(marketSignalPolicyVersion("OVER_25")).toBe(MARKET_SIGNAL_POLICY_VERSION);
+    expect(marketSignalPolicyVersion("TEAM_HOME_15")).toBe(TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION);
+  });
+
+  it("closing týmových gólů nepřevezme z jiného bookmakera", () => {
+    expect(teamMarketProbabilityAtBookmaker(books, "TEAM_HOME_15", "OVER", 1.5, "Sharp")).toBeCloseTo(1 / 2.1 / (1 / 2.1 + 1 / 1.7));
+    expect(teamMarketProbabilityAtBookmaker(books, "TEAM_HOME_15", "OVER", 1.5, "Jiná kniha")).toBeNull();
   });
 });

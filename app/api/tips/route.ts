@@ -16,6 +16,7 @@ import { pickOddsForTip } from "@/lib/tips/odds";
 import { fetchOdds, PINNACLE_FIRST_BOOKMAKERS, type MatchOdds } from "@/lib/data/apiFootball";
 import { cachedJson } from "@/lib/data/cache";
 import type { TipMarket, TipSelection } from "@/lib/tips/types";
+import { rejectCrossSiteMutation } from "@/lib/requestSecurity";
 
 // Osobní tipovačka (tréninkový deník). Přihlášení povinné (anonym → 401), jinak
 // FREE pro všechny přihlášené – žádné PRO gating. Kurz se snapshotuje na pozadí
@@ -83,6 +84,7 @@ export async function GET() {
 
 /** POST – vloží/přepíše tip (upsert na trh+zápas). Kurz snapshotuje na pozadí. */
 export async function POST(req: Request) {
+  const originError = rejectCrossSiteMutation(req); if (originError) return originError;
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Nepřihlášeno" }, { status: 401 });
   if (!allowRequest(`tips:${user.id}`, 60, 60_000)) return tooMany();

@@ -1474,6 +1474,16 @@ function buildMatchStat(
   };
 }
 
+/** Veřejný ISR shell: pouze poslední uložený snapshot, nikdy upstream backfill. */
+export async function getCachedFixturesByDates(dates: string[]): Promise<FixtureDay[]> {
+  const cached = await prisma.apiCache.findMany({ where: { key: { in: dates.map((date) => `fixdate:${date}`) } }, select: { key: true, payload: true } });
+  const byDate = new Map(cached.map((row) => [row.key.slice("fixdate:".length), Array.isArray(row.payload) ? row.payload as unknown as ApiFixture[] : []]));
+  return dates.map((date) => {
+    const raw = byDate.get(date) ?? [];
+    return { date, fixtures: normalizeUpcomingFixtures(raw), played: normalizeFinishedFixtures(raw) };
+  });
+}
+
 /**
  * Doplní neměnné pozápasové statistiky během settlementu. Jeden API request vrací
  * obě strany a oba řádky se uloží společně; existující úplná cache znamená 0 volání.

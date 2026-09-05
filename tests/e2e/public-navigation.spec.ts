@@ -135,7 +135,7 @@ test("ligové žebříčky přepínají pohled bez dalších datových požadavk
     if (request.url().includes("/api/standings/style")) styleRequests++;
   });
   await page.goto("/tabulky", { waitUntil: "networkidle" });
-  await expect(page.getByRole("heading", { name: "Herní profil ligy" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Ligový puls" })).toBeVisible();
   const loadedRequests = styleRequests;
   await page.getByRole("button", { name: "Doma", exact: true }).click();
   await page.getByRole("button", { name: /Obranná odolnost/ }).click();

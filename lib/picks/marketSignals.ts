@@ -7,6 +7,8 @@ import { teamTotalProb } from "./teamTotals";
 
 export const MARKET_SIGNAL_POLICY_VERSION = 1;
 export const COUNT_MARKET_SIGNAL_POLICY_VERSION = 2;
+/** První politika týmových gólů s neměnně uloženou skutečnou cenou. */
+export const TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION = 2;
 export type SignalMarket = "1X2" | "OVER_25" | "BTTS" | "CORNERS" | "CARDS" | "TEAM_HOME_05" | "TEAM_HOME_15" | "TEAM_AWAY_05" | "TEAM_AWAY_15";
 export type SignalSide = "HOME" | "DRAW" | "AWAY" | "OVER" | "UNDER";
 
@@ -20,6 +22,7 @@ export interface FrozenMarketSignal {
 }
 
 export function marketSignalPolicyVersion(market: SignalMarket): number {
+  if (market.startsWith("TEAM_")) return TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION;
   return market === "CORNERS" || market === "CARDS"
     ? COUNT_MARKET_SIGNAL_POLICY_VERSION
     : MARKET_SIGNAL_POLICY_VERSION;
@@ -146,4 +149,16 @@ export function marketProbabilityAt(
   const fair = sharpLineFair(books, lineMarket, line);
   if (!fair) return null;
   return side === "OVER" ? fair.over : fair.under;
+}
+
+/** Closing týmového trhu ze stejné knihy, strany a linie jako zmrazená cena. */
+export function teamMarketProbabilityAtBookmaker(
+  books: BookOdds[], market: SignalMarket, side: SignalSide, line: number | null, bookmaker: string | null
+): number | null {
+  if (!market.startsWith("TEAM_") || line == null || !bookmaker) return marketProbabilityAt(books, market, side, line);
+  const book = books.find((item) => item.name === bookmaker);
+  const quote = (market.startsWith("TEAM_HOME") ? book?.totalHome : book?.totalAway)?.find((item) => item.line === line);
+  if (quote?.over == null || quote.under == null) return null;
+  const sum = 1 / quote.over + 1 / quote.under;
+  return side === "OVER" ? (1 / quote.over) / sum : (1 / quote.under) / sum;
 }

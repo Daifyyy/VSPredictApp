@@ -3,6 +3,7 @@ import { requireCronAuth } from "@/lib/cronAuth";
 import { auditPipeline, withCronRun } from "@/lib/operations";
 import { logError } from "@/lib/logError";
 import { monitorModelLab } from "@/lib/data/modelLabMonitoring";
+import { reconcileQuickOverviewSettlements } from "@/lib/data/quickOverviewStore";
 
 export const maxDuration = 60;
 
@@ -12,10 +13,12 @@ export async function GET(req: Request) {
   try {
     const result = await withCronRun("audit-pipeline", async () => {
       const health = await auditPipeline();
+      const repairedQuickSettlements = await reconcileQuickOverviewSettlements();
       const modelLab = await monitorModelLab();
       return {
         ...health,
         modelLab,
+        repairedQuickSettlements,
         candidates: health.coverage.reduce((sum, row) => sum + row.eligible, 0),
         processed: health.coverage.reduce((sum, row) => sum + row.covered, 0),
         // NalezenĂ˝ incident nenĂ­ chyba samotnĂ©ho auditu. Jinak audit vytvĂˇĹ™Ă­

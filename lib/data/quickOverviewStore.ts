@@ -81,6 +81,35 @@ export async function settleQuickOverviewSelections(fixtureId: number, homeGoals
   return settled;
 }
 
+/**
+ * Opraví pouze odvozený settlement, nikdy původní výběr, stranu, linii ani cenu.
+ * Chrání proti starší chybě, kdy se popisek Over/Under mohl rozejít s uloženým hit.
+ */
+export async function reconcileQuickOverviewSettlements(now = new Date()): Promise<number> {
+  const rows = await prisma.quickOverviewSelection.findMany({
+    where: { policyVersion: QUICK_OVERVIEW_POLICY_VERSION, sourceMarket: { in: ["CORNERS", "CARDS"] }, settledAt: { not: null }, kickoff: { gte: new Date(now.getTime() - 35 * 24 * 60 * 60_000) } },
+  });
+  if (!rows.length) return 0;
+  const stats = await prisma.matchStatCache.findMany({
+    where: { fixtureId: { in: [...new Set(rows.map((row) => row.fixtureId))] } },
+    select: { fixtureId: true, teamId: true, corners: true, yellowCards: true, redCards: true },
+  });
+  const byFixture = new Map<number, typeof stats>();
+  for (const stat of stats) byFixture.set(stat.fixtureId, [...(byFixture.get(stat.fixtureId) ?? []), stat]);
+  let repaired = 0;
+  for (const row of rows) {
+    const unique = [...new Map((byFixture.get(row.fixtureId) ?? []).map((stat) => [stat.teamId, stat])).values()];
+    const values = unique.map((stat) => row.sourceMarket === "CORNERS" ? stat.corners : stat.yellowCards == null && stat.redCards == null ? null : (stat.yellowCards ?? 0) + (stat.redCards ?? 0));
+    if (values.length < 2 || values.some((value) => value == null)) continue;
+    const actualCount = values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
+    const hit = quickOverviewOutcome({ market: row.sourceMarket, side: row.side, line: row.line, homeGoals: row.homeGoals, awayGoals: row.awayGoals, actualCount });
+    if (hit == null || (row.hit === hit && row.actualCount === actualCount)) continue;
+    await prisma.quickOverviewSelection.update({ where: { id: row.id }, data: { actualCount, hit, profit: portfolioProfit(hit, row.decimalOdds, 1), settlementStatus: "SETTLED" } });
+    repaired++;
+  }
+  return repaired;
+}
+
 function toPredictionRow(row: FixturePrediction): PredictionRow { return { ...row, kickoff: row.kickoff.toISOString(), modelContext: row.modelContext as PredictionRow["modelContext"], published1x2Side: row.published1x2Side as PredictionRow["published1x2Side"], publishedAt: row.publishedAt?.toISOString() ?? null, h2hSnapshot: row.h2hSnapshot as PredictionRow["h2hSnapshot"], h2hCapturedAt: row.h2hCapturedAt?.toISOString() ?? null, oddsFetchedAt: row.oddsFetchedAt?.toISOString() ?? null, oddsCloseAt: row.oddsCloseAt?.toISOString() ?? null, settledAt: row.settledAt?.toISOString() ?? null } as PredictionRow; }
 function isPoint(value: unknown): value is { t: number; p: number } { return typeof value === "object" && value != null && typeof (value as { p?: unknown }).p === "number"; }
 

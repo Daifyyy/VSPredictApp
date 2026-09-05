@@ -33,6 +33,7 @@ import type { SessionUser } from "./sessionUser";
 import { PredictionOffers } from "./PredictionOffers";
 import { ModelPortfolio } from "./ModelPortfolio";
 import { ModelLab } from "./ModelLab";
+import { useCurrentUser } from "./useCurrentUser";
 
 type Venue = "home" | "away" | "any";
 
@@ -158,7 +159,8 @@ async function loadStats(
   }
 }
 
-export function PicksApp({ user }: { user: SessionUser | null }) {
+export function PicksApp({ user: initialUser }: { user: SessionUser | null }) {
+  const user = useCurrentUser() ?? initialUser;
   const [restored, setRestored] = useState(false);
   const [view, setView] = useState<View>("picks");
   const [market, setMarket] = useState<PickMarket>("win");

@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import type { SearchableTeam } from "@/lib/teamSearch";
 import { TeamLogo } from "./TeamLogo";
 
@@ -117,7 +118,10 @@ function SearchBox({ className = "", autoFocus = false, onNavigate }: { classNam
       ref={rootRef}
       className={`relative ${className}`}
       onBlur={(event) => {
-        if (!rootRef.current?.contains(event.relatedTarget as Node | null)) setOpen(false);
+        if (rootRef.current?.contains(event.relatedTarget as Node | null)) return;
+        // Safari i automatizované prohlížeče mohou při kliknutí na výsledek vrátit
+        // relatedTarget=null. Zavření o jeden task později ponechá odkazu čas navigovat.
+        setTimeout(() => { if (!rootRef.current?.contains(document.activeElement)) setOpen(false); }, 0);
       }}
     >
       <SearchIcon className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-muted" />
@@ -139,14 +143,18 @@ function SearchBox({ className = "", autoFocus = false, onNavigate }: { classNam
       {open ? (
         <div id={listId} role="listbox" className="absolute inset-x-0 top-[calc(100%+.45rem)] z-[90] overflow-hidden rounded-xl border border-border bg-surface p-1 shadow-xl">
           {loading ? <SearchMessage>Hledám týmy…</SearchMessage> : error ? <SearchMessage>Vyhledávání teď není dostupné.</SearchMessage> : results.length === 0 ? <SearchMessage>Žádný tým jsme nenašli.</SearchMessage> : results.map((team, index) => (
-            <button
+            <Link
               key={`${team.id}-${team.leagueId}`}
               id={`${listId}-${index}`}
-              type="button"
+              href={`/tym/${team.id}?league=${team.leagueId}`}
               role="option"
               aria-selected={activeIndex === index}
               onMouseEnter={() => setActiveIndex(index)}
-              onClick={() => navigate(team)}
+              onPointerDown={() => {
+                // Navigace musí proběhnout ještě před případným blur/unmountem
+                // seznamu. Plné načtení je zde záměrný bezpečný fallback.
+                window.location.assign(`/tym/${team.id}?league=${team.leagueId}`);
+              }}
               className={`flex min-h-14 w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition ${activeIndex === index ? "bg-accent/25" : "hover:bg-background"}`}
             >
               <TeamLogo src={team.logoUrl} alt={team.name} size={34} />
@@ -154,7 +162,7 @@ function SearchBox({ className = "", autoFocus = false, onNavigate }: { classNam
                 <span className="block truncate text-sm font-bold text-foreground">{team.name}</span>
                 <span className="block truncate text-xs text-muted">{team.leagueName}{team.country ? ` · ${team.country}` : ""}</span>
               </span>
-            </button>
+            </Link>
           ))}
         </div>
       ) : null}

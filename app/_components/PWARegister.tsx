@@ -14,7 +14,7 @@ export function PWARegister() {
     let reg: ServiceWorkerRegistration | undefined;
     const onLoad = () => {
       navigator.serviceWorker
-        .register("/sw.js", { updateViaCache: "none" })
+        .register(`/sw.js?build=${encodeURIComponent(process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ?? "development")}`, { updateViaCache: "none" })
         .then((r) => {
           reg = r;
           // Nově nalezený worker → sleduj, až bude nainstalovaný. Pokud už nějaký

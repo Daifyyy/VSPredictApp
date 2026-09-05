@@ -1218,6 +1218,12 @@ export interface CompareResult {
   };
   /** Vzájemné zápasy z trvalé cache; popisný kontext, nikoli vstup predikce. */
   headToHead?: import("@/lib/h2h").HeadToHeadSummary;
+  /** Dávkově načtený základní tabulkový kontext obou týmů. */
+  standings?: {
+    home: Standing | null;
+    away: Standing | null;
+    leagueAvg: LeagueGoalsAvg | null;
+  };
   metrics: Metric[];
   home: TeamComparison;
   away: TeamComparison;

@@ -19,7 +19,7 @@ async function main() {
     // Staré oddsBooks už neuchovávají název původního trhu. Count trhy proto nelze
     // bezpečně odlišit od týmových/poločasových totalů a do čisté politiky v2 je
     // zpětně nezakládáme.
-    await openMarketSignals(row.fixtureId, openBooks, row.oddsFetchedAt ?? new Date(), { includeCounts: false });
+    await openMarketSignals(row.fixtureId, openBooks, row.oddsFetchedAt ?? new Date(), { includeCounts: false, includeTeamGoals: false });
     opened++;
     const legacy = parseSeries(row.oddsSeries);
     const signals = await prisma.marketSignalSnapshot.findMany({ where: { fixtureId: row.fixtureId } });

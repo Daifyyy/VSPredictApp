@@ -88,8 +88,8 @@ function useTeams(leagueId: number | null): { teams: TeamLite[]; error: boolean 
   const [error, setError] = useState(false);
   useEffect(() => {
     if (leagueId == null) return;
-    let active = true;
-    fetch(`/api/teams?league=${leagueId}`)
+    let active = true; const controller = new AbortController();
+    fetch(`/api/teams?league=${leagueId}`, { signal: controller.signal })
       .then((r) => {
         if (!r.ok) throw new Error("teams");
         return r.json();
@@ -107,7 +107,7 @@ function useTeams(leagueId: number | null): { teams: TeamLite[]; error: boolean 
         }
       });
     return () => {
-      active = false;
+      active = false; controller.abort();
     };
   }, [leagueId]);
   return { teams, error };
@@ -125,8 +125,8 @@ function useInjuries(
   });
   useEffect(() => {
     if (!enabled || teamId == null || leagueId == null) return;
-    let active = true;
-    fetch(`/api/injuries?team=${teamId}&league=${leagueId}`)
+    let active = true; const controller = new AbortController();
+    fetch(`/api/injuries?team=${teamId}&league=${leagueId}`, { signal: controller.signal })
       .then((r) => {
         if (!r.ok) throw new Error(String(r.status));
         return r.json();
@@ -136,9 +136,9 @@ function useInjuries(
       })
       // **Prázdno tady není totéž co chyba.** Chybějící sekce zraněných se čte jako
       // „kádr je kompletní" – což je tvrzení o zápase, ne o načítání. Proto se to rozliší.
-      .catch(() => active && setState({ injuries: [], failed: true }));
+      .catch((error: Error) => active && error.name !== "AbortError" && setState({ injuries: [], failed: true }));
     return () => {
-      active = false;
+      active = false; controller.abort();
     };
   }, [teamId, leagueId, enabled]);
   return state;
@@ -154,8 +154,8 @@ function useStanding(
   const [leagueAvg, setLeagueAvg] = useState<LeagueGoalsAvg | null>(null);
   useEffect(() => {
     if (!enabled || teamId == null || leagueId == null) return;
-    let active = true;
-    fetch(`/api/standings?team=${teamId}&league=${leagueId}`)
+    let active = true; const controller = new AbortController();
+    fetch(`/api/standings?team=${teamId}&league=${leagueId}`, { signal: controller.signal })
       .then((r) => r.json())
       .then((d) => {
         if (active) {
@@ -170,7 +170,7 @@ function useStanding(
         }
       });
     return () => {
-      active = false;
+      active = false; controller.abort();
     };
   }, [teamId, leagueId, enabled]);
   return { standing, leagueAvg };
@@ -186,15 +186,15 @@ function useLeagueTable(
     // ResultPanel je keyed na dvojici týmů → při změně ligy/týmů remountuje se svěží
     // state, takže při vypnutí stačí nefetchovat (žádný synchronní setState v efektu).
     if (!enabled || leagueId == null) return;
-    let active = true;
-    fetch(`/api/standings/table?league=${leagueId}`)
+    let active = true; const controller = new AbortController();
+    fetch(`/api/standings/table?league=${leagueId}`, { signal: controller.signal })
       .then((r) => r.json())
       .then((d) => {
         if (active) setTable(d.table ?? null);
       })
       .catch(() => active && setTable(null));
     return () => {
-      active = false;
+      active = false; controller.abort();
     };
   }, [leagueId, enabled]);
   return table;
@@ -209,15 +209,15 @@ function useScorers(
   const [scorers, setScorers] = useState<Scorer[]>([]);
   useEffect(() => {
     if (!enabled || teamId == null || leagueId == null) return;
-    let active = true;
-    fetch(`/api/scorers?team=${teamId}&league=${leagueId}`)
+    let active = true; const controller = new AbortController();
+    fetch(`/api/scorers?team=${teamId}&league=${leagueId}`, { signal: controller.signal })
       .then((r) => r.json())
       .then((d) => {
         if (active) setScorers(d.scorers ?? []);
       })
       .catch(() => active && setScorers([]));
     return () => {
-      active = false;
+      active = false; controller.abort();
     };
   }, [teamId, leagueId, enabled]);
   return scorers;
@@ -232,6 +232,7 @@ async function runCompare(
   awayLeague: number,
   unlock: boolean,
   europeanCup: boolean,
+  signal: AbortSignal | undefined,
   isActive: () => boolean,
   { setLoading, setError, setResult }: CompareSetters
 ): Promise<CompareResult | null> {
@@ -243,7 +244,7 @@ async function runCompare(
         europeanCup ? "&context=EURO_CUP" : ""
       }${
         unlock ? "&unlock=1" : ""
-      }`
+      }`, { signal }
     );
     const d = await r.json();
     if (!r.ok) throw new Error(d.error ?? "Chyba porovnání");
@@ -251,6 +252,7 @@ async function runCompare(
     setResult(d as CompareResult);
     return d as CompareResult;
   } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") return null;
     if (isActive()) setError(e instanceof Error ? e.message : "Chyba porovnání");
     return null;
   } finally {
@@ -314,8 +316,12 @@ export function CompareApp({
   );
 
   // Ligová tabulka (FREE kontext) – líně, až je výsledek na obrazovce.
-  const { standing: homeStanding, leagueAvg: homeLeagueAvg } = useStanding(homeId, homeLeagueId, result != null && !europeanCup);
-  const { standing: awayStanding } = useStanding(awayId, awayLeagueId, result != null && !europeanCup);
+  const needsStandingFallback = result != null && result.standings == null;
+  const homeStandingFallback = useStanding(homeId, homeLeagueId, needsStandingFallback && !europeanCup);
+  const awayStandingFallback = useStanding(awayId, awayLeagueId, needsStandingFallback && !europeanCup);
+  const homeStanding = result?.standings?.home ?? homeStandingFallback.standing;
+  const awayStanding = result?.standings?.away ?? awayStandingFallback.standing;
+  const homeLeagueAvg = result?.standings?.leagueAvg ?? homeStandingFallback.leagueAvg;
 
   // Nejlepší střelci ligy (FREE kontext) – líně, jako tabulka.
   const homeScorers = useScorers(homeId, homeLeagueId, result != null && !europeanCup);
@@ -388,7 +394,7 @@ export function CompareApp({
       return;
     }
     setSavedView(null);
-    let active = true;
+    let active = true; const controller = new AbortController();
     void runCompare(
       homeId,
       awayId,
@@ -396,11 +402,12 @@ export function CompareApp({
       awayLeagueId,
       false,
       europeanCup,
+      controller.signal,
       () => active,
       { setLoading, setError, setResult }
     );
     return () => {
-      active = false;
+      active = false; controller.abort();
     };
   }, [canCompare, homeId, awayId, homeLeagueId, awayLeagueId, europeanCup]);
 
@@ -428,6 +435,7 @@ export function CompareApp({
       awayLeagueId,
       false,
       europeanCup,
+      undefined,
       () => true,
       { setLoading, setError, setResult }
     );
@@ -450,6 +458,7 @@ export function CompareApp({
       awayLeagueId,
       true,
       europeanCup,
+      undefined,
       () => true,
       { setLoading, setError, setResult }
     );

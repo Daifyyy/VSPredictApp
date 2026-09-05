@@ -138,6 +138,14 @@ export async function getFixturesByDates(dates: string[]): Promise<FixtureDay[]>
   return days;
 }
 
+/** Cache-only varianta pro statický veřejný shell; nikdy nevolá API-Football. */
+export async function getCachedFixturesByDates(dates: string[]): Promise<FixtureDay[]> {
+  if (useReal) return real.getCachedFixturesByDates(dates);
+  const days = mockFixturesByDates(dates);
+  await enrichFixtureRanks(days);
+  return days;
+}
+
 /**
  * Živé skóre našich lig (real = sdílené API+cache; mock = pevná sada `MOCK_LIVE`).
  * Mock schválně **není prázdný**: bez něj se živý režim v `npm run dev` nedá zobrazit

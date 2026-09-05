@@ -7,6 +7,7 @@ import { AppHeader } from "./AppHeader";
 import { Empty } from "./Empty";
 import { ProLock } from "./ProLock";
 import type { SessionUser } from "./sessionUser";
+import { useCurrentUser } from "./useCurrentUser";
 
 /**
  * Režim záložky. "category" = aktuální (počty příchodů/odchodů po typech z API-Footballu;
@@ -128,7 +129,8 @@ function useTransfersData(leagues: LeagueLite[]) {
 }
 
 export function TransfersApp(props: { user: SessionUser | null; leagues: LeagueLite[] }) {
-  return MODE === "money" ? <MoneyView {...props} /> : <CategoryView {...props} />;
+  const user = useCurrentUser() ?? props.user;
+  return MODE === "money" ? <MoneyView leagues={props.leagues} user={user} /> : <CategoryView leagues={props.leagues} user={user} />;
 }
 
 // ─────── Money view (MRTVÝ KÓD – předchozí řešení, viz `MODE` výše) ───────

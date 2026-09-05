@@ -26,7 +26,7 @@ for (const width of widths) {
   test(`ligové žebříčky při šířce ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/tabulky", { waitUntil: "networkidle" });
-    await expect(page.getByRole("heading", { name: "Herní profil ligy" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Ligový puls" })).toBeVisible();
     await testInfo.attach(`standings-${width}.png`, {
       body: await page.screenshot({ fullPage: true }),
       contentType: "image/png",

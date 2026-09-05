@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/authUser";
 import { allowRequest, tooMany } from "@/lib/rateLimit";
+import { rejectCrossSiteMutation } from "@/lib/requestSecurity";
 
 // Oblíbená porovnání – PRO funkce. Drží IDs (re-run) i JSON snapshot (okamžité zobrazení).
 
@@ -36,6 +37,7 @@ export async function GET() {
 
 /** POST – uloží/aktualizuje oblíbené (upsert dle dvojice týmů+lig). */
 export async function POST(req: Request) {
+  const originError = rejectCrossSiteMutation(req); if (originError) return originError;
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Nepřihlášeno" }, { status: 401 });
   if (user.tier !== "PRO")

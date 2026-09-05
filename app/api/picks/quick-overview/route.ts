@@ -17,6 +17,7 @@ import { fixtureEditorialTitle } from "@/lib/homeFeaturedFixture";
 import { isEuroCupLeague } from "@/lib/data/catalog";
 import { QUICK_OVERVIEW_POLICY_VERSION } from "@/lib/data/quickOverviewStore";
 import { freshClosing, portfolioProfit } from "@/lib/picks/evaluation";
+import { requestDiagnostics } from "@/lib/httpDiagnostics";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 type RankedQuickItem = { candidate: QuickCandidate; result: QuickScore; frozenSide: string | null; frozenLine: number | null; snapshot: QuickOverviewSelection | null };
 
 export async function GET(req: Request) {
+  const diagnostic = requestDiagnostics(req);
   if (!allowRequest(`quick-overview:${clientKey(req)}`, 60, 60_000)) return tooMany();
   const date = new URL(req.url).searchParams.get("date") ?? "";
   if (!DATE_RE.test(date)) return NextResponse.json({ error: "Neplatné datum" }, { status: 400 });
@@ -39,7 +41,7 @@ export async function GET(req: Request) {
     const predictions = frozenIds.length
       ? frozenPredictions.filter((row) => frozenIds.includes(row.fixtureId)).map(toPredictionRow)
       : (await getUpcomingPredictions()).filter((row) => row.available && isPublicCompetition(row.leagueId) && localDateKey(row.kickoff) === date);
-    if (!predictions.length) return response({ date, generatedAt: new Date().toISOString(), categories: emptyCategories() });
+    if (!predictions.length) return response({ date, generatedAt: new Date().toISOString(), categories: emptyCategories() }, diagnostic);
 
     const [signalRows, fixtureCache, actualRows] = isRealDataConfigured() ? await Promise.all([
       prisma.marketSignalSnapshot.findMany({ where: { fixtureId: { in: predictions.map((row) => row.fixtureId) } }, orderBy: [{ openedAt: "desc" }] }),
@@ -121,7 +123,7 @@ export async function GET(req: Request) {
       };
     })]));
     const summaries = Object.fromEntries(QUICK_FOCUS_IDS.map((focus) => [focus, dailySummary(categories[focus], focus === "team_goals")]));
-    return response({ date, generatedAt: new Date().toISOString(), categories, summaries });
+    return response({ date, generatedAt: new Date().toISOString(), categories, summaries }, diagnostic);
   } catch (error) {
     logError("api/picks/quick-overview", error, { date });
     return NextResponse.json({ error: "Rychlý přehled se nepodařilo načíst" }, { status: 502 });
@@ -142,8 +144,8 @@ function selectionHit(focus: string, row: PredictionRow, signals: QuickMarketSig
   return null;
 }
 
-function response(body: unknown) {
-  return NextResponse.json(body, { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" } });
+function response(body: unknown, diagnostic: ReturnType<typeof requestDiagnostics>) {
+  return diagnostic.json(body, { headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" } });
 }
 
 function emptyCategories() {

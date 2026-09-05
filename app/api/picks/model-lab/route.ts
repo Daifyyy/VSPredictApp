@@ -8,8 +8,8 @@ import { logError } from "@/lib/logError";
 import { publicCache } from "@/lib/cacheHeaders";
 import { MODEL_VERSION } from "@/lib/data/modelVersion";
 import { STRATEGY_CATALOG, modelLabSegments, modelLabSummary, type ModelLabContext, type ModelLabLedgerRow, type ModelLabStatus } from "@/lib/picks/modelLab";
-import { bestLinePrice, parseBooks } from "@/lib/picks/books";
 import { binaryOutcome, FINAL_STATUSES } from "@/lib/picks/evaluation";
+import { requestDiagnostics } from "@/lib/httpDiagnostics";
 
 const querySchema = z.object({
   context: z.enum(["LEAGUE", "EURO_CUP", "NATIONAL"]).default("LEAGUE"),
@@ -19,15 +19,51 @@ const querySchema = z.object({
 
 export const dynamic = "force-dynamic";
 
+const json = (value: unknown) => JSON.parse(JSON.stringify(value));
+
+async function cachedSummary(context: ModelLabContext) {
+  const snapshots = await prisma.modelStrategyMetricSnapshot.findMany({
+    where: { modelContext: context, modelVersion: MODEL_VERSION },
+    orderBy: { createdAt: "desc" },
+    take: STRATEGY_CATALOG.length * 2,
+  });
+  const byKey = new Map<string, (typeof snapshots)[number]>();
+  for (const row of snapshots) {
+    const key = `${row.strategy}:${row.policyVersion}`;
+    if (!byKey.has(key)) byKey.set(key, row);
+  }
+  if (!STRATEGY_CATALOG.every((item) => byKey.has(`${item.strategy}:${item.policyVersion}`))) return null;
+  const now = new Date();
+  const current = await prisma.autonomousTipSnapshot.groupBy({
+    by: ["strategy", "policyVersion"],
+    where: { modelContext: context, status: "candidate", settlementStatus: "PENDING", kickoff: { gte: new Date(now.getTime() - 4 * 60 * 60_000) } },
+    _count: { _all: true },
+  });
+  const currentByKey = new Map(current.map((row) => [`${row.strategy}:${row.policyVersion}`, row._count._all]));
+  return STRATEGY_CATALOG.map((item) => {
+    const stored = byKey.get(`${item.strategy}:${item.policyVersion}`)!;
+    const card = stored.metrics as Record<string, unknown>;
+    return { ...card, currentCount: ["ONE_X_TWO", "OVER_25", "BTTS_YES", "CORNERS"].includes(item.strategy) ? currentByKey.get(`${item.strategy}:${item.policyVersion}`) ?? 0 : null };
+  });
+}
+
 export async function GET(request: Request) {
+  const diagnostic = requestDiagnostics(request);
   if (!allowRequest(`model-lab:${clientKey(request)}`, 40, 60_000)) return tooMany();
   const parsed = querySchema.safeParse(Object.fromEntries(new URL(request.url).searchParams));
   if (!parsed.success) return NextResponse.json({ error: "Neplatný filtr" }, { status: 400 });
-  const user = await getCurrentUser();
-  const pro = getEntitlement(user).pro;
-  if (parsed.data.detail && !pro) return NextResponse.json({ locked: true }, { status: 403 });
+  let pro = false;
+  if (parsed.data.detail) {
+    const user = await getCurrentUser();
+    pro = getEntitlement(user).pro;
+    if (!pro) return NextResponse.json({ locked: true }, { status: 403 });
+  }
   try {
     const context = parsed.data.context as ModelLabContext;
+    if (!parsed.data.detail && !parsed.data.strategy) {
+      const cards = await cachedSummary(context);
+      if (cards) return diagnostic.json({ context, cards, snapshot: true }, { headers: publicCache(300, 900) });
+    }
     const teamMarkets = ["TEAM_HOME_05", "TEAM_HOME_15", "TEAM_AWAY_05", "TEAM_AWAY_15"];
     const [tips, teamSignals, overrides, foulPredictions] = await Promise.all([
       prisma.autonomousTipSnapshot.findMany({
@@ -41,7 +77,7 @@ export async function GET(request: Request) {
     const fixtureIds = [...new Set([...tips.map((row) => row.fixtureId), ...teamSignals.map((row) => row.fixtureId)])];
     const results = fixtureIds.length ? await prisma.fixturePrediction.findMany({
       where: { fixtureId: { in: fixtureIds } },
-      select: { fixtureId: true, homeGoals: true, awayGoals: true, status: true, oddsBooks: true },
+      select: { fixtureId: true, homeGoals: true, awayGoals: true, status: true },
     }) : [];
     const byFixture = new Map(results.map((row) => [row.fixtureId, row]));
     const cornerTips = tips.filter((row) => row.market === "CORNERS");
@@ -63,9 +99,9 @@ export async function GET(request: Request) {
     }));
     for (const signal of teamSignals) {
       const prediction = byFixture.get(signal.fixtureId);
-      const lineMarket = signal.market.startsWith("TEAM_HOME") ? "totalHome" : "totalAway";
-      const price = signal.line == null ? null : bestLinePrice(parseBooks(prediction?.oddsBooks), lineMarket, signal.line, "over");
-      ledger.push({ id: signal.id, fixtureId: signal.fixtureId, leagueId: signal.leagueId, kickoff: signal.kickoff, strategy: "TEAM_GOALS", policyVersion: signal.policyVersion, market: signal.market, side: signal.side, line: signal.line, modelProbability: signal.modelProbability, marketProbability: signal.openMarketProbability, decimalOdds: price?.odds ?? null, stake: 1, modelContext: signal.modelContext, modelVersion: signal.modelVersion, qualifiedAt: signal.openedAt, closingMarketProbability: signal.closeMarketProbability, closedAt: signal.closedAt, homeGoals: prediction?.homeGoals ?? null, awayGoals: prediction?.awayGoals ?? null });
+      // Cena musí pocházet výhradně ze zmrazeného signálu. V1 ji nemá a
+      // zůstává pouze sportovní diagnostikou bez retrospektivního ROI.
+      ledger.push({ id: signal.id, fixtureId: signal.fixtureId, leagueId: signal.leagueId, kickoff: signal.kickoff, strategy: "TEAM_GOALS", policyVersion: signal.policyVersion, market: signal.market, side: signal.side, line: signal.line, modelProbability: signal.modelProbability, marketProbability: signal.openMarketProbability, decimalOdds: signal.policyVersion >= 2 ? signal.decimalOdds : null, stake: 1, modelContext: signal.modelContext, modelVersion: signal.modelVersion, qualifiedAt: signal.openedAt, closingMarketProbability: signal.closeMarketProbability, closedAt: signal.closedAt, homeGoals: prediction?.homeGoals ?? null, awayGoals: prediction?.awayGoals ?? null });
     }
     let foulResearch: { n: number; mae: number | null; bias: number | null; version: number | null } | null = null;
     if (foulPredictions.length) {
@@ -95,7 +131,16 @@ export async function GET(request: Request) {
     });
     const detailRows = parsed.data.detail && pro ? ledger.slice(-100).reverse().map((row) => ({ ...row, kickoff: row.kickoff.toISOString(), qualifiedAt: row.qualifiedAt?.toISOString() ?? null, closedAt: row.closedAt?.toISOString() ?? null })) : undefined;
     const segments = parsed.data.detail && pro && parsed.data.strategy ? modelLabSegments(ledger.filter((row) => row.strategy === parsed.data.strategy)) : undefined;
-    return NextResponse.json({ context, cards, detailRows, segments }, { headers: parsed.data.detail ? { "Cache-Control": "private, no-store" } : publicCache(300, 900) });
+    if (!parsed.data.detail && !parsed.data.strategy) {
+      const now = new Date();
+      const datasetCutoff = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      await Promise.all(cards.map((card) => prisma.modelStrategyMetricSnapshot.upsert({
+        where: { strategy_policyVersion_modelContext_modelVersion_datasetCutoff: { strategy: card.strategy, policyVersion: card.policyVersion, modelContext: context, modelVersion: card.modelVersion, datasetCutoff } },
+        create: { strategy: card.strategy, policyVersion: card.policyVersion, modelContext: context, modelVersion: card.modelVersion, datasetCutoff, sampleSize: card.research?.n ?? card.summary.probability.model.n, currentCount: card.currentCount ?? 0, metrics: json(card) },
+        update: { sampleSize: card.research?.n ?? card.summary.probability.model.n, currentCount: card.currentCount ?? 0, metrics: json(card), createdAt: now },
+      })));
+    }
+    return diagnostic.json({ context, cards, detailRows, segments }, { headers: parsed.data.detail ? { "Cache-Control": "private, no-store" } : publicCache(300, 900) });
   } catch (error) {
     logError("api/picks/model-lab", error);
     return NextResponse.json({ error: "Model Lab se nepodařilo načíst" }, { status: 502 });

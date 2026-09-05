@@ -13,7 +13,7 @@ import { getSettledPredictionRows } from "@/lib/data/repository";
 import { getCachedCountTotals } from "@/lib/data/cache";
 import { unstable_cache } from "next/cache";
 import { isRealDataConfigured, prisma } from "@/lib/db";
-import { COUNT_MARKET_SIGNAL_POLICY_VERSION, MARKET_SIGNAL_POLICY_VERSION } from "@/lib/picks/marketSignals";
+import { COUNT_MARKET_SIGNAL_POLICY_VERSION, MARKET_SIGNAL_POLICY_VERSION, TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION } from "@/lib/picks/marketSignals";
 import { getRefereeProfile } from "@/lib/data/refereeStore";
 import { getHeadToHead } from "@/lib/data/h2h";
 import { teamTotalProb } from "@/lib/picks/teamTotals";
@@ -137,7 +137,8 @@ export async function GET(req: Request) {
     const closeGoals = sharpFairTotal(closeBooks);
     const signalRows = isRealDataConfigured()
       ? await prisma.marketSignalSnapshot.findMany({ where: { fixtureId, OR: [
-          { market: { in: ["1X2", "OVER_25", "BTTS", "TEAM_HOME_05", "TEAM_HOME_15", "TEAM_AWAY_05", "TEAM_AWAY_15"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
+          { market: { in: ["1X2", "OVER_25", "BTTS"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
+          { market: { in: ["TEAM_HOME_05", "TEAM_HOME_15", "TEAM_AWAY_05", "TEAM_AWAY_15"] }, policyVersion: TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION },
           { market: { in: ["CORNERS", "CARDS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
         ] }, orderBy: { market: "asc" } })
       : [];

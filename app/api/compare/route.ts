@@ -5,6 +5,7 @@ import {
   getLeagueBaseline,
   getLeagueRatings,
   getNationalRatings,
+  getStanding,
 } from "@/lib/data/repository";
 import { isNationalLeague } from "@/lib/data/catalog";
 import { compareTeams } from "@/lib/stats/compare";
@@ -15,8 +16,10 @@ import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
 import { logError } from "@/lib/logError";
 import { getTeamTacticalProfile } from "@/lib/data/tactics";
 import { getHeadToHead } from "@/lib/data/h2h";
+import { requestDiagnostics } from "@/lib/httpDiagnostics";
 
 export async function GET(req: Request) {
+  const diagnostic = requestDiagnostics(req);
   // Anti-spam: velkorysý strop na klienta (porovnání je drahé, stahuje data).
   if (!allowRequest(`compare:${clientKey(req)}`, 30, 60_000)) return tooMany();
 
@@ -58,7 +61,7 @@ export async function GET(req: Request) {
       logoUrl: sp.get(`${side}Logo`) ?? "",
       country: "",
     });
-    const [home, away, baseline, ratings, homeTactics, awayTactics, headToHead] = await Promise.all([
+    const [home, away, baseline, ratings, homeTactics, awayTactics, headToHead, homeStanding, awayStanding] = await Promise.all([
       europeanCup
         ? getCompareEuroCupTeamFromFixture(homeId, homeLeague, cupMeta("home"))
         : getCompareTeam(homeId, homeLeague, includeEuro),
@@ -76,6 +79,8 @@ export async function GET(req: Request) {
       getTeamTacticalProfile(homeId),
       getTeamTacticalProfile(awayId),
       getHeadToHead(homeId, awayId),
+      europeanCup || national ? Promise.resolve({ standing: null, leagueAvg: null }) : getStanding(homeId, homeLeague),
+      europeanCup || national ? Promise.resolve({ standing: null, leagueAvg: null }) : getStanding(awayId, awayLeague),
     ]);
     if (!home || !away) {
       return NextResponse.json({ error: "Tým nenalezen" }, { status: 404 });
@@ -98,6 +103,7 @@ export async function GET(req: Request) {
     });
     full.tactics = { home: homeTactics, away: awayTactics };
     full.headToHead = headToHead;
+    full.standings = { home: homeStanding.standing, away: awayStanding.standing, leagueAvg: homeStanding.leagueAvg };
 
     const u = await getCurrentUser();
     const ent = getEntitlement(
@@ -105,7 +111,7 @@ export async function GET(req: Request) {
       { unlockTrial }
     );
     if (!ent.pro) {
-      return NextResponse.json(toFreeResult(full));
+      return diagnostic.json(toFreeResult(full), { headers: { "Cache-Control": "private, no-store" } });
     }
     if (ent.consumeTrial && u) {
       // Spotřebuj 1× trial (best-effort; selhání nezablokuje zobrazení).
@@ -113,7 +119,7 @@ export async function GET(req: Request) {
         .update({ where: { id: u.id }, data: { proTrialUsed: true } })
         .catch(() => {});
     }
-    return NextResponse.json(full);
+    return diagnostic.json(full, { headers: { "Cache-Control": "private, no-store" } });
   } catch (e) {
     // Detail jen do logu; klientovi generická hláška (žádný leak interních dat).
     logError("api/compare", e, { homeId, awayId, homeLeague, awayLeague });

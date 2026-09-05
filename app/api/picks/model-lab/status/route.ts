@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { MODEL_VERSION } from "@/lib/data/modelVersion";
 import { MODEL_LAB_STATUSES, STRATEGY_CATALOG } from "@/lib/picks/modelLab";
 import { logError } from "@/lib/logError";
+import { rejectCrossSiteMutation } from "@/lib/requestSecurity";
 
 const bodySchema = z.object({
   strategy: z.string().min(1).max(40),
@@ -16,6 +17,7 @@ const bodySchema = z.object({
 });
 
 export async function PATCH(request: Request) {
+  const originError = rejectCrossSiteMutation(request); if (originError) return originError;
   const user = await getCurrentUser();
   if (!user?.email || !isAdminEmail(user.email)) return NextResponse.json({ error: "Zakázáno" }, { status: 403 });
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
@@ -34,6 +36,7 @@ export async function PATCH(request: Request) {
       await tx.modelStrategyStatusAudit.create({ data: { definitionId: row.id, fromStatus: existing?.status ?? catalog.status, toStatus: parsed.data.status, reason: parsed.data.reason, changedBy: user.email! } });
       return row;
     });
+    await prisma.modelStrategyMetricSnapshot.deleteMany({ where: { strategy: catalog.strategy, policyVersion: catalog.policyVersion, modelContext: parsed.data.modelContext, modelVersion: MODEL_VERSION } });
     return NextResponse.json({ id: definition.id, status: definition.status });
   } catch (error) {
     logError("api/picks/model-lab/status", error);
