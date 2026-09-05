@@ -13,6 +13,25 @@ export const QUICK_FOCUS_LABELS: Record<QuickFocus, string> = {
   cards: "Karty a rozhodčí",
 };
 
+/**
+ * Vybere pro každou veřejnou kategorii nejnovější uloženou politiku. Staré v1
+ * snapshoty ještě neměly `leagueId`, proto se jejich příslušnost ověřuje přes
+ * navázanou predikci a předává jako množina podporovaných fixture ID.
+ */
+export function newestFrozenQuickRows<T extends { category: string; policyVersion: number; fixtureId: number }>(
+  rows: T[],
+  supportedFixtureIds: ReadonlySet<number>
+): T[] {
+  const eligible = rows.filter((row) =>
+    supportedFixtureIds.has(row.fixtureId) && QUICK_FOCUS_IDS.includes(row.category as QuickFocus)
+  );
+  const newestPolicy = new Map(QUICK_FOCUS_IDS.map((category) => [
+    category,
+    Math.max(0, ...eligible.filter((row) => row.category === category).map((row) => row.policyVersion)),
+  ]));
+  return eligible.filter((row) => row.policyVersion === newestPolicy.get(row.category as QuickFocus));
+}
+
 export interface QuickMarketSignal {
   market: "1X2" | "OVER_25" | "BTTS" | "CORNERS" | "CARDS" | "TEAM_HOME_05" | "TEAM_HOME_15" | "TEAM_AWAY_05" | "TEAM_AWAY_15";
   side: "HOME" | "DRAW" | "AWAY" | "OVER" | "UNDER";

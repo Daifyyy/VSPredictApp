@@ -4,7 +4,7 @@ import { prisma, isRealDataConfigured } from "@/lib/db";
 import { getUpcomingPredictions } from "@/lib/data/repository";
 import { catalogLeagueName, FIXTURE_LIST_LEAGUE_IDS, isPublicCompetition } from "@/lib/data/catalog";
 import { localDateKey } from "@/lib/competitionGrouping";
-import { frozenQuickSelectionReason, h2hSnapshotCount, QUICK_FOCUS_IDS, quickFocusSelection, rankQuickCandidates, restDaysBetween, selectRecentSeasonRows, type QuickCandidate, type QuickFocus, type QuickMarketSignal, type QuickScore } from "@/lib/quickOverview";
+import { frozenQuickSelectionReason, h2hSnapshotCount, newestFrozenQuickRows, QUICK_FOCUS_IDS, quickFocusSelection, rankQuickCandidates, restDaysBetween, selectRecentSeasonRows, type QuickCandidate, type QuickFocus, type QuickMarketSignal, type QuickScore } from "@/lib/quickOverview";
 import type { PredictionRow } from "@/lib/types";
 import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
 import { logError } from "@/lib/logError";
@@ -28,12 +28,16 @@ export async function GET(req: Request) {
   const date = new URL(req.url).searchParams.get("date") ?? "";
   if (!DATE_RE.test(date)) return NextResponse.json({ error: "Neplatné datum" }, { status: 400 });
   try {
-    const allFrozen = isRealDataConfigured() ? await prisma.quickOverviewSelection.findMany({ where: { dateKey: date, policyVersion: { in: [1, QUICK_OVERVIEW_POLICY_VERSION] }, leagueId: { in: [...FIXTURE_LIST_LEAGUE_IDS] } }, orderBy: [{ category: "asc" }, { policyVersion: "desc" }, { rank: "asc" }] }) : [];
-    const newestPolicy = new Map(QUICK_FOCUS_IDS.map((category) => [category, Math.max(0, ...allFrozen.filter((row) => row.category === category).map((row) => row.policyVersion))]));
-    const frozen = allFrozen.filter((row) => row.policyVersion === newestPolicy.get(row.category as typeof QUICK_FOCUS_IDS[number]));
+    // V1 vznikla před sloupcem `leagueId`. Null tedy není neznámá liga: podporu
+    // bezpečně ověříme přes neměnnou predikci stejného fixture.
+    const frozenCandidates = isRealDataConfigured() ? await prisma.quickOverviewSelection.findMany({ where: { dateKey: date, policyVersion: { in: [1, QUICK_OVERVIEW_POLICY_VERSION] }, OR: [{ leagueId: { in: [...FIXTURE_LIST_LEAGUE_IDS] } }, { leagueId: null }] }, orderBy: [{ category: "asc" }, { policyVersion: "desc" }, { rank: "asc" }] }) : [];
+    const candidateIds = [...new Set(frozenCandidates.map((row) => row.fixtureId))];
+    const frozenPredictions = candidateIds.length ? await prisma.fixturePrediction.findMany({ where: { fixtureId: { in: candidateIds } } }) : [];
+    const supportedFixtureIds = new Set(frozenPredictions.filter((row) => (FIXTURE_LIST_LEAGUE_IDS as readonly number[]).includes(row.leagueId)).map((row) => row.fixtureId));
+    const frozen = newestFrozenQuickRows(frozenCandidates, supportedFixtureIds);
     const frozenIds = [...new Set(frozen.map((row) => row.fixtureId))];
     const predictions = frozenIds.length
-      ? (await prisma.fixturePrediction.findMany({ where: { fixtureId: { in: frozenIds } } })).map(toPredictionRow)
+      ? frozenPredictions.filter((row) => frozenIds.includes(row.fixtureId)).map(toPredictionRow)
       : (await getUpcomingPredictions()).filter((row) => row.available && isPublicCompetition(row.leagueId) && localDateKey(row.kickoff) === date);
     if (!predictions.length) return response({ date, generatedAt: new Date().toISOString(), categories: emptyCategories() });
 

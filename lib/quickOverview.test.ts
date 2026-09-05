@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { frozenQuickSelectionReason, h2hSnapshotCount, quickFocusSelection, rankQuickCandidates, restDaysBetween, scoreQuickCandidate, selectRecentSeasonRows, type QuickCandidate } from "./quickOverview";
+import { frozenQuickSelectionReason, h2hSnapshotCount, newestFrozenQuickRows, quickFocusSelection, rankQuickCandidates, restDaysBetween, scoreQuickCandidate, selectRecentSeasonRows, type QuickCandidate } from "./quickOverview";
 import type { PredictionRow } from "./types";
 
 function candidate(overrides: Partial<PredictionRow> = {}): QuickCandidate {
@@ -87,5 +87,13 @@ describe("quick overview ranking", () => {
     expect(h2hSnapshotCount({ sample: 2 })).toBe(2);
     expect(h2hSnapshotCount({ meetings: [{}, {}] })).toBe(2);
     expect(h2hSnapshotCount(null)).toBe(0);
+  });
+  it("zachová historický v1 výběr bez leagueId, pokud jeho zápas patří do podporované ligy", () => {
+    const rows = [
+      { fixtureId: 1, category: "1x2", policyVersion: 1, leagueId: null },
+      { fixtureId: 2, category: "1x2", policyVersion: 2, leagueId: 999 },
+      { fixtureId: 1, category: "market", policyVersion: 1, leagueId: null },
+    ];
+    expect(newestFrozenQuickRows(rows, new Set([1]))).toEqual([rows[0]]);
   });
 });
