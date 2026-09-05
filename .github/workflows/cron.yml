@@ -48,6 +48,7 @@ on:
     - cron: "15 6 * * *" # settle-tips
     - cron: "0 22 * * *" # settle-results (večerní zápasy týž den)
     - cron: "15 22 * * *" # settle-tips
+    - cron: "35 6,22 * * *" # bezpečná kalibrace; počítá až po 5 nových výsledcích
     - cron: "45 23 * * *" # audit-pipeline
   # Ruční spuštění (Actions → Cron → Run workflow), např. po výpadku.
   workflow_dispatch:
@@ -67,6 +68,7 @@ on:
           - refresh-transfers
           - settle-results
           - settle-tips
+          - calibrate-models
           - send-notifications
           - audit-pipeline
 
@@ -110,6 +112,7 @@ jobs:
             "15 6 * * *")   path="settle-tips" ;;
             "0 22 * * *")   path="settle-results" ;;
             "15 22 * * *")  path="settle-tips" ;;
+            "35 6,22 * * *") path="calibrate-models" ;;
             "45 23 * * *")  path="audit-pipeline" ;;
             # Neznámý rozvrh = někdo přidal `- cron:` a zapomněl na větev tady.
             # Radši hlasitě spadnout než tiše zavolat špatný endpoint.
@@ -164,6 +167,21 @@ jobs:
               echo
             done
             if [ "$failed" -gt 0 ]; then echo "$failed predikčních běhů selhalo." >&2; exit 1; fi
+            exit 0
+          fi
+          if [ "$JOB" = "calibrate-models" ]; then
+            failed=0
+            # Kontexty mají oddělené checkpointy i vlastní 60s rozpočet. Endpoint je
+            # čistě databázový a při méně než pěti nových výsledcích skončí no-opem.
+            for context in LEAGUE EURO_CUP NATIONAL; do
+              target="$url?context=$context"
+              echo "→ $target"
+              curl --fail-with-body --silent --show-error --location \
+                   --max-time 90 --retry 1 --retry-delay 10 \
+                   --header "Authorization: Bearer $CRON_SECRET" "$target" || failed=$((failed + 1))
+              echo
+            done
+            if [ "$failed" -gt 0 ]; then echo "$failed kalibračních běhů selhalo." >&2; exit 1; fi
             exit 0
           fi
           if [ "$JOB" = "snapshot-odds" ]; then

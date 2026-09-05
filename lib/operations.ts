@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { PUBLIC_CLUB_LEAGUE_IDS, EURO_LEAGUE_IDS } from "@/lib/data/catalog";
 import { closingSampleQuality, parseSeries } from "@/lib/picks/oddsSeries";
 import { withApiUsage } from "@/lib/apiUsage";
+import { MODEL_VERSION } from "@/lib/data/modelVersion";
 
 export type CronHealthStatus = "HEALTHY" | "DEGRADED" | "FAILED";
 
@@ -183,7 +184,7 @@ const SUPPORTED_ODDS_LEAGUES = [...PUBLIC_CLUB_LEAGUE_IDS, ...EURO_LEAGUE_IDS];
 export async function auditPipeline(now = new Date()) {
   const horizon = new Date(now.getTime() + 72 * 60 * 60_000);
   const recent = new Date(now.getTime() - 7 * 24 * 60 * 60_000);
-  const [future, settledCounts, kicked, overdue, latestRuns] = await Promise.all([
+  const [future, settledCounts, kicked, overdue, latestRuns, calibration] = await Promise.all([
     prisma.fixturePrediction.findMany({
       where: { leagueId: { in: SUPPORTED_ODDS_LEAGUES }, kickoff: { gt: now, lte: horizon } },
       select: { fixtureId: true, oddsFetchedAt: true, oddsSeries: true },
@@ -208,6 +209,11 @@ export async function auditPipeline(now = new Date()) {
       },
     }),
     prisma.cronRun.findMany({ orderBy: { startedAt: "desc" }, take: 40 }),
+    prisma.calibrationCheckpoint.findMany({
+      where: { sourceModelVersion: MODEL_VERSION },
+      orderBy: { modelContext: "asc" },
+      select: { cohort: true, modelContext: true, evaluatedCount: true, pendingCount: true, datasetCutoff: true, lastRunAt: true },
+    }),
   ]);
   const actualRows = settledCounts.length ? await prisma.matchStatCache.findMany({
     where: { fixtureId: { in: settledCounts.map((row) => row.fixtureId) } },
@@ -278,5 +284,5 @@ export async function auditPipeline(now = new Date()) {
   const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const apiCallsToday = latestRuns.filter((run) => run.startedAt >= startOfDay).reduce((sum, run) => sum + run.apiCalls, 0);
   const openIncidents = await prisma.dataIncident.findMany({ where: { status: "OPEN" }, orderBy: { lastSeenAt: "desc" } });
-  return { asOf: now.toISOString(), coverage: rows, overdue, apiCallsToday, apiDailyLimit: 7500, latestRuns, incidents: openIncidents };
+  return { asOf: now.toISOString(), coverage: rows, overdue, apiCallsToday, apiDailyLimit: 7500, latestRuns, incidents: openIncidents, calibration };
 }

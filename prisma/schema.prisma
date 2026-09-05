@@ -629,6 +629,52 @@ model CalibrationDefinition {
   @@index([status, modelContext, sourceModelVersion], map: "CalibrationDefinition_active_idx")
 }
 
+/// Trvalý kurzor automatické kalibrace. Pět nových výsledků je pouze spouštěč;
+/// samotný fit vždy používá celou platnou historickou kohortu.
+model CalibrationCheckpoint {
+  id                 String    @id @default(cuid())
+  cohort             String    @default("GOALS")
+  modelContext       String
+  sourceModelVersion Int
+  evaluatedCount     Int       @default(0)
+  pendingCount       Int       @default(0)
+  datasetCutoff      DateTime?
+  datasetHash        String?
+  lastRunAt          DateTime?
+  leaseUntil         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  batches CalibrationEvaluationBatch[]
+
+  @@unique([cohort, modelContext, sourceModelVersion], map: "CalibrationCheckpoint_scope_key")
+  @@index([lastRunAt])
+}
+
+/// Neměnný audit jednoho automatického přepočtu. Datasetový hash zajišťuje
+/// idempotenci i při opakovaném GitHub/Vercel požadavku.
+model CalibrationEvaluationBatch {
+  id                 String    @id @default(cuid())
+  checkpointId       String
+  cohort             String
+  modelContext       String
+  sourceModelVersion Int
+  datasetCutoff      DateTime
+  datasetHash        String
+  sampleSize         Int
+  newResults         Int
+  status             String
+  summary            Json?
+  startedAt          DateTime
+  finishedAt         DateTime?
+  createdAt          DateTime  @default(now())
+
+  checkpoint CalibrationCheckpoint @relation(fields: [checkpointId], references: [id], onDelete: Cascade)
+
+  @@unique([cohort, modelContext, sourceModelVersion, datasetHash], map: "CalibrationEvaluationBatch_dataset_key")
+  @@index([status, startedAt])
+}
+
 /// Reprodukovatelný rolling-origin report. Parametry jednotlivých foldů i rozhodovací
 /// brány jsou JSON, aby další metriky nevyžadovaly přepis starých reportů.
 model CalibrationReviewReport {

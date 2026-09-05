@@ -19,6 +19,7 @@ npm run probe-events # sonda na /fixtures/events (průběh zápasu) – SPUSTIT 
 npm run calibrate    # MLE DC_RHO + Brier/log-loss z odehraných predikcí (jen MODEL_VERSION)
 npm run calibrate:safe # rolling-origin 1X2/Over/BTTS + společná gólová distribuce;
                        # -- --persist uloží neměnný SHADOW/REJECTED report, nikdy nepřepíše historii
+                       # běžný cron počítá až po 5 nových výsledcích v daném kontextu
 npm run audit:cards-research # model karet vs opening/closing + ablace vlivu rozhodčího
 npm run audit:fouls-research # časový holdout MAE/bias proti baseline naučenému jen z minulosti
 npm run backtest     # offline backtest na historii klubových lig (point-in-time, stejné jádro);

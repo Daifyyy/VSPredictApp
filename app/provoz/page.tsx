@@ -39,6 +39,17 @@ export default async function OperationsPage() {
       </section>
       <section className="ui-panel mt-4 p-4"><p className="text-xs font-semibold uppercase tracking-wide text-muted">API-Football dnes</p><p className="mt-2 text-2xl font-bold">{health.apiCallsToday} / {health.apiDailyLimit}</p><p className="text-sm text-muted">Měřeno přímo v klientovi API, včetně opakovaných pokusů.</p></section>
       <section className="ui-panel mt-4 p-4">
+        <h2 className="text-lg font-bold">Bezpečná kalibrace</h2>
+        <p className="mt-1 text-sm text-muted">Přepočet se spustí po pěti nových vyhodnocených zápasech. Produkční model nikdy nemění automaticky.</p>
+        {health.calibration.length ? <div className="mt-3 grid gap-3 md:grid-cols-3">{health.calibration.map((item) => (
+          <article key={`${item.cohort}-${item.modelContext}`} className="rounded-lg border border-border p-3 text-sm">
+            <strong>{item.modelContext}</strong>
+            <p className="mt-1">Čeká {item.pendingCount}/5 výsledků</p>
+            <p className="text-xs text-muted">Vyhodnoceno {item.evaluatedCount} · poslední běh {item.lastRunAt?.toLocaleString("cs-CZ") ?? "zatím neproběhl"}</p>
+          </article>
+        ))}</div> : <p className="mt-3 text-sm text-muted">Checkpointy vzniknou při prvním kalibračním běhu.</p>}
+      </section>
+      <section className="ui-panel mt-4 p-4">
         <h2 className="text-lg font-bold">Otevřené incidenty</h2>
         {health.incidents.length ? <ul className="mt-3 space-y-2">{health.incidents.map((item) => (
           <li key={item.id} className="rounded-lg border border-border p-3 text-sm"><strong>{item.severity}</strong> · {item.message}</li>

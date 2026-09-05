@@ -200,6 +200,10 @@ navíc, propíše se i do `/digest` (sdílí `PickRow`).
   **s = 1.00 (žádné zlepšení)**. Zostření by model zhoršilo. Příčina není komprese λ, ale **šum**:
   55 % váhy nese LAST5 (pět zápasů!) → λ přestřeluje na krátkodobé sérii a extrémní
   pravděpodobnosti neustojí. Léčba je **shrinkage/regularizace λ**, ne zostření (viz plán C1/C2).
+- **Automatický přepočet:** databázový cron po ranním a večerním settlementu sleduje
+  samostatný checkpoint pro ligy, Evropu a reprezentace. Pět nových výsledků je pouze
+  spouštěč; fit používá celou platnou historii. Úspěšný kandidát přejde nejvýše do
+  `SHADOW`, při již aktivním testu do `CHALLENGER`. Produkční model cron nikdy nemění.
 - **Kalibrace 1X2 (Platt scaling, `CALIB_A`/`CALIB_B` v `predict.ts`, `calibrateOutcome`) –
   PŘIPRAVENO, ZATÍM NEFITNUTO:** `LAMBDA_SHARPEN` škáluje jen rozdíl λ jedním číslem a na
   backtestu nepomohlo, protože chyba je **nesouměrná** (přesebevědomí na favoritech A
