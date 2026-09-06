@@ -561,7 +561,8 @@ const SNAPSHOT_BUDGET_MS = 35_000;
  */
 export async function runSnapshotOdds(
   limit = SNAPSHOT_LIMIT,
-  budgetMs = SNAPSHOT_BUDGET_MS
+  budgetMs = SNAPSHOT_BUDGET_MS,
+  skipFixtureIds: readonly number[] = []
 ): Promise<{
   due: number;
   open: number;
@@ -584,6 +585,8 @@ export async function runSnapshotOdds(
   checklistNotifications: number;
   autonomousCandidates: number;
   remaining: number;
+  /** ID skutečně navštívená v této dávce; workflow je v témže běhu znovu neposílá. */
+  processedFixtureIds: number[];
 }> {
   const now = new Date();
   const candidates = await fixturesNeedingOdds({
@@ -597,7 +600,7 @@ export async function runSnapshotOdds(
 
   const planned = candidates
     .map((item) => ({ item, plan: snapshotPlan(item, now, ODDS_CLOSING_HOURS) }))
-    .filter((entry) => entry.plan.fetch)
+    .filter((entry) => entry.plan.fetch && !skipFixtureIds.includes(entry.item.fixtureId))
     .sort((a, b) => {
       const minsA = (a.item.kickoff.getTime() - now.getTime()) / 60_000;
       const minsB = (b.item.kickoff.getTime() - now.getTime()) / 60_000;
@@ -616,6 +619,7 @@ export async function runSnapshotOdds(
   const checklistCandidates = 0;
   const checklistNotifications = 0;
   let autonomousCandidates = 0;
+  const processedFixtureIds: number[] = [];
   const coverage = emptyCoverage();
 
   const deadline = Date.now() + Math.max(5_000, Math.min(budgetMs, SNAPSHOT_BUDGET_MS));
@@ -625,6 +629,7 @@ export async function runSnapshotOdds(
       break;
     }
     const { item, plan } = queue[index];
+    processedFixtureIds.push(item.fixtureId);
     // Čisté rozhodnutí: co se má z tohohle zápasu udělat. Zápas, který nepotřebuje nic,
     // se kvóty ani nedotkne.
     due++;
@@ -695,7 +700,7 @@ export async function runSnapshotOdds(
       { withBooks, coverage }
     );
   }
-  return { due, open, close, series, empty, errors, withBooks, coverage, missingMarkets, checklistCandidates, checklistNotifications, autonomousCandidates, remaining };
+  return { due, open, close, series, empty, errors, withBooks, coverage, missingMarkets, checklistCandidates, checklistNotifications, autonomousCandidates, remaining, processedFixtureIds };
 }
 
 /** Dotáhne výsledky u predikcí, jejichž zápas už proběhl (batch po 20 ID). */

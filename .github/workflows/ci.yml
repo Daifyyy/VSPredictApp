@@ -14,6 +14,7 @@ jobs:
     env:
       DATA_SOURCE: mock
       NEXTAUTH_SECRET: ci-only-not-production
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,9 +24,7 @@ jobs:
       - run: npm ci
       - run: npx prisma validate
       - name: Check production migration status
-        if: ${{ secrets.DATABASE_URL != '' }}
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        if: ${{ env.DATABASE_URL != '' }}
         run: npx prisma migrate status
       - run: npm run typecheck
       - run: npm run lint

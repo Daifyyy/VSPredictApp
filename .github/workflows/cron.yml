@@ -191,8 +191,11 @@ jobs:
             # Pokračovací dávky chrání neopakovatelný closing před serverless timeoutem.
             # Menší serverless dávky + pokračování. Endpoint má navíc vlastní 35s
             # časový rozpočet, takže vždy stihne vrátit `remaining` před limitem Vercelu.
+            cursor=""
+            previous_cursor=""
             for pass in $(seq 1 12); do
               target="$url?limit=12"
+              if [ -n "$cursor" ]; then target="$target&cursor=$cursor"; fi
               echo "→ $target (dávka $pass)"
               body=$(curl --fail-with-body --silent --show-error --location \
                 --max-time 70 --retry 2 --retry-delay 10 \
@@ -200,6 +203,12 @@ jobs:
               echo "$body"
               remaining=$(echo "$body" | jq -r '.remaining // 0')
               if [ "$remaining" -le 0 ]; then exit 0; fi
+              previous_cursor="$cursor"
+              cursor=$(echo "$body" | jq -r '.cursor // empty')
+              if [ -z "$cursor" ] || [ "$cursor" = "$previous_cursor" ]; then
+                echo "Kurzová dávka nevrátila nový pokračovací kurzor; další opakování by zpracovalo stejné zápasy." >&2
+                exit 1
+              fi
             done
             echo "Po dvanácti dávkách stále zbývá $remaining položek." >&2
             exit 1

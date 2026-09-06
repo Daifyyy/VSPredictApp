@@ -75,6 +75,12 @@ describe("nastavení snímků kurzů", () => {
     expect(workflow).toContain(`- cron: "${schedule}"`);
   });
 
+  it("pokračovací dávka předává kurzor a neopakuje stále stejné zápasy", () => {
+    expect(workflow).toContain('target="$target&cursor=$cursor"');
+    expect(workflow).toContain('cursor=$(echo "$body"');
+    expect(workflow).toContain('if [ -z "$cursor" ] || [ "$cursor" = "$previous_cursor" ]');
+  });
+
   it("snímky kurzů nekolidují v čase s denními úlohami", () => {
     // Minuta snímků musí být jiná než minuta kterékoli denní úlohy – jinak by v jeden
     // okamžik seděly dva rozvrhy naráz a chování by záviselo na tom, jak GitHub

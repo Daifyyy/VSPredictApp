@@ -34,17 +34,20 @@ export async function GET(req: Request) {
   if (denied) return denied;
 
   // `?limit=` jen pro ruční doplnění po výpadku; default drží běh krátký.
-  const limitParam = new URL(req.url).searchParams.get("limit");
+  const searchParams = new URL(req.url).searchParams;
+  const limitParam = searchParams.get("limit");
   const limit = limitParam ? Number(limitParam) : undefined;
+  const seenFixtureIds = (searchParams.get("cursor") ?? "").split(",").map(Number).filter((id) => Number.isInteger(id) && id > 0).slice(0, 100);
 
   try {
     const stats = await withCronRun("snapshot-odds", async () => {
-      const result = await runSnapshotOdds(Number.isFinite(limit) && limit! > 0 ? limit : undefined);
+      const result = await runSnapshotOdds(Number.isFinite(limit) && limit! > 0 ? limit : undefined, undefined, seenFixtureIds);
+      const nextCursor = [...new Set([...seenFixtureIds, ...result.processedFixtureIds])].join(",");
       return {
         ...result,
         candidates: result.due + result.remaining,
         processed: result.open + result.close + result.series,
-        cursor: result.remaining > 0 ? "continue" : null,
+        cursor: result.remaining > 0 ? nextCursor : null,
         reason: result.remaining > 0 ? "BATCH_LIMIT" : null,
       };
     });
