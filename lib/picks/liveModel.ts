@@ -20,6 +20,10 @@ export interface LiveProbabilities {
   draw: number;
   away: number;
   bttsYes: number;
+  homeOver05: number;
+  homeOver15: number;
+  awayOver05: number;
+  awayOver15: number;
   totalOver: Record<string, number>;
 }
 
@@ -64,7 +68,7 @@ export function calculateLiveModel(input: LiveModelInput): LiveModelResult {
   const redAway = clamp(1 - ar * .22 + hr * .13, .6, 1.35);
   const lh = clamp(input.preMatchLambdaHome * remainingShare * liveHome * redHome, .02, 3.5);
   const la = clamp(input.preMatchLambdaAway * remainingShare * liveAway * redAway, .02, 3.5);
-  let home = 0, draw = 0, away = 0, btts = 0;
+  let home = 0, draw = 0, away = 0, btts = 0, home05 = 0, home15 = 0, away05 = 0, away15 = 0;
   const totals = [1.5, 2.5, 3.5, 4.5, 5.5];
   const totalOver = Object.fromEntries(totals.map((line) => [line.toFixed(1), 0]));
   for (let h = 0; h <= 10; h++) for (let a = 0; a <= 10; a++) {
@@ -72,11 +76,15 @@ export function calculateLiveModel(input: LiveModelInput): LiveModelResult {
     const fh = input.scoreHome + h, fa = input.scoreAway + a;
     if (fh > fa) home += p; else if (fh === fa) draw += p; else away += p;
     if (fh > 0 && fa > 0) btts += p;
+    if (fh > .5) home05 += p;
+    if (fh > 1.5) home15 += p;
+    if (fa > .5) away05 += p;
+    if (fa > 1.5) away15 += p;
     for (const line of totals) if (fh + fa > line) totalOver[line.toFixed(1)] += p;
   }
   const sum = home + draw + away;
   return {
-    probabilities: { home: home / sum, draw: draw / sum, away: away / sum, bttsYes: btts, totalOver },
+    probabilities: { home: home / sum, draw: draw / sum, away: away / sum, bttsYes: btts / sum, homeOver05: home05 / sum, homeOver15: home15 / sum, awayOver05: away05 / sum, awayOver15: away15 / sum, totalOver },
     remainingLambdaHome: lh,
     remainingLambdaAway: la,
     lowConfidence: input.lowConfidence || input.readinessSample < 6 || (hxg == null && hsot == null) || (axg == null && asot == null),

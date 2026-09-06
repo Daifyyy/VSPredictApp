@@ -16,7 +16,7 @@ type Payload = {
   match: null | { observedAt: string; minute: number | null; status: string; homeGoals: number | null; awayGoals: number | null; homeTeamId: number; awayTeamId: number; venueName: string | null; homeStats: Stats | null; awayStats: Stats | null; events: MatchEvent[] | null };
   venue: null | { name: string | null; address: string | null; city: string | null; capacity: number | null; surface: string | null; imageUrl: string | null };
   model: null | { probabilities: LiveProbabilities; lowConfidence: boolean; remainingLambdaHome: number; remainingLambdaAway: number };
-  odds: Array<{ id: string; observedAt: string; market: string; side: string; line: number | null; decimalOdds: number; bookmaker: string; blocked: boolean; stopped: boolean }>;
+  odds: Array<{ id: string; observedAt: string; market: string; side: string; line: number | null; decimalOdds: number; bookmaker: string; main: boolean; blocked: boolean; stopped: boolean }>;
   candidates: Array<{ id: string; market: string; side: string; line: number | null; modelProbability: number; marketProbability: number; edge: number; expectedValue: number; decimalOdds: number; bookmaker: string; minute: number; reason: string }>;
   pro: boolean;
   updatedAt: string | null;
@@ -24,6 +24,7 @@ type Payload = {
 
 const FINAL = new Set(["FT", "AET", "PEN", "CANC", "ABD"]);
 const pct = (n: number) => `${(n * 100).toFixed(0)} %`;
+const optionalPct = (n: number | undefined) => n == null || !Number.isFinite(n) ? "čeká na nový snímek" : pct(n);
 const stat = (value: number | undefined, suffix = "") => value == null ? "—" : `${Number.isInteger(value) ? value : value.toFixed(2)}${suffix}`;
 
 function marketLabel(market: string, side: string, line: number | null) {
@@ -114,16 +115,14 @@ function MatchCenterDetail({ fixture, state, watching, canWatch, onWatch }: { fi
   const newest = events.at(-1);
   const redHome = events.filter((e) => e.kind === "red" && e.teamId === fixture.home.id).length;
   const redAway = events.filter((e) => e.kind === "red" && e.teamId === fixture.away.id).length;
-  const latestOdds = useMemo(() => {
-    const seen = new Set<string>();
-    return (payload?.odds ?? []).filter((row) => { const key = `${row.market}:${row.side}:${row.line}`; if (seen.has(key)) return false; seen.add(key); return true; });
-  }, [payload?.odds]);
+  const latestOdds = useMemo(() => { const rows = payload?.odds ?? []; const newestAt = rows[0]?.observedAt; return newestAt ? rows.filter((row) => row.observedAt === newestAt) : []; }, [payload?.odds]);
   const probs = payload?.model?.probabilities;
+  const scenarios = useMemo(() => probs ? buildLiveScenarios(probs, latestOdds, payload?.candidates ?? [], Boolean(payload?.model?.lowConfidence), match?.minute ?? 0) : [], [probs, latestOdds, payload?.candidates, payload?.model?.lowConfidence, match?.minute]);
   const href = buildCompareHref(fixture);
   return <div className="border-t border-border">
-    <div className="relative min-h-52 overflow-hidden bg-[#13251c]">
-      {venue?.imageUrl ? <Image src={venue.imageUrl} alt={venue.name ? `Stadion ${venue.name}` : "Místo utkání"} fill sizes="(max-width: 900px) 100vw, 900px" className="object-cover opacity-35" /> : null}
-      <div className="absolute inset-0 bg-gradient-to-t from-[#09150f] via-[#102219]/75 to-transparent" />
+    <div className="relative min-h-52 overflow-hidden bg-[#245b3d]">
+      {venue?.imageUrl ? <Image src={venue.imageUrl} alt={venue.name ? `Stadion ${venue.name}` : "Místo utkání"} fill sizes="(max-width: 900px) 100vw, 900px" className="object-cover object-center opacity-70" /> : <div className="absolute inset-0 opacity-35" style={{ backgroundImage: "linear-gradient(90deg, transparent 49.7%, rgba(255,255,255,.8) 50%, transparent 50.3%), radial-gradient(circle at center, transparent 0 16%, rgba(255,255,255,.75) 16.5% 17%, transparent 17.5%), linear-gradient(rgba(255,255,255,.55),rgba(255,255,255,.55))", backgroundSize: "100% 100%, 100% 100%, calc(100% - 48px) calc(100% - 32px)", backgroundPosition: "center", backgroundRepeat: "no-repeat" }} />}
+      <div className="absolute inset-0 bg-gradient-to-t from-[#07140e]/95 via-[#102219]/45 to-black/20" />
       <div className="relative flex min-h-52 flex-col justify-between p-4 text-white sm:p-6">
         <div className="flex items-start justify-between gap-3 text-xs"><span>{venue?.name ?? match?.venueName ?? fixture.venueName ?? "Místo utkání není uvedeno"}{venue?.city ? ` · ${venue.city}` : ""}</span><button type="button" disabled={!canWatch} onClick={onWatch} className="rounded-full border border-white/30 bg-black/20 px-3 py-1.5 font-semibold disabled:opacity-50">{watching ? "★ Připnuto" : "☆ Připnout"}</button></div>
         <div className="grid items-center gap-3 sm:grid-cols-[1fr_auto_1fr]">
@@ -143,8 +142,8 @@ function MatchCenterDetail({ fixture, state, watching, canWatch, onWatch }: { fi
         <section className="rounded-xl border border-border bg-background p-3"><h3 className="text-sm font-bold">Průběh a momentum</h3><p className="mt-2 text-xs text-muted">{momentumText(home, away, fixture)}</p><div className="mt-3 grid grid-cols-2 gap-2"><MetricBox label="xG od začátku" value={`${stat(home.XG)} : ${stat(away.XG)}`} /><MetricBox label="Střely na branku" value={`${stat(home.SHOTS_ON_TARGET)} : ${stat(away.SHOTS_ON_TARGET)}`} /></div></section>
         <section className="rounded-xl border border-accent-strong/30 bg-accent/10 p-3"><div className="flex items-center justify-between gap-2"><div><p className="page-kicker">Experimentální live model</p><h3 className="mt-0.5 text-sm font-extrabold">{payload?.pro ? payload.candidates.length ? "Kandidát ke zvážení" : payload.model?.lowConfidence ? "Málo dat" : "Sledovat vývoj" : "Pokročilá analýza PRO"}</h3></div><span className="rounded-full bg-warning/15 px-2 py-1 text-[10px] font-bold text-warning">LIVE TEST</span></div>
           {!payload?.pro ? <p className="mt-3 text-xs text-muted">PRO zpřístupní live pravděpodobnosti, skutečné kurzy, edge a experimentální 1u výběry.</p> : <>{probs ? <div className="mt-3 grid grid-cols-3 gap-1 text-center text-xs"><Probability label="Domácí" value={probs.home} /><Probability label="Remíza" value={probs.draw} /><Probability label="Hosté" value={probs.away} /></div> : <p className="mt-3 text-xs text-muted">Pro tento zápas zatím chybí použitelný modelový snapshot.</p>}
-          {payload?.candidates.map((row) => <div key={row.id} className="mt-3 rounded-lg border border-positive/30 bg-positive/10 p-2 text-xs"><strong>{marketLabel(row.market, row.side, row.line)}</strong><p className="mt-1">Model {pct(row.modelProbability)} · trh {pct(row.marketProbability)} · kurz {row.decimalOdds.toFixed(2)}</p><p className="mt-1 text-muted">EV +{pct(row.expectedValue)} · {row.bookmaker} · zmrazeno v {row.minute}. minutě</p></div>)}
-          {!payload?.candidates.length && latestOdds.length ? <p className="mt-3 text-xs text-muted">Žádný trh zatím nesplnil edge 5 p. b., EV 4 % a potvrzení ve dvou snímcích.</p> : null}</>}
+          {scenarios.length ? <div className="mt-3 space-y-2">{scenarios.map((row) => <div key={row.market} className={`rounded-lg border p-2 text-xs ${row.candidate ? "border-positive/30 bg-positive/10" : "border-border bg-background/70"}`}><div className="flex items-center justify-between gap-2"><strong>{row.label}</strong><span className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${row.candidate ? "bg-positive/15 text-positive" : row.interesting ? "bg-warning/15 text-warning" : "bg-border text-muted"}`}>{row.status}</span></div><p className="mt-1 tabular-nums">Model {pct(row.model)} · trh {pct(row.marketProbability)} · kurz {row.odds.toFixed(2)} · EV {pct(row.ev)}</p><p className="mt-1 text-[10px] text-muted">{row.reason} · {row.bookmaker}</p></div>)}</div> : probs ? <p className="mt-3 rounded-lg bg-background/70 p-2 text-xs text-muted">Live model je spočítaný, ale zdroj nyní neposkytuje použitelný kurz pro 1X2, góly ani BTTS. Bez skutečné ceny nevznikne návrh sázky.</p> : null}
+          {probs ? <div className="mt-3 border-t border-border pt-2 text-[10px] text-muted"><strong className="text-foreground">Výzkumné týmové góly</strong><p className="mt-1">{fixture.home.name}: Over 0,5 {optionalPct(probs.homeOver05)} · Over 1,5 {optionalPct(probs.homeOver15)}</p><p>{fixture.away.name}: Over 0,5 {optionalPct(probs.awayOver05)} · Over 1,5 {optionalPct(probs.awayOver15)}</p><p className="mt-1">Bez konzistentního live kurzu nejde o kandidáta ani simulovanou sázku.</p></div> : null}</>}
           {href ? <Link href={href} className="mt-3 inline-flex text-xs font-bold underline underline-offset-2">Otevřít předzápasové Porovnání</Link> : null}
         </section>
         <p className="text-right text-[10px] text-muted">{payload?.updatedAt ? `Aktualizováno ${new Date(payload.updatedAt).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : "Čeká na první snímek"}</p>
@@ -155,6 +154,36 @@ function MatchCenterDetail({ fixture, state, watching, canWatch, onWatch }: { fi
 
 function MetricBox({ label, value }: { label: string; value: string }) { return <div className="rounded-lg border border-border p-2"><span className="block text-[10px] text-muted">{label}</span><strong className="mt-0.5 block text-sm tabular-nums">{value}</strong></div>; }
 function Probability({ label, value }: { label: string; value: number }) { return <div className="rounded-lg bg-background p-2"><span className="block text-[10px] text-muted">{label}</span><strong>{pct(value)}</strong></div>; }
+type LiveScenario = { market: string; label: string; model: number; marketProbability: number; odds: number; ev: number; bookmaker: string; candidate: boolean; interesting: boolean; status: string; reason: string };
+function buildLiveScenarios(probabilities: LiveProbabilities, odds: Payload["odds"], candidates: Payload["candidates"], lowConfidence: boolean, minute: number): LiveScenario[] {
+  const active = odds.filter((row) => !row.blocked && !row.stopped && row.decimalOdds > 1);
+  const groups: Array<{ market: string; rows: Payload["odds"] }> = [];
+  const oneXTwo = active.filter((row) => row.market === "LIVE_1X2");
+  if (["HOME", "DRAW", "AWAY"].every((side) => oneXTwo.some((row) => row.side === side))) groups.push({ market: "LIVE_1X2", rows: oneXTwo });
+  const btts = active.filter((row) => row.market === "LIVE_BTTS");
+  if (["YES", "NO"].every((side) => btts.some((row) => row.side === side))) groups.push({ market: "LIVE_BTTS", rows: btts });
+  const goalLines = [...new Set(active.filter((row) => row.market === "LIVE_GOALS" && row.line != null).map((row) => row.line!))];
+  const mainLine = goalLines.find((line) => active.some((row) => row.market === "LIVE_GOALS" && row.line === line && row.main)) ?? goalLines[0];
+  const goals = active.filter((row) => row.market === "LIVE_GOALS" && row.line === mainLine);
+  if (["OVER", "UNDER"].every((side) => goals.some((row) => row.side === side))) groups.push({ market: "LIVE_GOALS", rows: goals });
+  return groups.flatMap(({ market, rows }) => {
+    const implied = rows.map((row) => ({ row, inverse: 1 / row.decimalOdds }));
+    const overround = implied.reduce((sum, item) => sum + item.inverse, 0);
+    const options = implied.map(({ row, inverse }) => {
+      const model = market === "LIVE_1X2" ? row.side === "HOME" ? probabilities.home : row.side === "DRAW" ? probabilities.draw : probabilities.away : market === "LIVE_BTTS" ? row.side === "YES" ? probabilities.bttsYes : 1 - probabilities.bttsYes : row.line == null ? null : probabilities.totalOver[row.line.toFixed(1)] == null ? null : row.side === "OVER" ? probabilities.totalOver[row.line.toFixed(1)] : 1 - probabilities.totalOver[row.line.toFixed(1)];
+      if (model == null) return null;
+      const marketProbability = inverse / overround;
+      return { row, model, marketProbability, edge: model - marketProbability, ev: model * row.decimalOdds - 1 };
+    }).filter((row): row is NonNullable<typeof row> => row != null).sort((a, b) => b.ev - a.ev);
+    const best = options[0];
+    if (!best) return [];
+    const frozen = candidates.find((row) => row.market === market && row.side === best.row.side && row.line === best.row.line);
+    const interesting = !lowConfidence && minute >= 15 && minute <= 80 && best.edge >= .05 && best.ev >= .04;
+    const status = frozen ? "Kandidát 1u" : lowConfidence ? "Málo dat" : interesting ? "Čeká na potvrzení" : "Bez výhody";
+    const reason = frozen ? `Výběr byl zmrazen v ${frozen.minute}. minutě` : lowConfidence ? "Live vstupy zatím nejsou dostatečně spolehlivé" : minute < 15 || minute > 80 ? "Mimo povolené okno 15.–80. minuta" : best.edge < .05 ? `Rozdíl proti trhu je jen ${(best.edge * 100).toFixed(1)} p. b.` : best.ev < .04 ? `EV je jen ${(best.ev * 100).toFixed(1)} %` : "Podmínky splňuje poprvé; potřebuje druhý shodný snímek";
+    return [{ market, label: marketLabel(market, best.row.side, best.row.line), model: best.model, marketProbability: best.marketProbability, odds: best.row.decimalOdds, ev: best.ev, bookmaker: best.row.bookmaker, candidate: Boolean(frozen), interesting, status, reason }];
+  });
+}
 function momentumText(home: Stats, away: Stats, fixture: UpcomingFixture) {
   const hxg = home.XG ?? 0, axg = away.XG ?? 0, hs = home.SHOTS_ON_TARGET ?? 0, as = away.SHOTS_ON_TARGET ?? 0;
   if (Math.abs(hxg - axg) < .25 && Math.abs(hs - as) <= 1) return "Dosavadní nebezpečnost je poměrně vyrovnaná; výrazná převaha není potvrzená.";
