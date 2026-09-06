@@ -43,6 +43,145 @@ model CronRun {
   @@index([status, startedAt])
 }
 
+/// Neměnný bod živého průběhu. Nikdy se nemíchá do MatchStatCache, která smí obsahovat
+/// pouze definitivní pozápasové statistiky.
+model LiveMatchSnapshot {
+  id          String   @id @default(cuid())
+  fixtureId   Int
+  leagueId    Int
+  observedAt  DateTime
+  minute      Int?
+  status      String
+  homeGoals   Int?
+  awayGoals   Int?
+  homeTeamId  Int
+  awayTeamId  Int
+  venueId     Int?
+  venueName   String?
+  homeStats   Json?
+  awayStats   Json?
+  events      Json?
+  sourceAt    DateTime?
+  createdAt   DateTime @default(now())
+
+  @@unique([fixtureId, observedAt])
+  @@index([fixtureId, observedAt])
+  @@index([leagueId, observedAt])
+}
+
+/// Live ceny mají jiný katalog trhů než předzápasové /odds. Jeden řádek je přesná
+/// strana a linie jedné sázkovky v jednom zdrojovém okamžiku.
+model LiveOddsSnapshot {
+  id          String   @id @default(cuid())
+  fixtureId   Int
+  observedAt  DateTime
+  bookmakerId Int?
+  bookmaker   String
+  marketId    Int
+  market      String
+  side        String
+  line        Float?
+  lineKey     String
+  decimalOdds Float
+  main        Boolean  @default(false)
+  blocked     Boolean  @default(false)
+  stopped     Boolean  @default(false)
+  sourceAt    DateTime?
+  createdAt   DateTime @default(now())
+
+  @@unique([fixtureId, observedAt, bookmaker, marketId, side, lineKey])
+  @@index([fixtureId, market, observedAt])
+}
+
+model LiveModelSnapshot {
+  id            String   @id @default(cuid())
+  fixtureId     Int
+  matchSnapshotId String
+  calculatedAt  DateTime
+  minute        Int
+  modelVersion  Int
+  probabilities Json
+  remainingLambdaHome Float
+  remainingLambdaAway Float
+  inputs        Json
+  lowConfidence Boolean @default(true)
+  createdAt     DateTime @default(now())
+
+  @@unique([matchSnapshotId, modelVersion])
+  @@index([fixtureId, calculatedAt])
+}
+
+/// Prospektivní experimentální 1u výběr. Po vzniku se nemění; settlement doplní
+/// pouze výsledek a profit.
+model LiveCandidateSnapshot {
+  id                String    @id @default(cuid())
+  fixtureId         Int
+  leagueId          Int
+  kickoff           DateTime
+  homeTeamId        Int
+  awayTeamId        Int
+  homeName          String
+  awayName          String
+  market            String
+  side              String
+  line              Float?
+  policyVersion     Int       @default(1)
+  modelVersion      Int
+  minute            Int
+  scoreHome         Int
+  scoreAway         Int
+  modelProbability  Float
+  marketProbability Float
+  edge               Float
+  expectedValue      Float
+  decimalOdds        Float
+  bookmaker          String
+  qualifiedAt        DateTime
+  reason             String
+  stake              Float     @default(1)
+  settlementStatus   String    @default("PENDING")
+  hit                 Boolean?
+  profit              Float?
+  settledAt           DateTime?
+  modelSnapshotId     String
+  oddsSnapshotId      String
+  createdAt           DateTime @default(now())
+
+  @@unique([fixtureId, market, policyVersion])
+  @@index([market, qualifiedAt])
+  @@index([settlementStatus, kickoff])
+}
+
+/// Připnutí kvůli prioritnímu sběru a push oznámení. Automaticky expiruje.
+model LiveFixtureWatch {
+  id        String   @id @default(cuid())
+  userId    String
+  fixtureId Int
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, fixtureId])
+  @@index([fixtureId, expiresAt])
+  @@index([expiresAt])
+}
+
+/// Dlouhodobě cacheované přesné místo utkání. Fixture může být na neutrální půdě,
+/// proto se obrázek nikdy nesmí slepě převzít od domácího klubu.
+model VenueCache {
+  venueId    Int      @id
+  name       String?
+  address    String?
+  city       String?
+  capacity   Int?
+  surface    String?
+  imageUrl   String?
+  fetchedAt  DateTime
+  updatedAt  DateTime @updatedAt
+}
+
 /// Provozní problém odvozený z měřitelných podmínek. Fingerprint zajišťuje, že
 /// opakovaný audit aktualizuje tentýž incident místo vytváření notifikační bouře.
 model DataIncident {
@@ -172,6 +311,7 @@ model User {
   pushSubscriptions      PushSubscription[]
   notificationPreference NotificationPreference?
   notificationDeliveries NotificationDelivery[]
+  liveFixtureWatches      LiveFixtureWatch[]
 }
 
 model Account {

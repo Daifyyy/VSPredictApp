@@ -93,6 +93,8 @@ export function normalizeUpcomingFixtures(
         national,
         europeanCup,
         competitionRound: f.league.round ?? null,
+        venueId: f.fixture.venue?.id ?? null,
+        venueName: f.fixture.venue?.name ?? null,
         compareMode: national ? ("NATIONAL" as const) : ("CLUB" as const),
         homeCompareLeagueId: national ? null : f.league.id,
         awayCompareLeagueId: national ? null : f.league.id,

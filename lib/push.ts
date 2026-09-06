@@ -67,6 +67,29 @@ export async function sendOperationalAlert(input: { fingerprint: string; title: 
   return { sent, errors };
 }
 
+export async function sendLiveCandidateNotifications(candidates: Array<{ id: string; fixtureId: number; market: string; side: string; line: number | null; homeName: string; awayName: string; minute: number; modelProbability: number; decimalOdds: number; expectedValue: number }>) {
+  const stats = { eligible: 0, sent: 0, errors: 0 };
+  if (!candidates.length || !pushConfigured()) return stats;
+  const watches = await prisma.liveFixtureWatch.findMany({ where: { fixtureId: { in: candidates.map((row) => row.fixtureId) }, expiresAt: { gt: new Date() } }, include: { user: { include: { pushSubscriptions: true, notificationPreference: true } } } });
+  for (const candidate of candidates) for (const watch of watches.filter((row) => row.fixtureId === candidate.fixtureId)) {
+    if (watch.user.notificationPreference?.enabled === false || !watch.user.pushSubscriptions.length) continue;
+    stats.eligible++;
+    const type = `LIVE_${candidate.market}_V1`;
+    const exists = await prisma.notificationDelivery.findUnique({ where: { userId_fixtureId_type: { userId: watch.userId, fixtureId: candidate.fixtureId, type } } });
+    if (exists) continue;
+    const label = candidate.market === "LIVE_1X2" ? (candidate.side === "HOME" ? candidate.homeName : candidate.side === "DRAW" ? "Remíza" : candidate.awayName) : candidate.market === "LIVE_BTTS" ? `BTTS ${candidate.side === "YES" ? "Ano" : "Ne"}` : `${candidate.side === "OVER" ? "Over" : "Under"} ${candidate.line?.toFixed(1)}`;
+    let delivered = false;
+    for (const subscription of watch.user.pushSubscriptions) try {
+      delivered = await sendPushSubscription(subscription, { title: `Experimentální live kandidát · ${candidate.minute}'`, body: `${candidate.homeName} – ${candidate.awayName} · ${label} · model ${Math.round(candidate.modelProbability * 100)} % · kurz ${candidate.decimalOdds.toFixed(2)} · EV +${(candidate.expectedValue * 100).toFixed(1)} %`, url: `/?fixture=${candidate.fixtureId}`, tag: `live-${candidate.fixtureId}-${candidate.market}` }) || delivered;
+    } catch { stats.errors++; }
+    if (delivered) {
+      await prisma.notificationDelivery.create({ data: { userId: watch.userId, fixtureId: candidate.fixtureId, type } }).catch(() => {});
+      stats.sent++;
+    }
+  }
+  return stats;
+}
+
 export async function sendChecklistCandidateNotifications(candidates: NewChecklistCandidate[]) {
   const stats = { candidates: candidates.length, eligible: 0, sent: 0, errors: 0 };
   if (!candidates.length || !pushConfigured()) return stats;

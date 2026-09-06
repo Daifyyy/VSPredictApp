@@ -70,13 +70,10 @@ describe("buildMatchEvents", () => {
     expect(kinds).toEqual(["yellow", "red"]);
   });
 
-  it("VAR a neznámé typy zahazuje (bez kontextu matou)", () => {
-    expect(
-      buildMatchEvents([
-        ev({ type: "Var", detail: "Goal cancelled" }),
-        ev({ type: "Neco", detail: "Jineho" }),
-      ])
-    ).toEqual([]);
+  it("VAR zachová s vysvětlením a neznámé typy zahazuje", () => {
+    expect(buildMatchEvents([ev({ type: "Var", detail: "Goal cancelled" }), ev({ type: "Neco", detail: "Jineho" })])).toEqual([
+      expect.objectContaining({ kind: "var", minute: 10, description: "Goal cancelled" }),
+    ]);
   });
 
   it("událost bez minuty zahodí (nedá se zařadit)", () => {

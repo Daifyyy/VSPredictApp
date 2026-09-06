@@ -381,6 +381,28 @@ const oddsItemSchema = z.object({
 /** Exportováno kvůli testu, který hlídá numerické `value` u exotických trhů. */
 export const oddsSchema = z.array(oddsItemSchema);
 
+// `/odds/live` používá vlastní katalog bet IDs. Schéma je záměrně tolerantní a
+// rozhodování se opírá o názvy trhů, ne o předzápasová ID.
+const liveOddsValueSchema = z.object({
+  id: z.number().optional(),
+  value: oddsText,
+  odd: oddsText,
+  handicap: z.union([z.string(), z.number(), z.null()]).optional(),
+  main: z.boolean().optional(),
+  suspended: z.boolean().optional(),
+});
+const venueSchema = z.array(z.object({
+  id: z.number(), name: z.string().nullable().optional(), address: z.string().nullable().optional(),
+  city: z.string().nullable().optional(), capacity: z.number().nullable().optional(),
+  surface: z.string().nullable().optional(), image: z.string().nullable().optional(),
+}));
+const liveOddsSchema = z.array(z.object({
+  fixture: z.object({ id: z.number(), status: z.object({ stopped: z.boolean().optional(), blocked: z.boolean().optional(), finished: z.boolean().optional() }).partial().optional() }).passthrough(),
+  update: z.string().nullable().optional(),
+  bookmakers: z.array(z.object({ id: z.number().optional(), name: z.string(), bets: z.array(z.object({ id: z.number(), name: z.string().optional(), values: z.array(liveOddsValueSchema).default([]) })).default([]) })).default([]),
+}).passthrough());
+export type ApiLiveOdds = z.infer<typeof liveOddsSchema>;
+
 export type ApiTeam = z.infer<typeof teamItemSchema>;
 export type ApiFixture = z.infer<typeof fixtureItemSchema>;
 export type ApiFixtureLineup = z.infer<typeof lineupItemSchema>;
@@ -658,6 +680,15 @@ function oddOf(
  */
 export function fetchOddsRaw(fixture: number) {
   return apiGet("/odds", { fixture }, oddsSchema);
+}
+
+export function fetchVenue(venue: number) {
+  return apiGet("/venues", { id: venue }, venueSchema);
+}
+
+/** Live ceny bez jakéhokoli sdílení ID s předzápasovým `/odds`. */
+export function fetchLiveOdds(fixture: number) {
+  return apiGet("/odds/live", { fixture }, liveOddsSchema);
 }
 
 export async function fetchOdds(

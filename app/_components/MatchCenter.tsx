@@ -1,0 +1,163 @@
+"use client";
+
+import Image from "next/image";
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { UpcomingFixture } from "@/lib/types";
+import type { MatchEvent } from "@/lib/stats/matchEvents";
+import type { LiveProbabilities } from "@/lib/picks/liveModel";
+import { TeamLogo } from "./TeamLogo";
+import { EventTimeline } from "./EventTimeline";
+import { buildCompareHref } from "./compareHref";
+import type { SessionUser } from "./sessionUser";
+
+type Stats = Partial<Record<"XG" | "SHOTS" | "SHOTS_ON_TARGET" | "POSSESSION" | "PASSES_TOTAL" | "CORNERS" | "FOULS" | "YELLOW_CARDS" | "RED_CARDS", number>>;
+type Payload = {
+  match: null | { observedAt: string; minute: number | null; status: string; homeGoals: number | null; awayGoals: number | null; homeTeamId: number; awayTeamId: number; venueName: string | null; homeStats: Stats | null; awayStats: Stats | null; events: MatchEvent[] | null };
+  venue: null | { name: string | null; address: string | null; city: string | null; capacity: number | null; surface: string | null; imageUrl: string | null };
+  model: null | { probabilities: LiveProbabilities; lowConfidence: boolean; remainingLambdaHome: number; remainingLambdaAway: number };
+  odds: Array<{ id: string; observedAt: string; market: string; side: string; line: number | null; decimalOdds: number; bookmaker: string; blocked: boolean; stopped: boolean }>;
+  candidates: Array<{ id: string; market: string; side: string; line: number | null; modelProbability: number; marketProbability: number; edge: number; expectedValue: number; decimalOdds: number; bookmaker: string; minute: number; reason: string }>;
+  pro: boolean;
+  updatedAt: string | null;
+};
+
+const FINAL = new Set(["FT", "AET", "PEN", "CANC", "ABD"]);
+const pct = (n: number) => `${(n * 100).toFixed(0)} %`;
+const stat = (value: number | undefined, suffix = "") => value == null ? "—" : `${Number.isInteger(value) ? value : value.toFixed(2)}${suffix}`;
+
+function marketLabel(market: string, side: string, line: number | null) {
+  if (market === "LIVE_1X2") return side === "HOME" ? "Domácí vyhrají" : side === "DRAW" ? "Remíza" : "Hosté vyhrají";
+  if (market === "LIVE_BTTS") return `Oba skórují · ${side === "YES" ? "Ano" : "Ne"}`;
+  return `${side === "OVER" ? "Over" : "Under"} ${line?.toFixed(1) ?? "—"} gólu`;
+}
+
+function useMatchCenter(fixture: UpcomingFixture | null) {
+  const [state, setState] = useState<{ loading: boolean; error: boolean; payload: Payload | null }>({ loading: false, error: false, payload: null });
+  const finalRef = useRef(false);
+  const fixtureId = fixture?.fixtureId ?? null;
+  useEffect(() => {
+    if (!fixtureId) return;
+    let active = true;
+    const controller = new AbortController();
+    const load = async () => {
+      if (document.hidden) return;
+      setState((old) => ({ ...old, loading: old.payload == null, error: false }));
+      try {
+        const response = await fetch(`/api/match-center?fixture=${fixtureId}`, { signal: controller.signal, cache: "no-store" });
+        if (!response.ok) throw new Error(String(response.status));
+        const payload = await response.json() as Payload;
+        if (active) { finalRef.current = FINAL.has(payload.match?.status ?? ""); setState({ loading: false, error: false, payload }); }
+      } catch (error) {
+        if (active && !(error instanceof DOMException && error.name === "AbortError")) setState((old) => ({ ...old, loading: false, error: true }));
+      }
+    };
+    void load();
+    const timer = window.setInterval(() => {
+      if (!finalRef.current) void load();
+    }, 30_000);
+    const visible = () => { if (!document.hidden) void load(); };
+    document.addEventListener("visibilitychange", visible);
+    return () => { active = false; controller.abort(); window.clearInterval(timer); document.removeEventListener("visibilitychange", visible); };
+  }, [fixtureId]);
+  return state;
+}
+
+export function MatchCenter({ fixtures, user }: { fixtures: UpcomingFixture[]; user: SessionUser | null }) {
+  const [selected, setSelected] = useState<number | null>(() => {
+    if (typeof window === "undefined") return null;
+    const value = Number(new URLSearchParams(window.location.search).get("fixture"));
+    return Number.isInteger(value) && value > 0 ? value : null;
+  });
+  const [watching, setWatching] = useState(false);
+  const fixture = fixtures.find((f) => f.fixtureId === selected) ?? null;
+  const data = useMatchCenter(fixture);
+  const choose = (fixtureId: number | null) => {
+    setSelected(fixtureId);
+    const url = new URL(window.location.href);
+    if (fixtureId) url.searchParams.set("fixture", String(fixtureId)); else url.searchParams.delete("fixture");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  };
+  useEffect(() => {
+    if (!selected || !user) return;
+    fetch(`/api/match-center/watch?fixture=${selected}`).then((r) => r.json()).then((d: { watching?: boolean }) => setWatching(Boolean(d.watching))).catch(() => {});
+  }, [selected, user]);
+  const toggleWatch = async () => {
+    if (!selected || !user) return;
+    const next = !watching;
+    const response = await fetch("/api/match-center/watch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fixtureId: selected, watching: next }) });
+    if (response.ok) setWatching(next);
+  };
+
+  return <section className="mt-3 overflow-hidden rounded-2xl border border-border bg-surface shadow-sm" aria-labelledby="match-center-title">
+    <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+      <div><p className="page-kicker">Živý Match Center</p><h2 id="match-center-title" className="mt-0.5 text-lg font-extrabold">Vyber právě hrané utkání</h2></div>
+      <span className="rounded-full bg-negative/10 px-3 py-1.5 text-xs font-bold text-negative">● {fixtures.length} živě</span>
+    </div>
+    <div className="flex gap-2 overflow-x-auto px-3 py-3" role="list" aria-label="Právě hraná utkání">
+      {fixtures.map((item) => <button key={item.fixtureId} type="button" onClick={() => choose(item.fixtureId)} aria-pressed={selected === item.fixtureId} className={`min-w-[220px] rounded-xl border px-3 py-2 text-left transition ${selected === item.fixtureId ? "border-accent-strong bg-accent/15" : "border-border bg-background hover:border-accent-strong/40"}`}>
+        <span className="flex items-center justify-between text-[10px] text-muted"><span className="max-w-[145px] truncate">{item.leagueName}</span><b className="text-negative">{item.elapsed ?? ""}&apos;</b></span>
+        <span className="mt-1 grid grid-cols-[1fr_auto] gap-x-2 text-xs"><strong className="truncate">{item.home.name}</strong><b>{item.liveHome ?? 0}</b><strong className="truncate">{item.away.name}</strong><b>{item.liveAway ?? 0}</b></span>
+      </button>)}
+    </div>
+    {!fixture ? <div className="border-t border-border p-5 text-center"><p className="text-sm font-semibold">Detail se začne načítat až po výběru zápasu.</p><p className="mt-1 text-xs text-muted">Na pozadí se žádné detailní statistiky ani live kurzy nestahují.</p></div> : <MatchCenterDetail fixture={fixture} state={data} watching={watching} canWatch={Boolean(user)} onWatch={toggleWatch} />}
+  </section>;
+}
+
+function MatchCenterDetail({ fixture, state, watching, canWatch, onWatch }: { fixture: UpcomingFixture; state: ReturnType<typeof useMatchCenter>; watching: boolean; canWatch: boolean; onWatch: () => void }) {
+  const payload = state.payload;
+  const match = payload?.match;
+  const venue = payload?.venue;
+  const home = match?.homeStats ?? {};
+  const away = match?.awayStats ?? {};
+  const events = match?.events ?? [];
+  const newest = events.at(-1);
+  const redHome = events.filter((e) => e.kind === "red" && e.teamId === fixture.home.id).length;
+  const redAway = events.filter((e) => e.kind === "red" && e.teamId === fixture.away.id).length;
+  const latestOdds = useMemo(() => {
+    const seen = new Set<string>();
+    return (payload?.odds ?? []).filter((row) => { const key = `${row.market}:${row.side}:${row.line}`; if (seen.has(key)) return false; seen.add(key); return true; });
+  }, [payload?.odds]);
+  const probs = payload?.model?.probabilities;
+  const href = buildCompareHref(fixture);
+  return <div className="border-t border-border">
+    <div className="relative min-h-52 overflow-hidden bg-[#13251c]">
+      {venue?.imageUrl ? <Image src={venue.imageUrl} alt={venue.name ? `Stadion ${venue.name}` : "Místo utkání"} fill sizes="(max-width: 900px) 100vw, 900px" className="object-cover opacity-35" /> : null}
+      <div className="absolute inset-0 bg-gradient-to-t from-[#09150f] via-[#102219]/75 to-transparent" />
+      <div className="relative flex min-h-52 flex-col justify-between p-4 text-white sm:p-6">
+        <div className="flex items-start justify-between gap-3 text-xs"><span>{venue?.name ?? match?.venueName ?? fixture.venueName ?? "Místo utkání není uvedeno"}{venue?.city ? ` · ${venue.city}` : ""}</span><button type="button" disabled={!canWatch} onClick={onWatch} className="rounded-full border border-white/30 bg-black/20 px-3 py-1.5 font-semibold disabled:opacity-50">{watching ? "★ Připnuto" : "☆ Připnout"}</button></div>
+        <div className="grid items-center gap-3 sm:grid-cols-[1fr_auto_1fr]">
+          <div className="flex items-center gap-3 sm:justify-end"><TeamLogo src={fixture.home.logoUrl} alt={fixture.home.name} size={48} /><strong>{fixture.home.name}</strong>{redHome > 0 ? <span className="rounded bg-red-600 px-1.5 py-0.5 text-xs">{redHome} ČK</span> : null}</div>
+          <div className="text-center"><p className="text-xs font-bold text-red-300">{match?.minute ?? fixture.elapsed ?? ""}&apos; · ŽIVĚ</p><p className="mt-1 text-3xl font-black tabular-nums">{match?.homeGoals ?? fixture.liveHome ?? 0} : {match?.awayGoals ?? fixture.liveAway ?? 0}</p></div>
+          <div className="flex items-center gap-3"><TeamLogo src={fixture.away.logoUrl} alt={fixture.away.name} size={48} /><strong>{fixture.away.name}</strong>{redAway > 0 ? <span className="rounded bg-red-600 px-1.5 py-0.5 text-xs">{redAway} ČK</span> : null}</div>
+        </div>
+        <div className="flex flex-wrap justify-center gap-3 text-[11px] text-white/80"><span>{fixture.leagueName}</span>{fixture.competitionRound ? <span>{fixture.competitionRound}</span> : null}{venue?.capacity ? <span>{venue.capacity.toLocaleString("cs-CZ")} míst</span> : null}{venue?.surface ? <span>{venue.surface}</span> : null}</div>
+      </div>
+    </div>
+    {state.loading && !payload ? <p className="p-6 text-center text-sm text-muted">Načítám živý průběh…</p> : state.error && !payload ? <p className="p-6 text-center text-sm text-negative">Match Center se nepodařilo obnovit.</p> : <div className="grid gap-4 p-4 lg:grid-cols-[1.1fr_.9fr]">
+      <div className="space-y-4">
+        <section className="rounded-xl border border-border bg-background p-3"><div className="flex items-center justify-between"><h3 className="text-sm font-bold">Živý průběh</h3>{newest ? <span className="text-[10px] font-semibold text-negative">Poslední událost {newest.minute}&apos;</span> : null}</div>{events.length ? <EventTimeline events={events} homeTeamId={fixture.home.id} newestFirst /> : <p className="mt-3 text-xs text-muted">Zatím bez zaznamenané události.</p>}</section>
+        <section className="rounded-xl border border-border bg-background p-3"><h3 className="text-sm font-bold">Statistiky zápasu</h3><div className="mt-3 space-y-2">{([ ["xG", "XG"], ["Střely", "SHOTS"], ["Na branku", "SHOTS_ON_TARGET"], ["Držení", "POSSESSION", "%"], ["Přihrávky", "PASSES_TOTAL"], ["Rohy", "CORNERS"], ["Fauly", "FOULS"], ["Žluté karty", "YELLOW_CARDS"] ] as const).map(([label, key, suffix]) => home[key] == null && away[key] == null ? null : <div key={key} className="grid grid-cols-[3rem_1fr_3rem] items-center gap-2 text-xs"><b className="text-right tabular-nums">{stat(home[key], suffix)}</b><span className="text-center text-muted">{label}</span><b className="tabular-nums">{stat(away[key], suffix)}</b></div>)}</div></section>
+      </div>
+      <div className="space-y-4">
+        <section className="rounded-xl border border-border bg-background p-3"><h3 className="text-sm font-bold">Průběh a momentum</h3><p className="mt-2 text-xs text-muted">{momentumText(home, away, fixture)}</p><div className="mt-3 grid grid-cols-2 gap-2"><MetricBox label="xG od začátku" value={`${stat(home.XG)} : ${stat(away.XG)}`} /><MetricBox label="Střely na branku" value={`${stat(home.SHOTS_ON_TARGET)} : ${stat(away.SHOTS_ON_TARGET)}`} /></div></section>
+        <section className="rounded-xl border border-accent-strong/30 bg-accent/10 p-3"><div className="flex items-center justify-between gap-2"><div><p className="page-kicker">Experimentální live model</p><h3 className="mt-0.5 text-sm font-extrabold">{payload?.pro ? payload.candidates.length ? "Kandidát ke zvážení" : payload.model?.lowConfidence ? "Málo dat" : "Sledovat vývoj" : "Pokročilá analýza PRO"}</h3></div><span className="rounded-full bg-warning/15 px-2 py-1 text-[10px] font-bold text-warning">LIVE TEST</span></div>
+          {!payload?.pro ? <p className="mt-3 text-xs text-muted">PRO zpřístupní live pravděpodobnosti, skutečné kurzy, edge a experimentální 1u výběry.</p> : <>{probs ? <div className="mt-3 grid grid-cols-3 gap-1 text-center text-xs"><Probability label="Domácí" value={probs.home} /><Probability label="Remíza" value={probs.draw} /><Probability label="Hosté" value={probs.away} /></div> : <p className="mt-3 text-xs text-muted">Pro tento zápas zatím chybí použitelný modelový snapshot.</p>}
+          {payload?.candidates.map((row) => <div key={row.id} className="mt-3 rounded-lg border border-positive/30 bg-positive/10 p-2 text-xs"><strong>{marketLabel(row.market, row.side, row.line)}</strong><p className="mt-1">Model {pct(row.modelProbability)} · trh {pct(row.marketProbability)} · kurz {row.decimalOdds.toFixed(2)}</p><p className="mt-1 text-muted">EV +{pct(row.expectedValue)} · {row.bookmaker} · zmrazeno v {row.minute}. minutě</p></div>)}
+          {!payload?.candidates.length && latestOdds.length ? <p className="mt-3 text-xs text-muted">Žádný trh zatím nesplnil edge 5 p. b., EV 4 % a potvrzení ve dvou snímcích.</p> : null}</>}
+          {href ? <Link href={href} className="mt-3 inline-flex text-xs font-bold underline underline-offset-2">Otevřít předzápasové Porovnání</Link> : null}
+        </section>
+        <p className="text-right text-[10px] text-muted">{payload?.updatedAt ? `Aktualizováno ${new Date(payload.updatedAt).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : "Čeká na první snímek"}</p>
+      </div>
+    </div>}
+  </div>;
+}
+
+function MetricBox({ label, value }: { label: string; value: string }) { return <div className="rounded-lg border border-border p-2"><span className="block text-[10px] text-muted">{label}</span><strong className="mt-0.5 block text-sm tabular-nums">{value}</strong></div>; }
+function Probability({ label, value }: { label: string; value: number }) { return <div className="rounded-lg bg-background p-2"><span className="block text-[10px] text-muted">{label}</span><strong>{pct(value)}</strong></div>; }
+function momentumText(home: Stats, away: Stats, fixture: UpcomingFixture) {
+  const hxg = home.XG ?? 0, axg = away.XG ?? 0, hs = home.SHOTS_ON_TARGET ?? 0, as = away.SHOTS_ON_TARGET ?? 0;
+  if (Math.abs(hxg - axg) < .25 && Math.abs(hs - as) <= 1) return "Dosavadní nebezpečnost je poměrně vyrovnaná; výrazná převaha není potvrzená.";
+  const name = hxg + hs * .12 > axg + as * .12 ? fixture.home.name : fixture.away.name;
+  return `${name} si zatím vytváří nebezpečnější průběh podle xG a střel na branku. Jde o dosavadní stav, ne jistotu dalšího vývoje.`;
+}

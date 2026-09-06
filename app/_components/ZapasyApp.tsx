@@ -25,6 +25,7 @@ import { FixtureModelCard } from "./FixtureModelCard";
 import { QuickMatchOverview } from "./QuickMatchOverview";
 import { chooseFeaturedFixture } from "@/lib/homeFeaturedFixture";
 import { competitionGroupLabel, groupCompetitionFixtures, localDateKey } from "@/lib/competitionGrouping";
+import { MatchCenter } from "./MatchCenter";
 import type { CompetitionGroup } from "@/lib/data/catalog";
 
 type View = "program" | "results";
@@ -583,6 +584,7 @@ export function ZapasyApp({
     [dayFixtures, isFavorite]
   );
   const featured = useMemo(() => chooseFeaturedFixture(dayFixtures), [dayFixtures]);
+  const liveFixtures = useMemo(() => dayFixtures.filter((fixture) => fixture.live), [dayFixtures]);
 
   // Klik na hvězdu: PRO toggluje, ostatní dostanou PRO CTA (žádná perzistence).
   const onFavClick = useCallback(
@@ -608,7 +610,7 @@ export function ZapasyApp({
         showingNearest={Boolean(clientToday && active?.date !== clientToday && (visibleDays.find((day) => day.date === clientToday)?.fixtures.length ?? 0) === 0)}
       />
 
-      {featured ? <FeaturedFixture fixture={featured.fixture} editorialTitle={featured.title} /> : null}
+      {liveFixtures.length > 0 ? <MatchCenter fixtures={liveFixtures} user={user} /> : featured ? <FeaturedFixture fixture={featured.fixture} editorialTitle={featured.title} /> : null}
 
       <ViewTabs
         tabs={[

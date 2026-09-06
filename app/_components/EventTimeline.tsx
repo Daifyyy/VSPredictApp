@@ -62,6 +62,7 @@ export function EventTimeline({
 
 function EventText({ event }: { event: MatchEvent }) {
   const { kind, player, assist } = event;
+  if (kind === "var") return <span className="block truncate font-medium text-foreground">{event.description ?? "Kontrola VAR"}</span>;
   if (kind === "sub") {
     return (
       <span className="block truncate text-muted">

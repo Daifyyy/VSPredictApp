@@ -265,6 +265,8 @@ export interface UpcomingFixture {
   europeanCup?: boolean;
   /** Kolo soutěže ze zdrojových dat, např. "2nd Qualifying Round". */
   competitionRound?: string | null;
+  venueId?: number | null;
+  venueName?: string | null;
   /** Mód cílového Porovnání (klub vs. reprezentace). */
   compareMode: EntityType;
   /** „Liga" pro deep-link: klub → `leagueId`, reprezentace → konfederace týmu (či null). */

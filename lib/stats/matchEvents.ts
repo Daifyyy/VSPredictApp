@@ -8,7 +8,7 @@ import type { ApiFixtureEvent } from "@/lib/data/apiFootball";
  * i *statistiky*, ale ne *co se v zápase stalo* – `/fixtures/events` se nevolal vůbec.
  */
 
-export type MatchEventKind = "goal" | "ownGoal" | "penalty" | "yellow" | "red" | "sub";
+export type MatchEventKind = "goal" | "ownGoal" | "penalty" | "yellow" | "red" | "sub" | "var";
 
 export interface MatchEvent {
   /** Minuta včetně nastavení (90+3 → `minute: 90`, `extra: 3`). */
@@ -23,6 +23,8 @@ export interface MatchEvent {
    * schválně `null` – „asistence" u vlastňáku by byla nesmyslná.
    */
   assist: string | null;
+  /** Popis rozhodnutí VAR; používá se jen u události VAR. */
+  description?: string;
 }
 
 /** Prázdné jméno („", „ ") je pro UI totéž co chybějící. */
@@ -53,8 +55,7 @@ function kindOf(e: ApiFixtureEvent): MatchEventKind | null {
     return null;
   }
   if (type === "subst") return "sub";
-  // `Var` a cokoli neznámého vědomě zahazujeme: VAR událost bez kontextu („Goal
-  // cancelled") čte laik jako gól. Radši nic než matoucí řádek.
+  if (type === "var") return "var";
   return null;
 }
 
@@ -77,6 +78,7 @@ export function buildMatchEvents(raw: ApiFixtureEvent[]): MatchEvent[] {
       teamId: e.team.id,
       player: name(e.player),
       assist: kind === "ownGoal" ? null : name(e.assist),
+      ...(kind === "var" ? { description: e.detail.trim() || "Kontrola VAR" } : {}),
     });
   }
   return out.sort(
@@ -98,6 +100,7 @@ export const EVENT_ICON: Record<MatchEventKind, string> = {
   yellow: "🟨",
   red: "🟥",
   sub: "🔁",
+  var: "VAR",
 };
 
 /** Popisek pro odečítač i pro `title` – ikona sama význam nenese. */
@@ -108,4 +111,5 @@ export const EVENT_LABEL: Record<MatchEventKind, string> = {
   yellow: "Žlutá karta",
   red: "Červená karta",
   sub: "Střídání",
+  var: "Rozhodnutí VAR",
 };
