@@ -14,17 +14,21 @@ jobs:
     env:
       DATA_SOURCE: mock
       NEXTAUTH_SECRET: ci-only-not-production
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # Prisma validate potřebuje syntakticky platnou URL, ale k databázi se nepřipojuje.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      PRODUCTION_DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npx prisma validate
       - name: Check production migration status
-        if: ${{ env.DATABASE_URL != '' }}
+        if: ${{ env.PRODUCTION_DATABASE_URL != '' }}
+        env:
+          DATABASE_URL: ${{ env.PRODUCTION_DATABASE_URL }}
         run: npx prisma migrate status
       - run: npm run typecheck
       - run: npm run lint
@@ -37,8 +41,8 @@ jobs:
       DATA_SOURCE: mock
       NEXTAUTH_SECRET: ci-only-not-production
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
