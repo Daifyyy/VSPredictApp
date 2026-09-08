@@ -39,6 +39,11 @@ export function isEuroCupLeague(leagueId: number): boolean {
   return EURO_LEAGUE_IDS.includes(leagueId);
 }
 
+/** Obranný filtr názvů: ženské soutěže mají u API vlastní ID, ale nesmějí projít ani při chybné mapě katalogu. */
+export function isWomensCompetitionLabel(...labels: Array<string | null | undefined>): boolean {
+  return labels.some((label) => /(?:\bwomen'?s?\b|\bwomen\b|\bladies\b|\bfrauen\b|f[ée]minin|femenin|feminino|\bdamer\b)/i.test(label ?? ""));
+}
+
 /**
  * Pořadí soutěží pro dávkové běhy, **pootočené podle dne** (`dayOfYear`).
  *

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { QuickOverviewSelection } from "@prisma/client";
 import { prisma, isRealDataConfigured } from "@/lib/db";
 import { getUpcomingPredictions } from "@/lib/data/repository";
-import { catalogLeagueName, FIXTURE_LIST_LEAGUE_IDS, isPublicCompetition } from "@/lib/data/catalog";
+import { catalogLeagueName, FIXTURE_LIST_LEAGUE_IDS, isEuroCupLeague, isPublicCompetition, isWomensCompetitionLabel } from "@/lib/data/catalog";
 import { localDateKey } from "@/lib/competitionGrouping";
 import { frozenQuickSelectionReason, h2hSnapshotCount, newestFrozenQuickRows, QUICK_FOCUS_IDS, quickFocusSelection, rankQuickCandidates, restDaysBetween, selectRecentSeasonRows, type QuickCandidate, type QuickFocus, type QuickMarketSignal, type QuickScore } from "@/lib/quickOverview";
 import type { PredictionRow } from "@/lib/types";
@@ -14,7 +14,6 @@ import { pickTeamStanding } from "@/lib/data/standings";
 import { selectCurrentInjuries } from "@/lib/data/injuries";
 import type { ApiInjury } from "@/lib/data/apiFootball";
 import { fixtureEditorialTitle } from "@/lib/homeFeaturedFixture";
-import { isEuroCupLeague } from "@/lib/data/catalog";
 import { QUICK_OVERVIEW_POLICY_VERSION } from "@/lib/data/quickOverviewStore";
 import { freshClosing, portfolioProfit } from "@/lib/picks/evaluation";
 import { requestDiagnostics } from "@/lib/httpDiagnostics";
@@ -38,16 +37,31 @@ export async function GET(req: Request) {
     const supportedFixtureIds = new Set(frozenPredictions.filter((row) => (FIXTURE_LIST_LEAGUE_IDS as readonly number[]).includes(row.leagueId)).map((row) => row.fixtureId));
     const frozen = newestFrozenQuickRows(frozenCandidates, supportedFixtureIds);
     const frozenIds = [...new Set(frozen.map((row) => row.fixtureId))];
-    const predictions = frozenIds.length
+    let predictions = frozenIds.length
       ? frozenPredictions.filter((row) => frozenIds.includes(row.fixtureId)).map(toPredictionRow)
       : (await getUpcomingPredictions()).filter((row) => row.available && isPublicCompetition(row.leagueId) && localDateKey(row.kickoff) === date);
+
+    // Predikce jsou nemenne auditni snapshoty a mohou prezit pozdejsi opravu rozpisu
+    // upstreamem. Pro aktualni nabidku je autoritativni posledni denni fixture cache.
+    const fixtureCaches = isRealDataConfigured() ? await prisma.apiCache.findMany({
+      where: { key: { in: [`fixdate:${date}`, `fixdate-now:${date}`] } },
+      orderBy: { updatedAt: "desc" },
+      select: { payload: true },
+    }) : [];
+    const fixtureCache = fixtureCaches.find((entry) => Array.isArray(entry.payload)) ?? null;
+    if (Array.isArray(fixtureCache?.payload)) {
+      const officialFixtureIds = new Set((fixtureCache.payload as unknown as ApiFixture[])
+        .filter((fixture) => isPublicCompetition(fixture.league.id)
+          && !isWomensCompetitionLabel(fixture.league.name, fixture.league.round, fixture.teams.home.name, fixture.teams.away.name))
+        .map((fixture) => fixture.fixture.id));
+      predictions = predictions.filter((row) => ["FT", "AET", "PEN"].includes(row.status) || officialFixtureIds.has(row.fixtureId));
+    }
     if (!predictions.length) return response({ date, generatedAt: new Date().toISOString(), categories: emptyCategories() }, diagnostic);
 
-    const [signalRows, fixtureCache, actualRows] = isRealDataConfigured() ? await Promise.all([
+    const [signalRows, actualRows] = isRealDataConfigured() ? await Promise.all([
       prisma.marketSignalSnapshot.findMany({ where: { fixtureId: { in: predictions.map((row) => row.fixtureId) } }, orderBy: [{ openedAt: "desc" }] }),
-      prisma.apiCache.findUnique({ where: { key: `fixdate:${date}` }, select: { payload: true } }),
       prisma.matchStatCache.findMany({ where: { fixtureId: { in: predictions.map((row) => row.fixtureId) } }, select: { fixtureId: true, teamId: true, corners: true, fouls: true, yellowCards: true, redCards: true } }),
-    ]) : [[], null, []];
+    ]) : [[], []];
     const rounds = new Map<number, string>();
     if (Array.isArray(fixtureCache?.payload)) for (const fixture of fixtureCache.payload as unknown as ApiFixture[]) if (fixture.league.round) rounds.set(fixture.fixture.id, fixture.league.round);
     const signals = new Map<number, QuickMarketSignal[]>();

@@ -31,6 +31,7 @@ import {
   dayOfYear,
   isNationalTournamentLeague,
   isEuroCupLeague,
+  isWomensCompetitionLabel,
   isNationalHomeAwayLeague,
   isNeutralNationalLeague,
   rotateLeagues,
@@ -367,6 +368,7 @@ export async function runPredictUpcoming(
         : getCompareNationalTeamFromFixture(t.id, leagueId, meta);
     };
     for (const f of upcoming) {
+      if (isWomensCompetitionLabel(f.league.name, f.league.round, f.teams.home.name, f.teams.away.name)) continue;
       fixtures++;
       const within24h = new Date(f.fixture.date).getTime() <= Date.now() + 24 * 60 * 60_000;
       if (within24h) eligible24h++;

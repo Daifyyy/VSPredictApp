@@ -75,6 +75,15 @@ describe("normalizeUpcomingFixtures", () => {
     expect(out.map((f) => f.leagueId)).toEqual([39]);
   });
 
+  it("vyřadí ženské soutěže a týmy i při kolizi s povoleným leagueId", () => {
+    const womensLeague = fx(1, 2, "NS", "2026-06-23T18:00:00+00:00", { leagueName: "UEFA Women's Champions League" });
+    const womensTeam = fx(2, 2, "NS", "2026-06-23T19:00:00+00:00");
+    womensTeam.teams.home.name = "Arsenal Women";
+    const mens = fx(3, 2, "NS", "2026-06-23T20:00:00+00:00", { leagueName: "UEFA Champions League" });
+
+    expect(normalizeUpcomingFixtures([womensLeague, womensTeam, mens], NOW).map((row) => row.fixtureId)).toEqual([3]);
+  });
+
   it("vyřadí dohrané zápasy (FT/AET/PEN)", () => {
     const raw = [
       fx(1, 39, "FT", "2026-06-23T12:00:00+00:00"),

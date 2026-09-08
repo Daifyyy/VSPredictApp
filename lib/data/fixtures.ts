@@ -6,6 +6,7 @@ import {
   isEuroCupLeague,
   isNationalTournamentLeague,
   leagueLogoUrl,
+  isWomensCompetitionLabel,
 } from "./catalog";
 
 const FIXTURE_LEAGUES = new Set(FIXTURE_LIST_LEAGUE_IDS);
@@ -70,6 +71,7 @@ export function normalizeUpcomingFixtures(
   return raw
     .filter((f) => {
       if (!FIXTURE_LEAGUES.has(f.league.id)) return false;
+      if (isWomensCompetitionLabel(f.league.name, f.league.round, f.teams.home.name, f.teams.away.name)) return false;
       const status = f.fixture.status.short;
       if (LIVE_STATUSES.has(status)) return true; // právě běží → svítí v Programu
       // jinak jen ještě nezačaté (a status není zrušený/dohraný)
