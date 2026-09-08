@@ -445,6 +445,8 @@ model FixturePrediction {
   h2hSnapshot              Json?
   h2hSnapshotVersion       Int?
   h2hCapturedAt            DateTime?
+  /// Point-in-time rozklad vstupu predikce; stare radky zustavaji null.
+  inputSnapshot            Json?
   predictedAt              DateTime  @default(now())
   // Výsledek (doplní settle cron po odehrání)
   status                   String    @default("NS")
@@ -622,6 +624,8 @@ model AutonomousTipSnapshot {
   modelVersion             Int
   contextVersion           Int
   countModelVersion        Int?
+  /// Vstupy modelu pouzite v okamziku kvalifikace; candidate se jiz neprepisuje.
+  modelInputSnapshot       Json?
   referenceOverround       Float?
   status                   String
   capturedAt               DateTime

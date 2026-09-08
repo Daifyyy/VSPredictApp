@@ -3,7 +3,7 @@ import { PINNACLE_FIRST_BOOKMAKERS } from "./apiFootball";
 import { prisma } from "@/lib/db";
 import { sharpFair, sharpFairTotal } from "@/lib/picks/books";
 import { referenceLineQuote } from "@/lib/picks/books";
-import { AUTONOMOUS_POLICY_VERSION, CORNERS_LIVE_COUNT_MODEL_VERSION, evaluateAutonomousTip, type AutonomousStrategy } from "@/lib/picks/autonomousPortfolio";
+import { AUTONOMOUS_POLICY_VERSION, CORNERS_LIVE_COUNT_MODEL_VERSION, GUARDED_ONE_X_TWO_POLICY_VERSION, evaluateAutonomousTip, evaluateGuardedOneXTwo, type AutonomousStrategy } from "@/lib/picks/autonomousPortfolio";
 import { COUNT_MARKET_SIGNAL_POLICY_VERSION, MARKET_SIGNAL_POLICY_VERSION, marketProbabilityAt } from "@/lib/picks/marketSignals";
 import { isPublicClubLeague } from "./catalog";
 import { binaryOutcome, portfolioProfit, RELIABLE_CLOSE_MAX_MINUTES } from "@/lib/picks/evaluation";
@@ -116,6 +116,7 @@ export async function captureAutonomousPortfolio(fixtureId: number, books: BookO
       sampleCount: input.samples, reason: decision.reason, stake: 1,
       modelContext: prediction.modelContext, modelVersion: prediction.modelVersion,
       contextVersion: prediction.contextVersion, countModelVersion: input.countModelVersion ?? null,
+      modelInputSnapshot: prediction.inputSnapshot ?? undefined,
       referenceOverround: input.overround ?? null, status: decision.status,
       capturedAt: at, qualifiedAt: decision.status === "candidate" ? at : null,
     };
@@ -125,6 +126,35 @@ export async function captureAutonomousPortfolio(fixtureId: number, books: BookO
       update: data,
     });
     if (decision.status === "candidate") created++;
+  }
+  // Shadow politika se uklada oddelene a nikdy se nepocita do verejneho portfolia v2.
+  if (oneFair) {
+    const marketProbability = oneSide === "HOME" ? oneFair.home : oneFair.away;
+    const price = referenceOneXTwo(books, oneSide);
+    const sampleCount = Array.isArray(byMarket.get("1X2")?.series) ? (byMarket.get("1X2")!.series as unknown[]).length : 0;
+    const decision = evaluateGuardedOneXTwo({
+      modelProbability: oneProb, marketProbability, decimalOdds: price?.odds ?? null,
+      secondProbability: Math.max(prediction.draw, oneSide === "HOME" ? prediction.awayWin : prediction.homeWin),
+      readinessSample: prediction.readinessSample, lowConfidence: prediction.lowConfidence, sampleCount, minutesToKickoff,
+    });
+    const key = { fixtureId, strategy: "ONE_X_TWO_GUARDED", policyVersion: GUARDED_ONE_X_TWO_POLICY_VERSION };
+    const existing = await prisma.autonomousTipSnapshot.findUnique({ where: { fixtureId_strategy_policyVersion: key } });
+    if (existing?.status !== "candidate") {
+      const shared = {
+        leagueId: prediction.leagueId, kickoff: prediction.kickoff, homeTeamId: prediction.homeTeamId, awayTeamId: prediction.awayTeamId,
+        homeName: prediction.homeName, awayName: prediction.awayName, homeLogo: prediction.homeLogo || null, awayLogo: prediction.awayLogo || null,
+        market: "1X2", side: oneSide, line: null, modelProbability: oneProb, marketProbability,
+        edge: decision.edge ?? 0, expectedValue: decision.expectedValue, decimalOdds: price?.odds ?? null, bookmaker: price?.bookmaker ?? null,
+        sampleCount, reason: decision.reason, stake: 1, modelContext: prediction.modelContext, modelVersion: prediction.modelVersion,
+        contextVersion: prediction.contextVersion, modelInputSnapshot: prediction.inputSnapshot ?? undefined, referenceOverround: oneFair.overround, status: decision.status,
+        capturedAt: at, qualifiedAt: decision.status === "candidate" ? at : null,
+      };
+      await prisma.autonomousTipSnapshot.upsert({
+        where: { fixtureId_strategy_policyVersion: key },
+        create: { ...key, ...shared },
+        update: shared,
+      });
+    }
   }
   return created;
 }

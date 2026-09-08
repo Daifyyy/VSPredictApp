@@ -207,6 +207,17 @@ describe("normalizeUpcomingFixtures", () => {
   });
 });
 
+describe("normalizeFinishedFixtures", () => {
+  it("zachová mužské výsledky a vyřadí ženské soutěže", () => {
+    const mens = fx(10, 2, "FT", "2026-06-22T18:00:00+00:00", { leagueName: "UEFA Champions League" });
+    mens.goals = { home: 2, away: 1 };
+    const womens = fx(11, 2, "FT", "2026-06-22T19:00:00+00:00", { leagueName: "UEFA Women's Champions League" });
+    womens.goals = { home: 1, away: 0 };
+
+    expect(normalizeFinishedFixtures([mens, womens]).map((row) => row.fixtureId)).toEqual([10]);
+  });
+});
+
 /** Zápas s kolem a skóre – pro testy `pickRound`. */
 function roundFx(
   id: number,

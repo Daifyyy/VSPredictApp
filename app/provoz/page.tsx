@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import Link from "next/link";
 import { getCurrentUser } from "@/lib/authUser";
 import { isAdminEmail } from "@/lib/entitlements";
 import { auditPipeline } from "@/lib/operations";
@@ -26,6 +27,7 @@ export default async function OperationsPage() {
         <p className="page-kicker">Administrace</p>
         <h1 className="page-title">Provoz predikční pipeline</h1>
         <p className="mt-2 text-sm text-muted">Stav k {new Date(health.asOf).toLocaleString("cs-CZ")}. Veřejné stránky tento audit nespouštějí.</p>
+        <nav className="mt-3 flex gap-2"><Link className="ui-button ui-button-primary" href="/provoz">Provoz pipeline</Link><Link className="ui-button ui-button-secondary" href="/provoz/modely">Modely a kontroly</Link></nav>
       </header>
       <section className="grid gap-3 md:grid-cols-3">
         {health.coverage.map((item) => (

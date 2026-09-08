@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateAutonomousTip, type AutonomousInput } from "./autonomousPortfolio";
+import { evaluateAutonomousTip, evaluateGuardedOneXTwo, type AutonomousInput } from "./autonomousPortfolio";
 
 const base: AutonomousInput = { strategy: "ONE_X_TWO", modelProbability: .58, secondProbability: .48, marketProbability: .54, decimalOdds: 1.8, readinessSample: 6, lowConfidence: false, sampleCount: 3, minutesToKickoff: 15 };
 
@@ -30,4 +30,11 @@ describe("evaluateAutonomousTip", () => {
     expect(evaluateAutonomousTip({ ...base, readinessSample: 5.9 }).status).toBe("watch");
     expect(evaluateAutonomousTip({ ...base, lowConfidence: true }).status).toBe("watch");
   });
+});
+
+describe("guarded 1X2 shadow policy", () => {
+  const guarded = { modelProbability: .62, marketProbability: .54, decimalOdds: 1.9, secondProbability: .30, readinessSample: 7, lowConfidence: false, sampleCount: 3, minutesToKickoff: 60 };
+  it("prijme bezny kandidat", () => expect(evaluateGuardedOneXTwo(guarded).status).toBe("candidate"));
+  it("ponecha pripravenost 6 jen k auditu", () => expect(evaluateGuardedOneXTwo({ ...guarded, readinessSample: 6 }).status).toBe("watch"));
+  it("oznaci edge nad 15 p. b.", () => expect(evaluateGuardedOneXTwo({ ...guarded, modelProbability: .70, marketProbability: .54 }).reason).toContain("Vyrazny nesoulad"));
 });

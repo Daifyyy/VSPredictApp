@@ -49,7 +49,9 @@ export async function GET(req: Request) {
       select: { payload: true },
     }) : [];
     const fixtureCache = fixtureCaches.find((entry) => Array.isArray(entry.payload)) ?? null;
-    if (Array.isArray(fixtureCache?.payload)) {
+    // Nemenny historicky vyber se po kvalifikaci uz nesmi menit ani zmizet. Kontrola
+    // aktualniho rozpisu patri pouze fallbacku, ktery teprve sestavuje novou nabidku.
+    if (!frozenIds.length && Array.isArray(fixtureCache?.payload)) {
       const officialFixtureIds = new Set((fixtureCache.payload as unknown as ApiFixture[])
         .filter((fixture) => isPublicCompetition(fixture.league.id)
           && !isWomensCompetitionLabel(fixture.league.name, fixture.league.round, fixture.teams.home.name, fixture.teams.away.name))

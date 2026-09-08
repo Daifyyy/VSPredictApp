@@ -128,6 +128,7 @@ export function normalizeFinishedFixtures(raw: ApiFixture[]): PlayedFixture[] {
   const out: PlayedFixture[] = [];
   for (const f of raw) {
     if (!FIXTURE_LEAGUES.has(f.league.id)) continue;
+    if (isWomensCompetitionLabel(f.league.name, f.league.round, f.teams.home.name, f.teams.away.name)) continue;
     const status = f.fixture.status.short;
     if (!FINISHED_STATUSES.has(status)) continue;
     const ft = fullTimeGoals(f);

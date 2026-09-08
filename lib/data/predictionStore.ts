@@ -103,6 +103,7 @@ function toRow(p: PredictionRowSource): PredictionRow {
     h2hSnapshot: p.h2hSnapshot as PredictionRow["h2hSnapshot"],
     h2hSnapshotVersion: p.h2hSnapshotVersion,
     h2hCapturedAt: p.h2hCapturedAt?.toISOString() ?? null,
+    inputSnapshot: p.inputSnapshot as PredictionRow["inputSnapshot"],
     status: p.status,
     homeGoals: p.homeGoals,
     awayGoals: p.awayGoals,
@@ -186,6 +187,7 @@ export async function upsertPrediction(row: PredictionUpsert): Promise<void> {
     sharpen: PREDICT_PARAMS.sharpen,
     calibA: PREDICT_PARAMS.calibA,
     calibB: PREDICT_PARAMS.calibB,
+    inputSnapshot: row.inputSnapshot == null ? Prisma.DbNull : row.inputSnapshot as unknown as Prisma.InputJsonValue,
     predictedAt: new Date(),
   };
   await prisma.fixturePrediction.upsert({

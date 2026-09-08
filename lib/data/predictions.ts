@@ -455,6 +455,16 @@ export async function runPredictUpcoming(
           h2hSnapshot,
           h2hSnapshotVersion: H2H_SNAPSHOT_VERSION,
           h2hCapturedAt: h2hCapturedAt.toISOString(),
+          inputSnapshot: {
+            baseline: { home: baseline?.home ?? 1.5, away: baseline?.away ?? 1.2, source: baseline ? "league" : "default" },
+            strengthSource: rh && ra ? "opponent_adjusted_rating" : "window_fallback",
+            homeStrength: rh ? { attack: rh.attack, defense: rh.defense, sample: rh.sample } : null,
+            awayStrength: ra ? { attack: ra.attack, defense: ra.defense, sample: ra.sample } : null,
+            readinessSample: p.readiness.sample,
+            neutral: fixtureNeutral,
+            source: result.source,
+            capturedAt: new Date().toISOString(),
+          },
         });
         try {
           await captureCalibrationShadows({

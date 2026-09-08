@@ -1010,6 +1010,17 @@ export interface PredictionRow {
   h2hSnapshot?: import("@/lib/h2h").HeadToHeadPredictionSnapshot | null;
   h2hSnapshotVersion?: number | null;
   h2hCapturedAt?: string | null;
+  /** Point-in-time vysvetleni vstupu lambda; stare predikce jej nemaji. */
+  inputSnapshot?: {
+    baseline: { home: number; away: number; source: "league" | "default" };
+    strengthSource: "opponent_adjusted_rating" | "window_fallback";
+    homeStrength: { attack: number; defense: number; sample: number } | null;
+    awayStrength: { attack: number; defense: number; sample: number } | null;
+    readinessSample: number;
+    neutral: boolean;
+    source: string;
+    capturedAt: string;
+  } | null;
   status: string; // "NS" | "FT" | "AET" | "PEN" | …
   homeGoals: number | null;
   awayGoals: number | null;

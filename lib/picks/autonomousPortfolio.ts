@@ -11,6 +11,10 @@ export const AUTONOMOUS_POLICY_VERSION: Record<AutonomousStrategy, number> = {
 /** Count model zmrazený pro rohovou politiku v1; změna modelu vyžaduje novou politiku. */
 export const CORNERS_LIVE_COUNT_MODEL_VERSION = 2;
 
+/** Prospektivni bezpecnostni varianta 1X2. Neni verejnym portfoliem. */
+export const GUARDED_ONE_X_TWO_POLICY_VERSION = 1;
+export const GUARDED_ONE_X_TWO_MAX_EDGE = 0.15;
+
 export interface AutonomousInput {
   strategy: AutonomousStrategy;
   modelProbability: number;
@@ -65,4 +69,17 @@ export function evaluateAutonomousTip(input: AutonomousInput): AutonomousDecisio
     edge,
     expectedValue,
   };
+}
+
+export function evaluateGuardedOneXTwo(input: Omit<AutonomousInput, "strategy">): AutonomousDecision {
+  const edge = input.marketProbability == null ? null : input.modelProbability - input.marketProbability;
+  const expectedValue = input.decimalOdds == null ? null : input.modelProbability * input.decimalOdds - 1;
+  if (input.lowConfidence || input.readinessSample < 7) {
+    return { status: "watch", reason: `Shadow v1 vyzaduje pripravenost alespon 7; aktualne ${input.readinessSample.toFixed(1)}.`, edge, expectedValue };
+  }
+  if (edge != null && edge > GUARDED_ONE_X_TWO_MAX_EDGE) {
+    return { status: "watch", reason: `Vyrazny nesoulad s trhem +${(edge * 100).toFixed(1)} p. b.; zustava jen k auditu.`, edge, expectedValue };
+  }
+  const base = evaluateAutonomousTip({ ...input, strategy: "ONE_X_TWO" });
+  return base.status === "candidate" ? { ...base, reason: `Shadow v1: ${base.reason}` } : base;
 }
