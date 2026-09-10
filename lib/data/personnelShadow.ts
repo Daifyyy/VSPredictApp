@@ -316,10 +316,10 @@ export async function collectPersonnelShadow(input: { limit?: number; cursor?: n
     }
   }
   // Player match collection is deliberately bounded to one missing recent fixture per run.
-  const recentFinished = await prisma.fixturePrediction.findMany({
+  const recentFinished = cursor === 0 ? await prisma.fixturePrediction.findMany({
     where: { modelContext: "LEAGUE", leagueId: { in: [...PUBLIC_CLUB_LEAGUE_IDS] }, status: { in: ["FT", "AET", "PEN"] }, settledAt: { gte: new Date(now.getTime() - 7 * 86_400_000) } },
     orderBy: { kickoff: "desc" }, take: 20, select: { fixtureId: true },
-  });
+  }) : [];
   const capturedFixtureIds = recentFinished.length ? new Set((await prisma.playerMatchSnapshot.findMany({
     where: { fixtureId: { in: recentFinished.map((row) => row.fixtureId) } }, distinct: ["fixtureId"], select: { fixtureId: true },
   })).map((row) => row.fixtureId)) : new Set<number>();
