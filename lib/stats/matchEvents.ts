@@ -29,6 +29,15 @@ export interface MatchEvent {
   description?: string;
   sourceDetail?: string;
   sourceComment?: string | null;
+  /** Jen explicitnÄ› zdravotnĂ­ dĹŻvod od zdroje. `null` znamenĂˇ, Ĺľe pĹ™Ă­ÄŤinu nevĂ­me. */
+  forcedSubstitution?: boolean | null;
+  forcedReason?: string | null;
+}
+
+export function explicitForcedSubstitution(detail: string, comment?: string | null): { forced: true; reason: string } | null {
+  const source = `${detail} ${comment ?? ""}`.trim();
+  if (!/\b(injur(?:y|ed)|medical|concussion|hamstring|muscle injury|knock)\b/i.test(source)) return null;
+  return { forced: true, reason: source };
 }
 
 /** Prázdné jméno („", „ ") je pro UI totéž co chybějící. */
@@ -88,6 +97,10 @@ export function buildMatchEvents(raw: ApiFixtureEvent[]): MatchEvent[] {
       ...(kind === "var" ? { description: e.detail.trim() || "Kontrola VAR" } : {}),
       sourceDetail: e.detail,
       sourceComment: e.comments?.trim() || null,
+      ...(kind === "sub" ? (() => {
+        const forced = explicitForcedSubstitution(e.detail, e.comments);
+        return { forcedSubstitution: forced?.forced ?? null, forcedReason: forced?.reason ?? null };
+      })() : {}),
     });
   }
   return out.sort(

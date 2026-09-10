@@ -5,6 +5,7 @@ import {
   fetchFixtureInjuries,
   fetchFixtureLineups,
   fetchFixturePlayers,
+  fetchTeamSeasonPlayers,
   fetchFixturesByIds,
   fetchLeagueCoverage,
   type ApiFixtureLineup,
@@ -13,6 +14,7 @@ import {
 import { CURRENT_SEASON, PUBLIC_CLUB_LEAGUE_IDS } from "./catalog";
 import { MODEL_VERSION } from "./modelVersion";
 import { resolveIncident, upsertIncident } from "@/lib/operations";
+import { playerPersonnelValue, weightedUnitStrength } from "@/lib/stats/personnelStrength";
 
 export const PERSONNEL_FEATURE_VERSION = 1;
 export const LINEUP_SHADOW_VERSION = 1;
@@ -24,6 +26,29 @@ const numberOf = (value: unknown): number | null => {
   const result = Number(String(value).replace("%", ""));
   return Number.isFinite(result) ? result : null;
 };
+
+type FetchAudit = { dataType: string; endpoint: string; fixtureId?: number; leagueId?: number; teamId?: number; season?: number };
+async function auditedFetch<T>(meta: FetchAudit, operation: () => Promise<T>, count: (value: T) => number) {
+  const started = Date.now();
+  const attemptedAt = minuteBucket(new Date());
+  const attemptKey = [meta.dataType, meta.fixtureId ?? "-", meta.leagueId ?? "-", meta.teamId ?? "-", meta.season ?? "-", attemptedAt.toISOString()].join(":");
+  try {
+    const value = await operation();
+    const rowCount = count(value);
+    await prisma.personnelFetchAttempt.upsert({ where: { attemptKey }, update: {}, create: {
+      attemptKey, ...meta, status: rowCount > 0 ? "SUCCESS_WITH_DATA" : "SUCCESS_EMPTY",
+      rowCount, durationMs: Date.now() - started, attemptedAt,
+    } });
+    return value;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await prisma.personnelFetchAttempt.upsert({ where: { attemptKey }, update: {}, create: {
+      attemptKey, ...meta, status: "FETCH_FAILED", durationMs: Date.now() - started,
+      errorCode: /HTTP (\d+)/.exec(message)?.[1] ?? null, errorMessage: message.slice(0, 500), attemptedAt,
+    } }).catch(() => {});
+    throw error;
+  }
+}
 
 export function availabilityType(type: string | null | undefined, reason: string | null | undefined) {
   const text = `${type ?? ""} ${reason ?? ""}`.toLowerCase();
@@ -80,7 +105,7 @@ async function saveLineup(fixtureId: number, kickoff: Date, lineup: ApiFixtureLi
 }
 
 async function saveAvailability(fixture: { fixtureId: number; kickoff: Date; homeTeamId: number; awayTeamId: number }, at: Date) {
-  const rows = await fetchFixtureInjuries(fixture.fixtureId);
+  const rows = await auditedFetch({ dataType: "AVAILABILITY", endpoint: "/injuries", fixtureId: fixture.fixtureId }, () => fetchFixtureInjuries(fixture.fixtureId), (value) => value.length);
   for (const row of rows) {
     const teamId = row.team?.id;
     if (!teamId || (teamId !== fixture.homeTeamId && teamId !== fixture.awayTeamId)) continue;
@@ -178,6 +203,29 @@ async function latestLineup(fixtureId: number, teamId: number) {
   return prisma.fixtureLineupSnapshot.findFirst({ where: { fixtureId, teamId }, orderBy: { capturedAt: "desc" }, include: { players: true } });
 }
 
+async function sharedMinutesForLineup(teamId: number, playerIds: number[], kickoff: Date) {
+  if (playerIds.length < 2) return null;
+  const priorFixtures = await prisma.fixturePrediction.findMany({
+    where: { kickoff: { lt: kickoff }, OR: [{ homeTeamId: teamId }, { awayTeamId: teamId }] },
+    orderBy: { kickoff: "desc" }, take: 5, select: { fixtureId: true },
+  });
+  if (!priorFixtures.length) return null;
+  const rows = await prisma.playerMatchSnapshot.findMany({
+    where: { teamId, fixtureId: { in: priorFixtures.map((row) => row.fixtureId) }, playerId: { in: playerIds }, capturedAt: { lt: kickoff } },
+    select: { fixtureId: true, playerId: true, minutes: true },
+  });
+  const byFixture = new Map<number, Map<number, number>>();
+  for (const row of rows) {
+    const fixture = byFixture.get(row.fixtureId) ?? new Map<number, number>();
+    fixture.set(row.playerId, row.minutes ?? 0); byFixture.set(row.fixtureId, fixture);
+  }
+  let shared = 0, possible = 0;
+  for (const fixture of byFixture.values()) for (let i = 0; i < playerIds.length; i++) for (let j = i + 1; j < playerIds.length; j++) {
+    possible += 90; shared += Math.min(fixture.get(playerIds[i]) ?? 0, fixture.get(playerIds[j]) ?? 0);
+  }
+  return possible ? shared / possible : null;
+}
+
 async function buildFeatures(fixture: { fixtureId: number; kickoff: Date }, teamId: number, calculatedAt: Date) {
   const lineup = await latestLineup(fixture.fixtureId, teamId);
   if (!lineup) return null;
@@ -192,13 +240,25 @@ async function buildFeatures(fixture: { fixtureId: number; kickoff: Date }, team
   const starts = new Map<number, number>();
   for (const item of history) for (const player of item.players) if (player.role === "STARTER" && player.playerId != null) starts.set(player.playerId, (starts.get(player.playerId) ?? 0) + 1);
   const regularStarters = ids.filter((id) => (starts.get(id) ?? 0) >= 3).length;
-  const profiles = ids.length ? await prisma.playerSeasonSnapshot.findMany({ where: { playerId: { in: ids }, teamId }, orderBy: { capturedAt: "desc" }, distinct: ["playerId"] }) : [];
-  const ratings = profiles.map((row) => row.rating).filter((value): value is number => value != null);
+  const bench = lineup.players.filter((row) => row.role === "SUBSTITUTE");
+  const allKnownIds = [...new Set([...ids, ...bench.map((row) => row.playerId).filter((id): id is number => id != null), ...starts.keys()])];
+  const profiles = allKnownIds.length ? await prisma.playerSeasonSnapshot.findMany({ where: { playerId: { in: allKnownIds }, teamId, capturedAt: { lte: calculatedAt } }, orderBy: { capturedAt: "desc" }, distinct: ["playerId"] }) : [];
+  const profileMap = new Map(profiles.map((row) => [row.playerId, row]));
   const availability = await prisma.fixtureAvailabilitySnapshot.findMany({ where: { fixtureId: fixture.fixtureId, teamId, capturedAt: { lte: calculatedAt } }, orderBy: { capturedAt: "desc" }, distinct: ["playerName"] });
   const goalkeeper = starters.find((row) => row.position === "G");
   const oldGoalkeeper = previous.find((row) => row.position === "G");
   const defense = starters.filter((row) => row.position === "D" && row.playerId != null);
-  const knownProfiles = profiles.length / Math.max(1, ids.length);
+  const knownProfiles = ids.filter((id) => profileMap.has(id)).length / Math.max(1, ids.length);
+  const starting = weightedUnitStrength(starters, profileMap);
+  const substituteStrength = weightedUnitStrength(bench, profileMap);
+  const usualIds = [...starts.entries()].filter(([, count]) => count >= 3).map(([id]) => id);
+  const usualRows = usualIds.map((playerId) => ({ playerId, position: profileMap.get(playerId)?.position ?? null }));
+  const usualStrength = weightedUnitStrength(usualRows, profileMap);
+  const scorer = profiles.toSorted((a, b) => ((b.goals ?? 0) + .7 * (b.assists ?? 0)) - ((a.goals ?? 0) + .7 * (a.assists ?? 0)))[0];
+  const usualGoalkeeperId = history.flatMap((item) => item.players.filter((row) => row.role === "STARTER" && row.position === "G" && row.playerId != null)).map((row) => row.playerId!)[0] ?? null;
+  const absenceIds = new Set(availability.map((row) => row.playerId).filter((id): id is number => id != null));
+  const importantAbsences = availability.filter((row) => row.playerId != null && playerPersonnelValue(profileMap.get(row.playerId), profileMap.get(row.playerId)?.position).importance >= .6).length;
+  const sharedMinutesRatio = await sharedMinutesForLineup(teamId, ids, fixture.kickoff);
   const completeness = Math.min(1, lineup.completeness * .65 + knownProfiles * .25 + .1);
   const values = {
     lineupChanges, regularStarters, defenseContinuity: previous.length ? defense.filter((row) => previousIds.has(row.playerId!)).length / Math.max(1, defense.length) : null,
@@ -206,13 +266,17 @@ async function buildFeatures(fixture: { fixtureId: number; kickoff: Date }, team
     formationChanged: history[0]?.formation ? lineup.formation !== history[0].formation : null,
     coachChangedRecently: history[0]?.coachId != null && lineup.coachId != null ? history[0].coachId !== lineup.coachId : null,
     coachMatches: history.filter((row) => row.coachId != null && row.coachId === lineup.coachId).length,
-    startingStrength: ratings.length ? ratings.reduce((sum, value) => sum + value, 0) / ratings.length : null,
-    importantAbsences: availability.length,
+    sharedMinutesRatio,
+    startingStrength: starting?.value ?? null, benchStrength: substituteStrength?.value ?? null,
+    strengthLoss: starting && usualStrength ? Math.max(0, (usualStrength.value - starting.value) / usualStrength.value) : null,
+    missingGoalkeeper: usualGoalkeeperId != null ? !ids.includes(usualGoalkeeperId) || absenceIds.has(usualGoalkeeperId) : null,
+    missingKeyScorer: scorer ? !ids.includes(scorer.playerId) || absenceIds.has(scorer.playerId) : null,
+    importantAbsences,
   };
   return prisma.fixturePersonnelFeatures.create({ data: {
     fixtureId: fixture.fixtureId, teamId, kickoff: fixture.kickoff, lineupSnapshotId: lineup.id,
     availabilityCapturedAt: availability[0]?.capturedAt ?? null, calculatedAt: minuteBucket(calculatedAt), completeness,
-    ...values, features: json({ profileCoverage: knownProfiles, starterIds: ids }),
+    ...values, features: json({ profileCoverage: knownProfiles, starterIds: ids, substituteIds: bench.map((row) => row.playerId), usualStarterIds: usualIds, keyScorerId: scorer?.playerId ?? null, usualGoalkeeperId, strengthMethod: "shrunk-rating-importance-v1" }),
   } });
 }
 
@@ -254,7 +318,7 @@ export async function refreshCoverage(now = new Date()) {
     const existing = await prisma.leagueDataCoverage.findFirst({ where: { leagueId, season: CURRENT_SEASON }, orderBy: { verifiedAt: "desc" } });
     if (existing && now.getTime() - existing.verifiedAt.getTime() < 23 * 60 * 60_000) continue;
     try {
-      const payload = await fetchLeagueCoverage(leagueId, CURRENT_SEASON);
+      const payload = await auditedFetch({ dataType: "COVERAGE", endpoint: "/leagues", leagueId, season: CURRENT_SEASON }, () => fetchLeagueCoverage(leagueId, CURRENT_SEASON), (value) => value.length);
       const season = payload[0]?.seasons.find((row) => row.year === CURRENT_SEASON);
       const coverage = season?.coverage;
       const any = Boolean(coverage);
@@ -286,7 +350,7 @@ export async function collectPersonnelShadow(input: { limit?: number; cursor?: n
   const batch = all.slice(cursor, cursor + limit); let processed = 0, errors = 0, savedLineups = 0, savedAbsences = 0, shadows = 0;
   if (batch.length) {
     let fixtures = [] as Awaited<ReturnType<typeof fetchFixturesByIds>>;
-    try { fixtures = await fetchFixturesByIds(batch.map((row) => row.fixtureId)); } catch { errors += batch.length; }
+    try { fixtures = await auditedFetch({ dataType: "FIXTURE_BUNDLE", endpoint: "/fixtures" }, () => fetchFixturesByIds(batch.map((row) => row.fixtureId)), (value) => value.length); } catch { errors += batch.length; }
     const byId = new Map(fixtures.map((row) => [row.fixture.id, row]));
     for (const prediction of batch) {
       try {
@@ -296,7 +360,7 @@ export async function collectPersonnelShadow(input: { limit?: number; cursor?: n
         const lineupMarker = await prisma.apiCache.findUnique({ where: { key: `personnel:lineup:${prediction.fixtureId}` } });
         const lineupCheckDue = !lineupMarker || lineupMarker.expiresAt <= now;
         if (!lineups.length && minutes <= 90 && coverage?.lineups !== false && lineupCheckDue) {
-          lineups = await fetchFixtureLineups(prediction.fixtureId);
+          lineups = await auditedFetch({ dataType: "LINEUP", endpoint: "/fixtures/lineups", fixtureId: prediction.fixtureId, leagueId: prediction.leagueId, season: CURRENT_SEASON }, () => fetchFixtureLineups(prediction.fixtureId), (value) => value.length);
           const retryMinutes = minutes > 60 ? 30 : minutes > 40 ? 20 : minutes > 20 ? 20 : 10;
           await prisma.apiCache.upsert({
             where: { key: `personnel:lineup:${prediction.fixtureId}` },
@@ -326,16 +390,60 @@ export async function collectPersonnelShadow(input: { limit?: number; cursor?: n
   const missing = recentFinished.find((row) => !capturedFixtureIds.has(row.fixtureId));
   let playerRows = 0, playerProfiles = 0;
   if (missing) try {
-    playerRows = await savePlayerMatch(missing.fixtureId, await fetchFixturePlayers(missing.fixtureId), now);
+    const fixturePlayers = await auditedFetch({ dataType: "PLAYER_MATCH", endpoint: "/fixtures/players", fixtureId: missing.fixtureId }, () => fetchFixturePlayers(missing.fixtureId), (value) => value.reduce((sum, team) => sum + team.players.length, 0));
+    playerRows = await savePlayerMatch(missing.fixtureId, fixturePlayers, now);
     if (playerRows) playerProfiles = await refreshPlayerSeasonProfiles(missing.fixtureId, now);
   } catch { errors++; }
   const next = cursor + batch.length;
   return { candidates: all.length, processed, errors, savedLineups, savedAbsences, shadows, playerRows, playerProfiles, remaining: Math.max(0, all.length - next), cursor: next < all.length ? String(next) : null, reason: next < all.length ? "BATCH_LIMIT" : null };
 }
 
+export async function refreshDailyPlayerProfiles(input: { limit?: number; cursor?: number; now?: Date } = {}) {
+  const now = input.now ?? new Date();
+  const limit = Math.min(4, Math.max(1, input.limit ?? 2));
+  const cursor = Math.max(0, input.cursor ?? 0);
+  const fixtures = await prisma.fixturePrediction.findMany({
+    where: { modelContext: "LEAGUE", leagueId: { in: [...PUBLIC_CLUB_LEAGUE_IDS] }, kickoff: { gt: now, lte: new Date(now.getTime() + 7 * 86_400_000) } },
+    orderBy: [{ kickoff: "asc" }, { fixtureId: "asc" }],
+    select: { leagueId: true, season: true, homeTeamId: true, awayTeamId: true },
+  });
+  const candidateMap = new Map<string, { teamId: number; leagueId: number; season: number }>();
+  for (const fixture of fixtures) for (const teamId of [fixture.homeTeamId, fixture.awayTeamId]) candidateMap.set(`${teamId}:${fixture.leagueId}:${fixture.season}`, { teamId, leagueId: fixture.leagueId, season: fixture.season });
+  const all = [...candidateMap.values()];
+  const batch = all.slice(cursor, cursor + limit);
+  let processed = 0, saved = 0, skippedFresh = 0, errors = 0;
+  const bucket = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  for (const candidate of batch) {
+    try {
+      const fresh = await prisma.playerSeasonSnapshot.findFirst({ where: { ...candidate, capturedAt: { gte: bucket }, metrics: { path: ["source"], equals: "api-football-players" } } });
+      if (fresh) { skippedFresh++; processed++; continue; }
+      const rows = await auditedFetch({ dataType: "PLAYER_SEASON", endpoint: "/players", ...candidate }, () => fetchTeamSeasonPlayers(candidate.teamId, candidate.leagueId, candidate.season), (value) => value.length);
+      for (const row of rows) {
+        const stat = row.statistics.find((item) => item.team.id === candidate.teamId && item.league.id === candidate.leagueId);
+        if (!stat) continue;
+        const values = {
+          minutes: numberOf(stat.games?.minutes), starts: numberOf(stat.games?.lineups), appearances: numberOf(stat.games?.appearances), rating: numberOf(stat.games?.rating),
+          goals: numberOf(stat.goals?.total), assists: numberOf(stat.goals?.assists), shots: numberOf(stat.shots?.total), shotsOnTarget: numberOf(stat.shots?.on),
+          passes: numberOf(stat.passes?.total), keyPasses: numberOf(stat.passes?.key), yellowCards: numberOf(stat.cards?.yellow), redCards: numberOf(stat.cards?.red),
+          saves: numberOf(stat.goals?.saves), conceded: numberOf(stat.goals?.conceded),
+        };
+        const completeness = Object.values(values).filter((value) => value != null).length / Object.keys(values).length;
+        await prisma.playerSeasonSnapshot.upsert({
+          where: { playerId_teamId_leagueId_season_capturedAt: { playerId: row.player.id, ...candidate, capturedAt: bucket } }, update: {},
+          create: { playerId: row.player.id, playerName: row.player.name, ...candidate, position: stat.games?.position ?? null, ...values, metrics: json({ source: "api-football-players", raw: stat }), sourceAt: now, capturedAt: bucket, completeness },
+        });
+        saved++;
+      }
+      processed++;
+    } catch { errors++; }
+  }
+  const next = cursor + batch.length;
+  return { candidates: all.length, processed, saved, skippedFresh, errors, remaining: Math.max(0, all.length - next), cursor: next < all.length ? String(next) : null, reason: next < all.length ? "BATCH_LIMIT" : null };
+}
+
 export async function personnelShadowDashboard(now = new Date()) {
   const since = new Date(now.getTime() - 30 * 86_400_000);
-  const [coverage, fixtureCount, completeFixtures, availabilityFixtures, shadows, playerFixtures, playerProfiles, latestRun, incidents, recent] = await Promise.all([
+  const [coverage, fixtureCount, completeFixtures, availabilityFixtures, shadows, playerFixtures, playerProfiles, latestRun, incidents, recent, fetchAttempts] = await Promise.all([
     prisma.leagueDataCoverage.findMany({ where: { season: CURRENT_SEASON }, orderBy: { leagueId: "asc" } }),
     prisma.fixturePrediction.count({ where: { modelContext: "LEAGUE", leagueId: { in: [...PUBLIC_CLUB_LEAGUE_IDS] }, kickoff: { gte: since, lte: now } } }),
     prisma.fixtureLineupSnapshot.groupBy({ by: ["fixtureId"], where: { kickoff: { gte: since, lte: now }, status: "CONFIRMED" }, _count: { teamId: true } }).then((rows) => rows.filter((row) => row._count.teamId >= 2).length),
@@ -346,6 +454,7 @@ export async function personnelShadowDashboard(now = new Date()) {
     prisma.cronRun.findFirst({ where: { job: "personnel-shadow" }, orderBy: { startedAt: "desc" } }),
     prisma.dataIncident.findMany({ where: { status: "OPEN", kind: { in: ["PERSONNEL_DATA", "COVERAGE"] } }, orderBy: { lastSeenAt: "desc" }, take: 10 }),
     prisma.shadowForecastSnapshot.findMany({ orderBy: { calculatedAt: "desc" }, take: 10 }),
+    prisma.personnelFetchAttempt.findMany({ where: { attemptedAt: { gte: since } }, orderBy: { attemptedAt: "desc" }, take: 100 }),
   ]);
   const fixtureIds = recent.map((row) => row.fixtureId);
   const fixtures = fixtureIds.length ? await prisma.fixturePrediction.findMany({
@@ -361,7 +470,7 @@ export async function personnelShadowDashboard(now = new Date()) {
     availabilityCoverage: fixtureCount ? availabilityFixtures / fixtureCount : 0,
     playerFixtures, playerProfiles, playerCoverage: fixtureCount ? playerFixtures / fixtureCount : 0,
     shadows, milestone: 300, coverage, supportedLeagues: supported.length, latestRun, incidents,
-    recent: recent.map((row) => ({ ...row, fixture: fixtureById.get(row.fixtureId) ?? null })),
+    fetchAttempts, recent: recent.map((row) => ({ ...row, fixture: fixtureById.get(row.fixtureId) ?? null })),
   };
 }
 

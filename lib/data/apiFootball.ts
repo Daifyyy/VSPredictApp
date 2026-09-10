@@ -292,6 +292,21 @@ const fixturePlayerSchema = z.object({
 const fixturePlayersSchema = z.array(fixturePlayerSchema);
 export type ApiFixturePlayers = z.infer<typeof fixturePlayersSchema>;
 
+const seasonPlayerSchema = z.object({
+  player: z.object({ id: z.number(), name: z.string(), photo: z.string().nullable().optional() }),
+  statistics: z.array(z.object({
+    team: z.object({ id: z.number() }),
+    league: z.object({ id: z.number(), season: z.number().optional() }),
+    games: z.object({ appearances: nullableNumberLike, lineups: nullableNumberLike, minutes: nullableNumberLike, position: z.string().nullable().optional(), rating: nullableNumberLike }).partial().optional(),
+    shots: z.object({ total: nullableNumberLike, on: nullableNumberLike }).partial().optional(),
+    goals: z.object({ total: nullableNumberLike, conceded: nullableNumberLike, assists: nullableNumberLike, saves: nullableNumberLike }).partial().optional(),
+    passes: z.object({ total: nullableNumberLike, key: nullableNumberLike }).partial().optional(),
+    cards: z.object({ yellow: nullableNumberLike, red: nullableNumberLike }).partial().optional(),
+  }).passthrough()).default([]),
+});
+const seasonPlayersSchema = z.array(seasonPlayerSchema);
+export type ApiSeasonPlayer = z.infer<typeof seasonPlayerSchema>;
+
 // /standings vrací per liga+sezóna vnořené pole tabulek (běžně 1, u skupin víc).
 // Bereme jen pole, která zobrazujeme: pozice, body, rozdíl skóre, forma + rozpad
 // celkově/doma/venku. Tolerantní – chybějící část = ošetří se čistá funkce.
@@ -826,6 +841,17 @@ export function fetchFixtureInjuries(fixture: number) {
 /** Individualni vykony obou tymu v jednom zapase. */
 export function fetchFixturePlayers(fixture: number) {
   return apiGet("/fixtures/players", { fixture }, fixturePlayersSchema);
+}
+
+/** DennĂ­ prospektivnĂ­ profil kĂˇdru. StrĂˇnkujeme, dokud API nevrĂˇtĂ­ mĂ©nÄ› neĹľ 20 hrĂˇÄŤĹŻ. */
+export async function fetchTeamSeasonPlayers(team: number, league: number, season: number) {
+  const result: ApiSeasonPlayer[] = [];
+  for (let page = 1; page <= 4; page++) {
+    const rows = await apiGet("/players", { team, league, season, page }, seasonPlayersSchema);
+    result.push(...rows);
+    if (rows.length < 20) break;
+  }
+  return result;
 }
 
 /**

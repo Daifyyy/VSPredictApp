@@ -880,6 +880,31 @@ model LeagueDataCoverage {
   @@index([modelContext, status, verifiedAt])
 }
 
+/// Audit kaĹľdĂ©ho pokusu personĂˇlnĂ­ pipeline. PrĂˇzdnĂˇ odpovÄ›ÄŹ je platnĂ˝ vĂ˝sledek,
+/// nikoliv neviditelnĂ© selhĂˇnĂ­; `attemptKey` zajiĹˇĹĄuje idempotenci opakovanĂ©ho cronu.
+model PersonnelFetchAttempt {
+  id          String   @id @default(cuid())
+  attemptKey  String   @unique
+  dataType    String
+  endpoint    String
+  status      String
+  fixtureId   Int?
+  leagueId    Int?
+  teamId      Int?
+  season      Int?
+  rowCount    Int?
+  durationMs  Int?
+  errorCode   String?
+  errorMessage String?
+  details     Json?
+  attemptedAt DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([dataType, status, attemptedAt])
+  @@index([fixtureId, dataType, attemptedAt])
+  @@index([teamId, season, dataType, attemptedAt])
+}
+
 /// Point-in-time absence vztazena ke konkretnimu zapasu. Radek se nikdy neprepisuje.
 model FixtureAvailabilitySnapshot {
   id                   String   @id @default(cuid())

@@ -47,7 +47,7 @@ export function EventTimeline({
               <span className="order-2 flex shrink-0 items-center gap-1 tabular-nums text-muted">
                 <span aria-hidden>{EVENT_ICON[e.kind]}</span>
                 {/* Ikona sama význam nenese – pro odečítač je tu slovo. */}
-                <span className="sr-only">{EVENT_LABEL[e.kind]}</span>
+                <span className="sr-only">{e.forcedSubstitution ? "NucenĂ© stĹ™Ă­dĂˇnĂ­" : EVENT_LABEL[e.kind]}</span>
                 <span className="w-9 text-center font-semibold">{formatMinute(e)}</span>
               </span>
               {/* Prázdná protistrana drží minutu ve středu i u jednostranných událostí. */}

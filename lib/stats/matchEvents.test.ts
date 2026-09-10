@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ApiFixtureEvent } from "@/lib/data/apiFootball";
-import { buildMatchEvents, formatMinute } from "./matchEvents";
+import { buildMatchEvents, explicitForcedSubstitution, formatMinute } from "./matchEvents";
 
 function ev(over: Partial<ApiFixtureEvent> = {}): ApiFixtureEvent {
   return {
@@ -16,6 +16,11 @@ function ev(over: Partial<ApiFixtureEvent> = {}): ApiFixtureEvent {
 }
 
 describe("buildMatchEvents", () => {
+  it("classifies a forced substitution only from an explicit medical source reason", () => {
+    expect(explicitForcedSubstitution("Substitution", "Player injured")).not.toBeNull();
+    expect(explicitForcedSubstitution("Substitution", "Tactical")).toBeNull();
+    expect(buildMatchEvents([ev({ type: "subst", detail: "Injury substitution", comments: null })])[0]).toMatchObject({ forcedSubstitution: true });
+  });
   it("mapuje gól včetně asistence", () => {
     const [e] = buildMatchEvents([ev()]);
     expect(e.kind).toBe("goal");
