@@ -599,6 +599,7 @@ export async function runSnapshotOdds(
   remaining: number;
   /** ID skutečně navštívená v této dávce; workflow je v témže běhu znovu neposílá. */
   processedFixtureIds: number[];
+  failed: Array<{ fixtureId: number; phase: string; message: string }>;
 }> {
   const now = new Date();
   const candidates = await fixturesNeedingOdds({
@@ -632,6 +633,7 @@ export async function runSnapshotOdds(
   const checklistNotifications = 0;
   let autonomousCandidates = 0;
   const processedFixtureIds: number[] = [];
+  const failed: Array<{ fixtureId: number; phase: string; message: string }> = [];
   const coverage = emptyCoverage();
 
   const deadline = Date.now() + Math.max(5_000, Math.min(budgetMs, SNAPSHOT_BUDGET_MS));
@@ -701,6 +703,7 @@ export async function runSnapshotOdds(
       // účetní výběr ani push; v1 zůstává v DB jako neměnný historický archiv.
     } catch (e) {
       errors++;
+      failed.push({ fixtureId: item.fixtureId, phase: plan.close ? "CLOSING" : plan.open ? "OPENING" : "SERIES", message: (e instanceof Error ? e.message : String(e)).slice(0, 300) });
       logError("snapshot-odds", e, { fixtureId: item.fixtureId, plan });
     }
   }
@@ -715,7 +718,7 @@ export async function runSnapshotOdds(
       { withBooks, coverage }
     );
   }
-  return { due, open, close, series, empty, errors, withBooks, coverage, missingMarkets, checklistCandidates, checklistNotifications, autonomousCandidates, remaining, processedFixtureIds };
+  return { due, open, close, series, empty, errors, withBooks, coverage, missingMarkets, checklistCandidates, checklistNotifications, autonomousCandidates, remaining, processedFixtureIds, failed };
 }
 
 /** Dotáhne výsledky u predikcí, jejichž zápas už proběhl (batch po 20 ID). */

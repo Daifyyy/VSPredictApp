@@ -68,10 +68,10 @@ export async function getModelGovernanceDashboard(now = new Date()) {
     return { leagueId: league.id, name: league.name, ...metric, status, lowReadiness: rows.filter((row) => row.readinessSample < 7 || row.lowConfidence).length };
   }).sort((a, b) => ((b.modelLogLoss ?? 0) - (b.marketLogLoss ?? 0)) - ((a.modelLogLoss ?? 0) - (a.marketLogLoss ?? 0)));
   const tasks = [
-    ...incidents.map((item) => ({ priority: item.severity === "CRITICAL" ? "NOW" : "WATCH", title: item.message, reason: "Otevreny provozni nebo modelovy incident", due: "nyni" })),
-    ...checkpoints.filter((item) => item.pendingCount >= 5).map((item) => ({ priority: "NOW", title: `Zkontrolovat novy kalibracni report ${item.modelContext}`, reason: `${item.pendingCount} novych vysledku naplnilo bezpecny prepocet`, due: "po nejblizsim cron behu" })),
-    ...strategies.filter((item) => item.nextMilestone != null && item.remaining <= 10).map((item) => ({ priority: "SOON", title: `Vyhodnotit ${item.title} pri ${item.nextMilestone} vysledcich`, reason: `Do milniku zbyva ${item.remaining}`, due: `pri n=${item.nextMilestone}` })),
-    ...leagues.filter((item) => item.status === "REVIEW").map((item) => ({ priority: "WATCH", title: `Proverit kohortu ${item.name}`, reason: `Modelovy log-loss je o ${((item.modelLogLoss! - item.marketLogLoss!) * 100).toFixed(1)} bodu horsi nez trh (n=${item.n})`, due: "pred zmenou modelu" })),
+    ...incidents.map((item) => ({ priority: item.severity === "CRITICAL" ? "NOW" : "WATCH", title: item.message, reason: "Otevřený provozní nebo modelový incident", due: "nyní" })),
+    ...checkpoints.filter((item) => item.pendingCount >= 5).map((item) => ({ priority: "NOW", title: `Zkontrolovat nový kalibrační report ${item.modelContext}`, reason: `${item.pendingCount} nových výsledků naplnilo bezpečný přepočet`, due: "po nejbližším běhu cronu" })),
+    ...strategies.filter((item) => item.nextMilestone != null && item.remaining <= 10).map((item) => ({ priority: "SOON", title: `Vyhodnotit ${item.title} při ${item.nextMilestone} výsledcích`, reason: `Do milníku zbývá ${item.remaining}`, due: `při n=${item.nextMilestone}` })),
+    ...leagues.filter((item) => item.status === "REVIEW").map((item) => ({ priority: "WATCH", title: `Prověřit kohortu ${item.name}`, reason: `Modelový log-loss je o ${((item.modelLogLoss! - item.marketLogLoss!) * 100).toFixed(1)} bodu horší než trh (n=${item.n})`, due: "před změnou modelu" })),
   ];
   const shadow = Object.fromEntries(shadowCounts.map((row) => [row.status, row._count]));
   return { asOf: now, modelVersion: MODEL_VERSION, tasks, strategies, leagues, checkpoints, personnel, quickOverview, shadow: { total: Object.values(shadow).reduce((sum, value) => sum + value, 0), candidates: shadow.candidate ?? 0, watch: shadow.watch ?? 0 } };

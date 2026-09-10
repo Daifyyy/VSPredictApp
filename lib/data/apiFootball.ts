@@ -11,7 +11,9 @@ import { countApiCall } from "@/lib/apiUsage";
 const BASE_URL = "https://v3.football.api-sports.io";
 // Rate-limit api-sports je distribuovaný a občas odmítne i pod limitem →
 // přechodná chyba, kterou vyřeší rychlý retry (trefí jiný edge node).
-const MAX_RETRIES = 6;
+// NejvĂ˝Ĺˇe dva opakovanĂ© pokusy: exponenciĂˇlnĂ­ backoff ano, ale jeden fixture nesmĂ­
+// zablokovat celou serverless dĂˇvku a pĹ™ipravit ostatnĂ­ zĂˇpasy o closing.
+const MAX_RETRIES = 2;
 // Jediný zaseknutý upstream požadavek nesmí spotřebovat celý 60s serverless běh.
 // Timeout se počítá pro jeden pokus; běžné odpovědi API-Football trvají výrazně méně.
 const API_REQUEST_TIMEOUT_MS = 12_000;
@@ -24,7 +26,7 @@ function apiKey(): string {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-class RateLimitError extends Error {}
+class TransientApiError extends Error {}
 
 /**
  * Obecný GET. API-Football vrací obálku { errors, results, response }.
@@ -40,9 +42,10 @@ export async function apiGet<T>(
     try {
       return await schedule(() => doFetch(path, params, schema));
     } catch (e) {
-      if (e instanceof RateLimitError && attempt < MAX_RETRIES) {
+      const transient = e instanceof TransientApiError || (e instanceof Error && /timeout|abort|fetch failed|network|HTTP 429|HTTP 5\d\d/i.test(`${e.name} ${e.message}`));
+      if (transient && attempt < MAX_RETRIES) {
         // Krátký odstup – další pokus zpravidla trefí jiný (volný) node.
-        await sleep(250 + attempt * 350);
+        await sleep(Math.min(8_000, 500 * 2 ** attempt) + Math.floor(Math.random() * 250));
         continue;
       }
       throw e;
@@ -74,6 +77,7 @@ async function doFetch<T>(
     cache: "no-store",
   });
   if (!res.ok) {
+    if (res.status === 429 || res.status >= 500) throw new TransientApiError(`API-Football ${path} HTTP ${res.status}`);
     throw new Error(`API-Football ${path} HTTP ${res.status}`);
   }
   const json = await res.json();
@@ -90,7 +94,7 @@ async function doFetch<T>(
       console.error(
         `[ratelimit] ${path} min-remaining=${res.headers.get("x-ratelimit-remaining")}/${res.headers.get("x-ratelimit-limit")} day-remaining=${res.headers.get("x-ratelimit-requests-remaining")}`
       );
-      throw new RateLimitError(`API-Football ${path}: ${msg}`);
+      throw new TransientApiError(`API-Football ${path}: ${msg}`);
     }
     throw new Error(`API-Football ${path}: ${msg}`);
   }

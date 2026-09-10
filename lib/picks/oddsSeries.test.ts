@@ -34,7 +34,7 @@ describe("kadence", () => {
   it("se zužuje směrem k výkopu", () => {
     expect(snapshotIntervalMinutes(48)).toBe(720);
     expect(snapshotIntervalMinutes(12)).toBe(180);
-    expect(snapshotIntervalMinutes(2)).toBe(60);
+    expect(snapshotIntervalMinutes(2)).toBe(30);
     // Monotónní: blíž k výkopu nikdy řidčeji.
     for (const h of [72, 30, 24, 10, 6, 3, 1]) {
       expect(snapshotIntervalMinutes(h)).toBeLessThanOrEqual(snapshotIntervalMinutes(h + 1));
@@ -46,7 +46,7 @@ describe("kadence", () => {
     expect(seriesDue(48, 60)).toBe(false); // 12h interval daleko od výkopu
     expect(seriesDue(48, 720)).toBe(true);
     expect(seriesDue(2, 60)).toBe(true); // hodinový interval u výkopu
-    expect(seriesDue(2, 30)).toBe(false);
+    expect(seriesDue(2, 30)).toBe(true);
   });
 
   it("po výkopu se už nesnímá (byly by to živé kurzy)", () => {
@@ -56,7 +56,7 @@ describe("kadence", () => {
 
   it("malá tolerance, aby běh o minutu dřív bod nepřeskočil", () => {
     expect(seriesDue(2, 56)).toBe(true); // 60 − 5 min tolerance
-    expect(seriesDue(2, 50)).toBe(false);
+    expect(seriesDue(2, 20)).toBe(false);
   });
 });
 

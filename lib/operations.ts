@@ -180,6 +180,15 @@ export async function recordCoverage(input: {
 }
 
 const SUPPORTED_ODDS_LEAGUES = [...PUBLIC_CLUB_LEAGUE_IDS, ...EURO_LEAGUE_IDS];
+export const API_DAILY_LIMIT = 7_500;
+export const SAFE_API_DAILY_CEILING = Math.floor(API_DAILY_LIMIT * .75);
+
+export async function safeApiBudget(now = new Date()) {
+  const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const used = await prisma.cronRun.aggregate({ where: { startedAt: { gte: startOfDay } }, _sum: { apiCalls: true } });
+  const apiCalls = used._sum.apiCalls ?? 0;
+  return { apiCalls, ceiling: SAFE_API_DAILY_CEILING, remaining: Math.max(0, SAFE_API_DAILY_CEILING - apiCalls) };
+}
 
 export async function auditPipeline(now = new Date()) {
   const horizon = new Date(now.getTime() + 72 * 60 * 60_000);
@@ -199,7 +208,7 @@ export async function auditPipeline(now = new Date()) {
     }),
     prisma.fixturePrediction.findMany({
       where: { leagueId: { in: SUPPORTED_ODDS_LEAGUES }, kickoff: { gte: recent, lte: now } },
-      select: { fixtureId: true, kickoff: true, oddsCloseAt: true },
+      select: { fixtureId: true, kickoff: true, oddsFetchedAt: true, oddsCloseAt: true, oddsSeries: true },
     }),
     prisma.fixturePrediction.count({
       where: {
@@ -227,8 +236,11 @@ export async function auditPipeline(now = new Date()) {
   }
 
   const opening = future.filter((row) => row.oddsFetchedAt != null).length;
-  const series3 = future.filter((row) => parseSeries(row.oddsSeries).length >= 3).length;
-  const closing = kicked.filter((row) => closingSampleQuality(row.kickoff, row.oddsCloseAt, now) === "fresh").length;
+  // ProvoznĂ­ kvalitu hodnotĂ­me jen na zĂˇpasech, kde poskytovatel skuteÄŤnÄ› nabĂ­dl kurz.
+  // BudoucĂ­ novÄ› pĹ™idanĂ˝ zĂˇpas jeĹˇtÄ› objektivnÄ› nemohl nasbĂ­rat tĹ™i body.
+  const pricedKicked = kicked.filter((row) => row.oddsFetchedAt != null);
+  const series3 = pricedKicked.filter((row) => parseSeries(row.oddsSeries).length >= 3).length;
+  const closing = pricedKicked.filter((row) => closingSampleQuality(row.kickoff, row.oddsCloseAt, now) === "fresh").length;
   const countCoverage = (market: "CORNERS" | "CARDS" | "FOULS") => {
     const eligible = settledCounts.filter((row) => market === "CORNERS"
       ? row.lambdaCornersHome != null && row.lambdaCornersAway != null
@@ -246,8 +258,8 @@ export async function auditPipeline(now = new Date()) {
   };
   const rows = [
     { category: "OPENING", eligible: future.length, covered: opening, target: .95 },
-    { category: "ODDS_SERIES_3", eligible: future.length, covered: series3, target: .90 },
-    { category: "FRESH_CLOSE", eligible: kicked.length, covered: closing, target: .85 },
+    { category: "ODDS_SERIES_3", eligible: pricedKicked.length, covered: series3, target: .90 },
+    { category: "FRESH_CLOSE", eligible: pricedKicked.length, covered: closing, target: .85 },
     countCoverage("CORNERS"),
     countCoverage("CARDS"),
     countCoverage("FOULS"),
@@ -284,5 +296,5 @@ export async function auditPipeline(now = new Date()) {
   const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const apiCallsToday = latestRuns.filter((run) => run.startedAt >= startOfDay).reduce((sum, run) => sum + run.apiCalls, 0);
   const openIncidents = await prisma.dataIncident.findMany({ where: { status: "OPEN" }, orderBy: { lastSeenAt: "desc" } });
-  return { asOf: now.toISOString(), coverage: rows, overdue, apiCallsToday, apiDailyLimit: 7500, latestRuns, incidents: openIncidents, calibration };
+  return { asOf: now.toISOString(), coverage: rows, overdue, apiCallsToday, apiDailyLimit: API_DAILY_LIMIT, latestRuns, incidents: openIncidents, calibration };
 }

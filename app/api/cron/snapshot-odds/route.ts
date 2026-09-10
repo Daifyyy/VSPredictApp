@@ -4,7 +4,7 @@ import { isRealDataConfigured } from "@/lib/db";
 import { logError } from "@/lib/logError";
 import { requireCronAuth } from "@/lib/cronAuth";
 import { cronJson } from "@/lib/cronResult";
-import { withCronRun } from "@/lib/operations";
+import { safeApiBudget, withCronRun } from "@/lib/operations";
 
 // Snímky kurzů pro CLV: otevírací, zavírací a body ČASOVÉ ŘADY. Běží **hodinově**,
 // na rozdíl od ostatních cronů – a je to nutnost, ne ladění:
@@ -41,7 +41,11 @@ export async function GET(req: Request) {
 
   try {
     const stats = await withCronRun("snapshot-odds", async () => {
-      const result = await runSnapshotOdds(Number.isFinite(limit) && limit! > 0 ? limit : undefined, undefined, seenFixtureIds);
+      const budget = await safeApiBudget();
+      const requested = Number.isFinite(limit) && limit! > 0 ? Math.min(24, limit!) : 12;
+      const allowed = Math.min(requested, budget.remaining);
+      const result = await runSnapshotOdds(allowed, undefined, seenFixtureIds);
+      if (allowed === 0) return { ...result, candidates: result.remaining, processed: 0, remaining: 0, deferred: result.remaining, cursor: null, reason: "DAILY_BUDGET", quota: budget };
       const nextCursor = [...new Set([...seenFixtureIds, ...result.processedFixtureIds])].join(",");
       return {
         ...result,
@@ -49,6 +53,7 @@ export async function GET(req: Request) {
         processed: result.open + result.close + result.series,
         cursor: result.remaining > 0 ? nextCursor : null,
         reason: result.remaining > 0 ? "BATCH_LIMIT" : null,
+        quota: budget,
       };
     });
     // „Zvládnuto" = uložený snímek jakéhokoli druhu. `empty` (kniha zápas nekótuje)

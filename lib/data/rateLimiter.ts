@@ -7,8 +7,8 @@
  *    porovnání za sebou),
  * Přechodné burst-odmítnutí edge (429 bez headerů) řeší krátký retry v apiGet.
  */
-const MAX_CONCURRENT = 3;
-const MAX_PER_MIN = 280;
+const MAX_CONCURRENT = 2;
+const MAX_PER_MIN = 220;
 const WINDOW_MS = 60_000;
 
 let active = 0;

@@ -18,6 +18,8 @@ import { playerPersonnelValue, weightedUnitStrength } from "@/lib/stats/personne
 
 export const PERSONNEL_FEATURE_VERSION = 1;
 export const LINEUP_SHADOW_VERSION = 1;
+// StarĹˇĂ­ utkĂˇnĂ­ nemohla mĂ­t prospektivnÄ› zachycenou sestavu a nesmÄ›jĂ­ sniĹľovat coverage.
+export const PERSONNEL_COLLECTION_STARTED_AT = new Date("2026-09-10T00:00:00.000Z");
 const PUBLIC_IDS = new Set<number>(PUBLIC_CLUB_LEAGUE_IDS);
 const json = (value: unknown) => value as Prisma.InputJsonValue;
 const minuteBucket = (date: Date) => new Date(Math.floor(date.getTime() / 60_000) * 60_000);
@@ -442,7 +444,8 @@ export async function refreshDailyPlayerProfiles(input: { limit?: number; cursor
 }
 
 export async function personnelShadowDashboard(now = new Date()) {
-  const since = new Date(now.getTime() - 30 * 86_400_000);
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 86_400_000);
+  const since = thirtyDaysAgo > PERSONNEL_COLLECTION_STARTED_AT ? thirtyDaysAgo : PERSONNEL_COLLECTION_STARTED_AT;
   const [coverage, fixtureCount, completeFixtures, availabilityFixtures, shadows, playerFixtures, playerProfiles, latestRun, incidents, recent, fetchAttempts] = await Promise.all([
     prisma.leagueDataCoverage.findMany({ where: { season: CURRENT_SEASON }, orderBy: { leagueId: "asc" } }),
     prisma.fixturePrediction.count({ where: { modelContext: "LEAGUE", leagueId: { in: [...PUBLIC_CLUB_LEAGUE_IDS] }, kickoff: { gte: since, lte: now } } }),

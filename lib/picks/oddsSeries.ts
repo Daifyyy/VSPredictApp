@@ -77,6 +77,7 @@ export function closingSampleQuality(
 export function snapshotIntervalMinutes(hoursToKickoff: number): number {
   if (hoursToKickoff > 24) return 12 * 60;
   if (hoursToKickoff > 6) return 3 * 60;
+  if (hoursToKickoff <= 3) return 30;
   return 60;
 }
 
