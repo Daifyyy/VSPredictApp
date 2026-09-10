@@ -650,6 +650,7 @@ export function ZapasyApp({
         nextKickoff={dayFixtures.find((fixture) => !fixture.live)?.kickoff ?? null}
         analysisCount={dayFixtures.filter((fixture) => buildCompareHref(fixture) != null).length}
         showingNearest={Boolean(clientToday && active?.date !== clientToday && (visibleDays.find((day) => day.date === clientToday)?.fixtures.length ?? 0) === 0)}
+        spotlight={liveFixtures[0] ?? featured?.fixture ?? dayFixtures[0] ?? null}
       />
 
       {liveFixtures.length > 0 ? <MatchCenter fixtures={liveFixtures} user={user} /> : featured ? <FeaturedFixture fixture={featured.fixture} editorialTitle={featured.title} /> : null}
@@ -772,47 +773,41 @@ export function ZapasyApp({
   );
 }
 
-function DashboardHeader({ today, todayCount, selectedDate, selectedCount, liveCount, nextKickoff, analysisCount, showingNearest }: { today: string | null; todayCount: number; selectedDate: string | null; selectedCount: number; liveCount: number; nextKickoff: string | null; analysisCount: number; showingNearest: boolean }) {
+function DashboardHeader({ today, todayCount, selectedDate, selectedCount, liveCount, nextKickoff, analysisCount, showingNearest, spotlight }: { today: string | null; todayCount: number; selectedDate: string | null; selectedCount: number; liveCount: number; nextKickoff: string | null; analysisCount: number; showingNearest: boolean; spotlight: UpcomingFixture | null }) {
   const selectedLabel = selectedDate
     ? new Date(`${selectedDate}T12:00:00`).toLocaleDateString("cs-CZ", { weekday: "long", day: "numeric", month: "long" })
     : "Program";
+  const spotlightTime = spotlight ? new Date(spotlight.kickoff).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" }) : null;
+  const compareHref = spotlight ? buildCompareHref(spotlight) : null;
+  const live = Boolean(spotlight?.live);
   return (
-    <section className="dashboard-card mt-5 overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
-      <div className="grid border-b border-border bg-background/55 sm:grid-cols-3">
-        <PulseItem label="Program" value={`${selectedCount} ${matchWord(selectedCount)}`} />
-        <PulseItem
-          label="Nejbližší výkop"
-          value={nextKickoff ? new Date(nextKickoff).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" }) : "—"}
-        />
-        <PulseItem label="Dostupné analýzy" value={`${analysisCount}`} />
-      </div>
-      <div className="p-4 sm:p-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <section className="dashboard-card mt-5 overflow-hidden rounded-2xl border border-border bg-[linear-gradient(120deg,var(--surface)_55%,var(--accent-soft))] shadow-sm">
+      <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-[minmax(180px,.7fr)_minmax(360px,1.5fr)_auto] lg:items-center">
         <div>
-          <p className="page-kicker">Přehled zápasů</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">{showingNearest ? "Nejbližší fotbalový program" : "Dnešní fotbal"}</h1>
-          <p className="mt-1 text-sm text-muted">
-            {showingNearest
-              ? `Dnes se ve sledovaných ligách nehraje. Zobrazujeme ${selectedLabel}.`
-              : today ? `${selectedLabel} · ${todayCount} ${matchWord(todayCount)}` : "Aktuální program sledovaných lig"}
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="page-kicker">{showingNearest ? "Nejbližší program" : liveCount > 0 ? "Právě se hraje" : "Dnešní program"}</p>
+            {liveCount > 0 ? <span className="inline-flex items-center gap-1.5 rounded-full bg-negative/10 px-2 py-1 text-[10px] font-bold text-negative"><LiveDot /> {liveCount} živě</span> : null}
+          </div>
+          <h1 className="mt-1 text-xl font-extrabold tracking-tight text-foreground">{selectedLabel}</h1>
+          <p className="mt-1 text-xs text-muted">{showingNearest ? "Dnes se ve sledovaných soutěžích nehraje." : today ? `${todayCount} ${matchWord(todayCount)} v dnešním přehledu` : "Aktuální program sledovaných soutěží"}</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {liveCount > 0 ? <span className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-negative/10 px-3 text-sm font-bold text-negative"><LiveDot /> {liveCount} živě</span> : null}
-          <span className="inline-flex min-h-10 items-center rounded-xl border border-border bg-background px-3 text-sm font-semibold text-foreground">{selectedCount} {matchWord(selectedCount)}</span>
+
+        {spotlight ? <div className="rounded-xl border border-border/80 bg-background/75 px-3 py-3 backdrop-blur-sm">
+          <div className="flex items-center justify-between gap-3 text-[10px] text-muted"><span className="truncate">{spotlight.leagueName}</span><strong className={live ? "text-negative" : "text-foreground"}>{live ? `${spotlight.elapsed ?? ""}' · ŽIVĚ` : spotlightTime}</strong></div>
+          <div className="mt-2 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-sm">
+            <div className="flex min-w-0 items-center justify-end gap-2 text-right"><strong className="truncate">{spotlight.home.name}</strong><TeamLogo src={spotlight.home.logoUrl} alt={spotlight.home.name} size={30} /></div>
+            <strong className="min-w-12 text-center text-lg tabular-nums">{live ? `${spotlight.liveHome ?? 0} : ${spotlight.liveAway ?? 0}` : "vs."}</strong>
+            <div className="flex min-w-0 items-center gap-2"><TeamLogo src={spotlight.away.logoUrl} alt={spotlight.away.name} size={30} /><strong className="truncate">{spotlight.away.name}</strong></div>
+          </div>
+        </div> : <div><p className="text-sm font-semibold text-foreground">Žádné utkání není naplánované</p><p className="mt-1 text-xs text-muted">Jakmile přibude program sledované soutěže, objeví se zde.</p></div>}
+
+        <div className="flex flex-wrap items-center gap-2 lg:max-w-56 lg:justify-end">
+          {live ? <a href="#match-center" className="inline-flex min-h-10 items-center rounded-xl bg-foreground px-4 text-xs font-bold text-background">Otevřít Match Center</a> : compareHref ? <Link href={compareHref} className="inline-flex min-h-10 items-center rounded-xl bg-foreground px-4 text-xs font-bold text-background">Prohlédnout analýzu</Link> : null}
+          <span className="text-[11px] text-muted">{analysisCount} {analysisCount === 1 ? "analýza" : analysisCount >= 2 && analysisCount <= 4 ? "analýzy" : "analýz"} · {selectedCount} {matchWord(selectedCount)}</span>
+          {!live && nextKickoff ? <span className="w-full text-[10px] text-muted lg:text-right">Nejbližší výkop {new Date(nextKickoff).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}</span> : null}
         </div>
-      </div>
       </div>
     </section>
-  );
-}
-
-function PulseItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 border-border px-4 py-2.5 sm:border-r sm:last:border-r-0">
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">{label}</span>
-      <strong className="text-sm tabular-nums text-foreground">{value}</strong>
-    </div>
   );
 }
 

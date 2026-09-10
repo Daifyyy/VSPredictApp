@@ -93,7 +93,7 @@ export function MatchCenter({ fixtures, user }: { fixtures: UpcomingFixture[]; u
     if (response.ok) setWatching(next);
   };
 
-  return <section className="mt-3 overflow-hidden rounded-2xl border border-border bg-surface shadow-sm" aria-labelledby="match-center-title">
+  return <section id="match-center" className="mt-3 scroll-mt-4 overflow-hidden rounded-2xl border border-border bg-surface shadow-sm" aria-labelledby="match-center-title">
     <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
       <div><p className="page-kicker">Živý Match Center</p><h2 id="match-center-title" className="mt-0.5 text-lg font-extrabold">Vyber právě hrané utkání</h2></div>
       <span className="rounded-full bg-negative/10 px-3 py-1.5 text-xs font-bold text-negative">● {fixtures.length} živě</span>
