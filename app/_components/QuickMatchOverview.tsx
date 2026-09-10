@@ -63,6 +63,7 @@ export function QuickMatchOverview({ date, user, compact = false, historical = f
   }, [isPro]);
 
   const items = useMemo(() => payload?.categories[focus] ?? [], [payload, focus]);
+  const historicalDayEmpty = historical && payload != null && QUICK_FOCUS_IDS.every((id) => payload.categories[id].length === 0);
   const writeUrl = (changes: Record<string, string | null>) => {
     const url = new URL(window.location.href);
     for (const [key, value] of Object.entries(changes)) {
@@ -87,6 +88,7 @@ export function QuickMatchOverview({ date, user, compact = false, historical = f
         <div><p className="page-kicker">{historical ? "Vyhodnocení rychlého výběru" : "Rychlý přehled"}</p><h2 id={`quick-overview-${compact ? "home" : "picks"}`} className="mt-1 text-lg font-extrabold text-foreground">{historical ? "Jak dopadly vybrané zápasy" : "Které zápasy dnes stojí za pozornost"}</h2><p className="mt-1 text-xs text-muted">{historical ? "Původní výběr zůstává beze změny. Zobrazuje tehdejší modelový důvod a skutečný výsledek." : "Vyber oblast a uvidíš tři zápasy, u kterých je modelový důvod podívat se blíž."}</p></div>
         {payload && <span className="text-[10px] text-muted">Aktualizováno {new Date(payload.generatedAt).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}</span>}
       </div>
+      {historicalDayEmpty && <p className="mt-3 rounded-lg border border-border bg-background px-3 py-2 text-xs font-semibold text-muted">V tento den nebyl před výkopem zmrazen žádný kvalitní rychlý výběr.</p>}
       <div className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Kategorie rychlého přehledu">
         {QUICK_FOCUS_IDS.map((id) => <button key={id} type="button" aria-pressed={focus === id} onClick={() => selectFocus(id)} className={`min-h-11 shrink-0 rounded-full border px-3 text-xs font-bold transition ${focus === id ? "border-accent bg-accent text-accent-ink" : "border-border bg-background text-muted hover:bg-accent/15 hover:text-foreground"}`}>{QUICK_FOCUS_LABELS[id]} <span className="opacity-65">{payload?.categories[id]?.length ?? 0}</span></button>)}
       </div>
@@ -94,7 +96,7 @@ export function QuickMatchOverview({ date, user, compact = false, historical = f
     </div>
     {!payload && !error && <div className="grid gap-3 p-4 md:grid-cols-3">{[1,2,3].map((value) => <div key={value} className="h-48 animate-pulse rounded-xl bg-border/55" />)}</div>}
     {error && <p className="p-5 text-sm text-muted">Rychlý přehled se nyní nepodařilo načíst.</p>}
-    {payload && !items.length && <p className="p-5 text-sm text-muted">{historical ? "Pro tento den a kategorii nebyl zmrazen žádný kvalitní výběr." : "Pro tuto kategorii dnes nemáme dostatečně srovnatelná data. Nic nedopočítáváme odhadem."}</p>}
+    {payload && !items.length && <p className="p-5 text-sm text-muted">{historicalDayEmpty ? "Výběr nebyl nahrazen slabším zápasem ani vytvořen zpětně z výsledku." : historical ? "Pro tento den a kategorii nebyl zmrazen žádný kvalitní výběr." : "Pro tuto kategorii dnes nemáme dostatečně srovnatelná data. Nic nedopočítáváme odhadem."}</p>}
     {items.length > 0 && <div className={`grid gap-3 p-3 sm:p-4 ${compact ? "xl:grid-cols-3" : "lg:grid-cols-3"}`}>
       {items.map((item) => <QuickCard key={item.fixtureId} item={item} focus={focus} open={expanded === item.fixtureId} pro={isPro} favorite={favorites.has(item.fixtureId)} onFavorite={() => toggleFavorite(item.fixtureId)} onToggle={() => { const next = expanded === item.fixtureId ? null : item.fixtureId; setExpanded(next); writeUrl({ quickFixture: next == null ? null : String(next) }); }} />)}
     </div>}

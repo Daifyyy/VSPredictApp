@@ -7,14 +7,14 @@ import { pragueDay } from "@/lib/data/fixtures";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Finalni snapshoty se doplni az po otevreni Vysledku, maximalne pro dva dny. */
+/** Finalni snapshoty se doplni az po otevreni Vysledku, maximalne pro sedm dni. */
 export async function GET(request: Request) {
   if (!allowRequest(`fixture-results:${clientKey(request)}`, 30, 60_000)) return tooMany();
   const today = pragueDay(new Date());
-  const allowed = new Set([shift(today, -1), shift(today, -2)]);
+  const allowed = new Set(Array.from({ length: 7 }, (_, index) => shift(today, -(index + 1))));
   const dates = [...new Set((new URL(request.url).searchParams.get("dates") ?? "").split(","))]
     .filter((date) => DATE.test(date) && allowed.has(date))
-    .slice(0, 2);
+    .slice(0, 7);
   if (!dates.length) return NextResponse.json({ error: "Chybi platne datum" }, { status: 400 });
   try {
     return NextResponse.json({ days: await getFixturesByDates(dates) }, { headers: publicCache(300, 86_400) });

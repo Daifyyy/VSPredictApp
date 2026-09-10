@@ -1,8 +1,8 @@
 import type { FixturePrediction } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import type { BookOdds } from "./apiFootball";
+import type { ApiFixture, BookOdds } from "./apiFootball";
 import { PINNACLE_FIRST_BOOKMAKERS } from "./apiFootball";
-import { FIXTURE_LIST_LEAGUE_IDS, isPublicCompetition } from "./catalog";
+import { FIXTURE_LIST_LEAGUE_IDS, isPublicCompetition, isWomensCompetitionLabel } from "./catalog";
 import { localDateKey } from "@/lib/competitionGrouping";
 import { QUICK_FOCUS_IDS, quickFocusSelection, rankQuickCandidates, type QuickCandidate, type QuickFocusSelection, type QuickMarketSignal } from "@/lib/quickOverview";
 import { portfolioProfit, RELIABLE_CLOSE_MAX_MINUTES } from "@/lib/picks/evaluation";
@@ -23,7 +23,19 @@ export async function captureQuickOverviewDay(fixtureId: number, books: BookOdds
   if (frozenCategories.size === QUICK_FOCUS_IDS.length) return;
 
   const bounds = pragueDateBounds(dateKey);
-  const rows = await prisma.fixturePrediction.findMany({ where: { kickoff: { gte: bounds.start, lt: bounds.end }, available: true, leagueId: { in: [...FIXTURE_LIST_LEAGUE_IDS] } } });
+  let rows = await prisma.fixturePrediction.findMany({ where: { kickoff: { gte: bounds.start, lt: bounds.end }, available: true, leagueId: { in: [...FIXTURE_LIST_LEAGUE_IDS] } } });
+  // Starý predikční snapshot může přežít pozdější opravu chybného rozpisu. Nový
+  // neměnný výběr smí vzniknout jen pro fixture, která je stále v autoritativní
+  // denní cache, a nikdy pro ženskou soutěž omylem smíchanou pod stejným league ID.
+  const fixtureCache = await prisma.apiCache.findFirst({
+    where: { key: { in: [`fixdate:${dateKey}`, `fixdate-now:${dateKey}`] } }, orderBy: { updatedAt: "desc" }, select: { payload: true },
+  });
+  if (Array.isArray(fixtureCache?.payload)) {
+    const official = new Set((fixtureCache.payload as unknown as ApiFixture[]).filter((fixture) =>
+      isPublicCompetition(fixture.league.id) && !isWomensCompetitionLabel(fixture.league.name, fixture.league.round, fixture.teams.home.name, fixture.teams.away.name)
+    ).map((fixture) => fixture.fixture.id));
+    rows = rows.filter((row) => official.has(row.fixtureId));
+  }
   const marketRows = await prisma.marketSignalSnapshot.findMany({ where: { fixtureId: { in: rows.map((row) => row.fixtureId) } }, orderBy: { openedAt: "desc" } });
   const signals = new Map<number, QuickMarketSignal[]>();
   for (const row of marketRows) {
@@ -62,7 +74,10 @@ export async function closeQuickOverviewSelections(fixtureId: number, books: Boo
 
 /** Faktické vypořádání v2. Početní trhy čekají, dokud jsou obě týmové statistiky dostupné. */
 export async function settleQuickOverviewSelections(fixtureId: number, homeGoals: number | null, awayGoals: number | null, at: Date): Promise<number> {
-  const rows = await prisma.quickOverviewSelection.findMany({ where: { fixtureId, policyVersion: QUICK_OVERVIEW_POLICY_VERSION, settledAt: null } });
+  const rows = await prisma.quickOverviewSelection.findMany({ where: { fixtureId, settledAt: null, OR: [
+    { policyVersion: QUICK_OVERVIEW_POLICY_VERSION },
+    { policyVersion: 1, side: { not: null }, category: { in: ["1x2", "goals", "btts", "corners", "cards"] } },
+  ] } });
   if (!rows.length || homeGoals == null || awayGoals == null) return 0;
   const stats = await prisma.matchStatCache.findMany({ where: { fixtureId }, select: { teamId: true, corners: true, yellowCards: true, redCards: true } });
   const unique = [...new Map(stats.map((row) => [row.teamId, row])).values()];
@@ -71,10 +86,11 @@ export async function settleQuickOverviewSelections(fixtureId: number, homeGoals
   const cards = sum((row) => row.yellowCards == null && row.redCards == null ? null : (row.yellowCards ?? 0) + (row.redCards ?? 0));
   let settled = 0;
   for (const row of rows) {
-    const actualCount = row.sourceMarket === "CORNERS" ? corners : row.sourceMarket === "CARDS" ? cards : null;
-    const hit = quickOverviewOutcome({ market: row.sourceMarket, side: row.side, line: row.line, homeGoals, awayGoals, actualCount });
+    const market = row.sourceMarket ?? legacyMarket(row.category);
+    const actualCount = market === "CORNERS" ? corners : market === "CARDS" ? cards : null;
+    const hit = quickOverviewOutcome({ market, side: row.side, line: row.line, homeGoals, awayGoals, actualCount });
     if (hit == null) continue;
-    const profit = row.category === "team_goals" ? null : portfolioProfit(hit, row.decimalOdds, 1);
+    const profit = row.policyVersion < QUICK_OVERVIEW_POLICY_VERSION || row.category === "team_goals" ? null : portfolioProfit(hit, row.decimalOdds, 1);
     await prisma.quickOverviewSelection.update({ where: { id: row.id }, data: { settlementStatus: "SETTLED", homeGoals, awayGoals, actualCount, hit, profit, settledAt: at } });
     settled++;
   }
@@ -87,9 +103,14 @@ export async function settleQuickOverviewSelections(fixtureId: number, homeGoals
  */
 export async function reconcileQuickOverviewSettlements(now = new Date()): Promise<number> {
   const rows = await prisma.quickOverviewSelection.findMany({
-    where: { policyVersion: QUICK_OVERVIEW_POLICY_VERSION, sourceMarket: { in: ["CORNERS", "CARDS"] }, settledAt: { not: null }, kickoff: { gte: new Date(now.getTime() - 35 * 24 * 60 * 60_000) } },
+    where: { qualifiedAt: { gte: new Date(now.getTime() - 35 * 24 * 60 * 60_000) }, OR: [
+      { policyVersion: QUICK_OVERVIEW_POLICY_VERSION, sourceMarket: { in: ["CORNERS", "CARDS"] }, settledAt: { not: null } },
+      { policyVersion: 1, side: { not: null }, settlementStatus: "PENDING", category: { in: ["1x2", "goals", "btts", "corners", "cards"] } },
+    ] },
   });
   if (!rows.length) return 0;
+  const predictions = await prisma.fixturePrediction.findMany({ where: { fixtureId: { in: [...new Set(rows.map((row) => row.fixtureId))] } }, select: { fixtureId: true, homeGoals: true, awayGoals: true } });
+  const predictionByFixture = new Map(predictions.map((row) => [row.fixtureId, row]));
   const stats = await prisma.matchStatCache.findMany({
     where: { fixtureId: { in: [...new Set(rows.map((row) => row.fixtureId))] } },
     select: { fixtureId: true, teamId: true, corners: true, yellowCards: true, redCards: true },
@@ -98,16 +119,29 @@ export async function reconcileQuickOverviewSettlements(now = new Date()): Promi
   for (const stat of stats) byFixture.set(stat.fixtureId, [...(byFixture.get(stat.fixtureId) ?? []), stat]);
   let repaired = 0;
   for (const row of rows) {
+    const result = predictionByFixture.get(row.fixtureId);
+    const market = row.sourceMarket ?? legacyMarket(row.category);
+    if (!result || result.homeGoals == null || result.awayGoals == null || !market) continue;
     const unique = [...new Map((byFixture.get(row.fixtureId) ?? []).map((stat) => [stat.teamId, stat])).values()];
-    const values = unique.map((stat) => row.sourceMarket === "CORNERS" ? stat.corners : stat.yellowCards == null && stat.redCards == null ? null : (stat.yellowCards ?? 0) + (stat.redCards ?? 0));
-    if (values.length < 2 || values.some((value) => value == null)) continue;
-    const actualCount = values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
-    const hit = quickOverviewOutcome({ market: row.sourceMarket, side: row.side, line: row.line, homeGoals: row.homeGoals, awayGoals: row.awayGoals, actualCount });
-    if (hit == null || (row.hit === hit && row.actualCount === actualCount)) continue;
-    await prisma.quickOverviewSelection.update({ where: { id: row.id }, data: { actualCount, hit, profit: portfolioProfit(hit, row.decimalOdds, 1), settlementStatus: "SETTLED" } });
+    const countMarket = market === "CORNERS" || market === "CARDS";
+    const values = unique.map((stat) => market === "CORNERS" ? stat.corners : stat.yellowCards == null && stat.redCards == null ? null : (stat.yellowCards ?? 0) + (stat.redCards ?? 0));
+    if (countMarket && (values.length < 2 || values.some((value) => value == null))) continue;
+    const actualCount = countMarket ? values.reduce<number>((sum, value) => sum + (value ?? 0), 0) : null;
+    const hit = quickOverviewOutcome({ market, side: row.side, line: row.line, homeGoals: result.homeGoals, awayGoals: result.awayGoals, actualCount });
+    if (hit == null || (row.settlementStatus === "SETTLED" && row.hit === hit && row.actualCount === actualCount)) continue;
+    await prisma.quickOverviewSelection.update({ where: { id: row.id }, data: { homeGoals: result.homeGoals, awayGoals: result.awayGoals, actualCount, hit, profit: row.policyVersion < QUICK_OVERVIEW_POLICY_VERSION ? null : portfolioProfit(hit, row.decimalOdds, 1), settlementStatus: "SETTLED", settledAt: row.settledAt ?? now } });
     repaired++;
   }
   return repaired;
+}
+
+function legacyMarket(category: string) {
+  if (category === "1x2") return "1X2";
+  if (category === "goals") return "OVER_25";
+  if (category === "btts") return "BTTS";
+  if (category === "corners") return "CORNERS";
+  if (category === "cards") return "CARDS";
+  return null;
 }
 
 function toPredictionRow(row: FixturePrediction): PredictionRow { return { ...row, kickoff: row.kickoff.toISOString(), modelContext: row.modelContext as PredictionRow["modelContext"], published1x2Side: row.published1x2Side as PredictionRow["published1x2Side"], publishedAt: row.publishedAt?.toISOString() ?? null, h2hSnapshot: row.h2hSnapshot as PredictionRow["h2hSnapshot"], h2hCapturedAt: row.h2hCapturedAt?.toISOString() ?? null, oddsFetchedAt: row.oddsFetchedAt?.toISOString() ?? null, oddsCloseAt: row.oddsCloseAt?.toISOString() ?? null, settledAt: row.settledAt?.toISOString() ?? null } as PredictionRow; }

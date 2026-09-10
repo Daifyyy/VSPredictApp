@@ -106,7 +106,7 @@ export async function GET(req: Request) {
     const categories = Object.fromEntries(QUICK_FOCUS_IDS.map((focus) => [focus, ranked[focus].map((item, index) => {
       const row = item.candidate.row;
       const close = item.snapshot ? freshClosing(new Date(row.kickoff), item.snapshot.closedAt, item.snapshot.closingMarketProbability).close : null;
-      const hit = item.snapshot?.hit ?? selectionHit(focus, row, item.candidate.signals, actualCounts.get(row.fixtureId) ?? null, item.frozenSide, item.frozenLine, item.snapshot?.sourceMarket ?? null);
+      const hit = item.snapshot?.hit ?? selectionHit(focus, row, item.candidate.signals, actualCounts.get(row.fixtureId) ?? null, item.frozenSide, item.frozenLine, item.snapshot?.sourceMarket ?? null, item.snapshot != null);
       const profit = focus === "team_goals" ? null : item.snapshot?.profit ?? portfolioProfit(hit, item.snapshot?.decimalOdds ?? null);
       return {
         rank: index + 1,
@@ -150,8 +150,9 @@ function toPredictionRow(row: Awaited<ReturnType<typeof prisma.fixturePrediction
   return { ...row, kickoff: row.kickoff.toISOString(), modelContext: row.modelContext as PredictionRow["modelContext"], published1x2Side: row.published1x2Side as PredictionRow["published1x2Side"], publishedAt: row.publishedAt?.toISOString() ?? null, h2hSnapshot: row.h2hSnapshot as PredictionRow["h2hSnapshot"], h2hCapturedAt: row.h2hCapturedAt?.toISOString() ?? null, oddsFetchedAt: row.oddsFetchedAt?.toISOString() ?? null, oddsCloseAt: row.oddsCloseAt?.toISOString() ?? null, settledAt: row.settledAt?.toISOString() ?? null } as PredictionRow;
 }
 
-function selectionHit(focus: string, row: PredictionRow, signals: QuickMarketSignal[], actual: { corners: number | null; cards: number | null } | null, frozenSide: string | null, frozenLine: number | null, frozenMarket: string | null): boolean | null {
+function selectionHit(focus: string, row: PredictionRow, signals: QuickMarketSignal[], actual: { corners: number | null; cards: number | null } | null, frozenSide: string | null, frozenLine: number | null, frozenMarket: string | null, hasFrozenSnapshot: boolean): boolean | null {
   if (row.homeGoals == null || row.awayGoals == null) return null;
+  if (hasFrozenSnapshot && !frozenSide) return null;
   if (focus === "1x2") { const side = frozenSide ?? (row.homeWin >= row.awayWin ? "HOME" : "AWAY"); return side === "HOME" ? row.homeGoals > row.awayGoals : side === "AWAY" ? row.awayGoals > row.homeGoals : row.homeGoals === row.awayGoals; }
   if (focus === "goals") { const side = frozenSide ?? (row.over25 >= 0.5 ? "OVER" : "UNDER"); return side === "OVER" ? row.homeGoals + row.awayGoals > 2.5 : row.homeGoals + row.awayGoals < 2.5; }
   if (focus === "btts") { const side = frozenSide ?? (row.bttsYes >= 0.5 ? "OVER" : "UNDER"); const both = row.homeGoals > 0 && row.awayGoals > 0; return side === "OVER" ? both : !both; }

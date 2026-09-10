@@ -651,6 +651,9 @@ export async function runSnapshotOdds(
       const odds = await fetchOdds(item.fixtureId);
       if (!odds) {
         // API pro zápas kurzy nemá (běžné daleko před výkopem i u menších lig).
+        // Rychlý přehled je nejprve sportovní výběr. Kvalitní modelový scénář
+        // zmrazíme i bez ceny; do úspěšnosti vstoupí, do ROI s null kurzem nikdy.
+        await captureQuickOverviewDay(item.fixtureId, [], now);
         empty++;
         continue;
       }

@@ -117,18 +117,22 @@ export function mergeHistoricalSnapshot(served: FixtureDay | undefined, fresh: F
 }
 
 /** Po otevreni Vysledku jednou dotahne finalni snapshoty dvou predchozich dni. */
-function useHistoricalResultSnapshots(enabled: boolean, today: string | null): FixtureDay[] {
+function useHistoricalResultSnapshots(enabled: boolean, today: string | null, dayCount: number): FixtureDay[] {
   const [snapshots, setSnapshots] = useState<FixtureDay[]>([]);
   useEffect(() => {
     if (!enabled || !today) return;
     const controller = new AbortController();
-    const dates = [prevDay(today), prevDay(prevDay(today))];
+    const dates = Array.from({ length: dayCount }, (_, index) => {
+      let date = today;
+      for (let step = 0; step <= index; step++) date = prevDay(date);
+      return date;
+    });
     fetch(`/api/fixtures/results?dates=${dates.join(",")}`, { signal: controller.signal })
       .then((response) => response.ok ? response.json() as Promise<{ days?: FixtureDay[] }> : null)
       .then((payload) => { if (payload?.days) setSnapshots(payload.days); })
       .catch(() => {});
     return () => controller.abort();
-  }, [enabled, today]);
+  }, [enabled, today, dayCount]);
   return snapshots;
 }
 
@@ -498,7 +502,7 @@ export function ZapasyApp({
   }, []);
 
   const todaySnapshot = useTodaySnapshot(clientToday);
-  const historicalSnapshots = useHistoricalResultSnapshots(view === "results", clientToday);
+  const historicalSnapshots = useHistoricalResultSnapshots(view === "results", clientToday, resultDays);
   const syncedDays = useMemo(() => {
     const byDate = new Map(days.map((day) => [day.date, day]));
     for (const fresh of historicalSnapshots) {

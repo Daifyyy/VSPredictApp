@@ -33,7 +33,7 @@ const LOOKAHEAD_DAYS = 6;
  * po prvním naplnění stojí prakticky nic. `ZapasyApp` z nich staví pásek dní dozadu –
  * **pořadí `dates` (nejstarší první) je součást kontraktu**, viz `RESULT_DAYS` tam.
  */
-const RESULT_DAYS = 2;
+const RESULT_DAYS = 7;
 
 export const dynamic = "force-static";
 export const revalidate = 300;
@@ -49,11 +49,16 @@ export default async function Home() {
   let rawDays: FixtureDay[] = dates.map((date) => ({ date, fixtures: [], played: [] }));
   let results: Awaited<ReturnType<typeof getRecentResults>> = [];
   try {
-    [rawDays, results] = await Promise.all([
-      getCachedFixturesByDates(dates),
-      // Okno tipů musí pokrýt celý pásek dozadu (+1 den rezerva na posun půlnoci).
-      getRecentResults(RESULT_DAYS + 1),
+    // Starší dny mají v prvním HTML jen lehký placeholder. Definitivní výsledky
+    // se dávkově dotáhnou až po otevření záložky Výsledky.
+    const initialDates = dates.slice(Math.max(0, RESULT_DAYS - 2));
+    const [loadedDays, loadedResults] = await Promise.all([
+      getCachedFixturesByDates(initialDates),
+      getRecentResults(3),
     ]);
+    const loadedByDate = new Map(loadedDays.map((day) => [day.date, day]));
+    rawDays = rawDays.map((day) => loadedByDate.get(day.date) ?? day);
+    results = loadedResults;
   } catch (error) {
     // Bezpečný prázdný stav je lepší než HTTP 500; další request zkusí DB znovu.
     logError("page.home.data", error);
