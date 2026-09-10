@@ -86,6 +86,11 @@ export function AccountMenu({ user }: { user: SessionUser | null }) {
               💳 Spravovat předplatné
             </MenuItem>
           )}
+          {user.isAdmin && (
+            <MenuItem onClick={() => { setOpen(false); window.location.href = "/provoz/modely"; }}>
+              ⚙️ Řídicí centrum modelů
+            </MenuItem>
+          )}
           <MenuItem
             onClick={() => {
               setOpen(false);

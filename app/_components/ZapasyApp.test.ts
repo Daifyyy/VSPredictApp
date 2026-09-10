@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FixtureDay, PlayedFixture, UpcomingFixture } from "@/lib/types";
-import { mergeTodaySnapshot } from "./ZapasyApp";
+import { mergeHistoricalSnapshot, mergeTodaySnapshot } from "./ZapasyApp";
 
 const upcoming = (fixtureId: number): UpcomingFixture => ({
   fixtureId,
@@ -61,6 +61,17 @@ describe("mergeTodaySnapshot", () => {
     };
     const result = mergeTodaySnapshot(served, fresh);
     expect(result.fixtures[0]).toMatchObject({ homeRank: 2, awayRank: 7 });
+    expect(result.played[0].tip).toEqual(tip);
+  });
+});
+
+describe("mergeHistoricalSnapshot", () => {
+  it("uses the complete final fixture list and preserves an existing tip", () => {
+    const tip = { side: "home" as const, prob: .6, hit: true, published: true as const, experimental: false, policyVersion: 1 };
+    const served: FixtureDay = { date: "2026-08-12", fixtures: [], played: [{ ...played(1), tip }] };
+    const fresh: FixtureDay = { date: "2026-08-12", fixtures: [], played: [played(1), played(2)] };
+    const result = mergeHistoricalSnapshot(served, fresh);
+    expect(result.played.map((fixture) => fixture.fixtureId)).toEqual([1, 2]);
     expect(result.played[0].tip).toEqual(tip);
   });
 });

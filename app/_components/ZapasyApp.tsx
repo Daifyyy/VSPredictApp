@@ -104,6 +104,34 @@ function useTodaySnapshot(today: string | null): FixtureDay | null {
   return snapshot;
 }
 
+/** Finalni seznam dne je autoritativni; starsi SSR data dodaji jen ulozeny audit. */
+export function mergeHistoricalSnapshot(served: FixtureDay | undefined, fresh: FixtureDay): FixtureDay {
+  const oldPlayed = new Map((served?.played ?? []).map((fixture) => [fixture.fixtureId, fixture]));
+  return {
+    ...fresh,
+    played: fresh.played.map((fixture) => {
+      const old = oldPlayed.get(fixture.fixtureId);
+      return old ? { ...fixture, tip: old.tip, modelReview: old.modelReview } : fixture;
+    }),
+  };
+}
+
+/** Po otevreni Vysledku jednou dotahne finalni snapshoty dvou predchozich dni. */
+function useHistoricalResultSnapshots(enabled: boolean, today: string | null): FixtureDay[] {
+  const [snapshots, setSnapshots] = useState<FixtureDay[]>([]);
+  useEffect(() => {
+    if (!enabled || !today) return;
+    const controller = new AbortController();
+    const dates = [prevDay(today), prevDay(prevDay(today))];
+    fetch(`/api/fixtures/results?dates=${dates.join(",")}`, { signal: controller.signal })
+      .then((response) => response.ok ? response.json() as Promise<{ days?: FixtureDay[] }> : null)
+      .then((payload) => { if (payload?.days) setSnapshots(payload.days); })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [enabled, today]);
+  return snapshots;
+}
+
 /** Následující kalendářní den z YYYY-MM-DD (čistá aritmetika, nezávislá na zóně). */
 function nextDay(dateStr: string): string {
   const d = new Date(`${dateStr}T00:00:00Z`);
@@ -470,15 +498,15 @@ export function ZapasyApp({
   }, []);
 
   const todaySnapshot = useTodaySnapshot(clientToday);
+  const historicalSnapshots = useHistoricalResultSnapshots(view === "results", clientToday);
   const syncedDays = useMemo(() => {
-    if (!todaySnapshot) return days;
-    const served = days.find((day) => day.date === todaySnapshot.date);
-    const merged = mergeTodaySnapshot(served, todaySnapshot);
-    return [
-      ...days.filter((day) => day.date !== todaySnapshot.date),
-      merged,
-    ].sort((a, b) => a.date.localeCompare(b.date));
-  }, [days, todaySnapshot]);
+    const byDate = new Map(days.map((day) => [day.date, day]));
+    for (const fresh of historicalSnapshots) {
+      byDate.set(fresh.date, mergeHistoricalSnapshot(byDate.get(fresh.date), fresh));
+    }
+    if (todaySnapshot) byDate.set(todaySnapshot.date, mergeTodaySnapshot(byDate.get(todaySnapshot.date), todaySnapshot));
+    return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+  }, [days, todaySnapshot, historicalSnapshots]);
 
   // Odfiltruj minulé dny ze zastaralého snapshotu (yesterday-as-„Dnes" fix). Když by tím
   // nezbylo nic (extrémně starý snapshot), radši ukaž původní data než prázdno.

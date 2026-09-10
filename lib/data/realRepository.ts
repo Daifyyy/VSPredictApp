@@ -1064,8 +1064,11 @@ export async function getFixturesByDates(dates: string[]): Promise<FixtureDay[]>
   const days = await Promise.all(
     dates.map(async (date) => {
       try {
-        const ttl = date < today ? FIX_PAST_TTL : FIX_TTL;
-        const raw = await cachedJson(`fixdate:${date}`, ttl, () =>
+        const past = date < today;
+        const ttl = past ? FIX_PAST_TTL : FIX_TTL;
+        // Uzavreny den ma vlastni finalni klic. `fixdate:*` mohl vzniknout jeste pred
+        // dohranim programu a po pulnoci by jinak konzervoval predzapasovy snapshot.
+        const raw = await cachedJson(past ? `fixdate-final:${date}` : `fixdate:${date}`, ttl, () =>
           fetchFixturesByDate(date)
         );
         return {
