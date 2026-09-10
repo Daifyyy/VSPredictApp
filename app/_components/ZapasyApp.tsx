@@ -190,8 +190,11 @@ function useLiveScores(
   useEffect(() => {
     if (!enabled) return;
     let active = true;
-    async function tick(): Promise<void> {
-      if (document.hidden || !plausiblyLive(fixtures, Date.now())) return;
+    let liveDiscovered = false;
+    async function tick(initial = false): Promise<void> {
+      // PrvnĂ­ lehkĂˇ kontrola musĂ­ probÄ›hnout vĹľdy. DennĂ­ snapshot mĹŻĹľe bĂ˝t stale
+      // a bez tohoto dotazu by chybÄ›jĂ­cĂ­ live utkĂˇnĂ­ samo nikdy nesplnilo plausibility gate.
+      if (document.hidden || (!initial && !liveDiscovered && !plausiblyLive(fixtures, Date.now()))) return;
       try {
         const r = await fetch("/api/fixtures/live");
         if (!r.ok) throw new Error(String(r.status));
@@ -199,6 +202,7 @@ function useLiveScores(
         if (!active) return;
         const map = new Map<number, LiveScore>();
         for (const l of d.live ?? []) map.set(l.fixtureId, l);
+        liveDiscovered = map.size > 0;
 
         // Co ze živé sady vypadlo, dohrálo → poskládat pro Výsledky, než dorazí rozpis.
         const done = detectFinished(prevScores.current, map, fixtures);
@@ -221,7 +225,7 @@ function useLiveScores(
         if (active) setFailing(true);
       }
     }
-    void tick();
+    void tick(true);
     const timer = setInterval(() => void tick(), 90_000);
     const onVis = () => {
       if (!document.hidden) void tick();
@@ -275,12 +279,12 @@ function LiveFreshness({
  * zápas, který ze živé sady vypadl (dohráno), z Programu **zmizí** (opraví i stale SSR).
  * Dokud poll neproběhl (`loaded=false`), věříme SSR (nic neskrýváme).
  */
-function mergeLive(
+export function mergeLive(
   fixtures: UpcomingFixture[],
   scores: Map<number, LiveScore>,
   loaded: boolean
 ): UpcomingFixture[] {
-  return fixtures
+  const merged = fixtures
     .filter((f) => {
       if (scores.has(f.fixtureId)) return true; // právě běží
       return !(loaded && f.live); // byl živý, teď už není → dohráno → ven
@@ -299,6 +303,12 @@ function mergeLive(
         halftimeAway: l.halftimeAway,
       };
     });
+  const known = new Set(merged.map((fixture) => fixture.fixtureId));
+  for (const live of scores.values()) {
+    if (known.has(live.fixtureId) || !live.fixture) continue;
+    merged.push({ ...live.fixture, live: true, elapsed: live.elapsed, liveHome: live.homeGoals, liveAway: live.awayGoals, liveStatus: live.status, halftimeHome: live.halftimeHome, halftimeAway: live.halftimeAway });
+  }
+  return merged.sort((a, b) => a.kickoff.localeCompare(b.kickoff));
 }
 
 /**

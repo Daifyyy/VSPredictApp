@@ -1128,6 +1128,7 @@ export async function getLiveFixtures(): Promise<LiveScore[]> {
     const raw = await cachedJsonMemo("fixlive", 30, LIVE_TTL, () =>
       fetchLiveFixtures(FIXTURE_LIST_LEAGUE_IDS)
     );
+    const normalized = new Map(normalizeUpcomingFixtures(raw).map((fixture) => [fixture.fixtureId, fixture]));
     return raw
       .filter((f) => LIVE_STATUSES.has(f.fixture.status.short))
       .map((f) => ({
@@ -1138,6 +1139,7 @@ export async function getLiveFixtures(): Promise<LiveScore[]> {
         awayGoals: f.goals.away,
         halftimeHome: f.score?.halftime?.home ?? null,
         halftimeAway: f.score?.halftime?.away ?? null,
+        fixture: normalized.get(f.fixture.id),
       }));
   } catch (e) {
     // Živé skóre v Programu prostě přestane svítit a `mergeLive` se vrátí k SSR datům –

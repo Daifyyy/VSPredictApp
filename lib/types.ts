@@ -418,6 +418,8 @@ export interface LiveScore {
    */
   halftimeHome: number | null;
   halftimeAway: number | null;
+  /** Metadata pro pĹ™Ă­pad, kdy zastaralĂ˝ dennĂ­ snapshot tento live zĂˇpas neobsahuje. */
+  fixture?: UpcomingFixture;
 }
 
 export interface Team {
