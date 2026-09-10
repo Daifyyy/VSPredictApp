@@ -6,6 +6,7 @@ import { buildMatchEvents } from "@/lib/stats/matchEvents";
 import { calculateLiveModel, evaluateLiveCandidate, LIVE_MODEL_VERSION, LIVE_POLICY_VERSION, type LiveProbabilities } from "@/lib/picks/liveModel";
 import type { LiveCandidateSnapshot, Prisma } from "@prisma/client";
 import { ACTIVE_PROGRAM_CLUB_LEAGUE_IDS } from "./catalog";
+import { saveLineup } from "./personnelShadow";
 
 type Price = { bookmakerId: number | null; bookmaker: string; marketId: number; market: "LIVE_1X2" | "LIVE_GOALS" | "LIVE_BTTS"; side: string; line: number | null; odds: number; main: boolean; blocked: boolean; stopped: boolean; sourceAt: Date | null };
 const preferredBooks = [4, 8, 6, 11, 2];
@@ -80,6 +81,11 @@ export async function captureLiveFixture(fixture: ApiFixture, now = new Date()) 
     update: {},
     create: { fixtureId: fixture.fixture.id, leagueId: fixture.league.id, observedAt, minute, status: fixture.fixture.status.short, homeGoals: fixture.goals.home, awayGoals: fixture.goals.away, homeTeamId: fixture.teams.home.id, awayTeamId: fixture.teams.away.id, venueId: fixture.fixture.venue?.id ?? null, venueName: fixture.fixture.venue?.name ?? null, homeStats: json(home), awayStats: json(away), events: json(events), sourceAt: now },
   });
+  // The enriched fixture payload may already contain official lineups. Persist them without
+  // another provider request so Match Center can display the same immutable audit source.
+  for (const lineup of fixture.lineups ?? []) {
+    await saveLineup(fixture.fixture.id, new Date(fixture.fixture.date), lineup, now);
+  }
   if (fixture.fixture.venue?.id) {
     const existing = await prisma.venueCache.findUnique({ where: { venueId: fixture.fixture.venue.id } });
     if (!existing || now.getTime() - existing.fetchedAt.getTime() > 30 * 86_400_000) {

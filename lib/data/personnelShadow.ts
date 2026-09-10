@@ -66,7 +66,7 @@ export function lineupCompleteness(lineup: ApiFixtureLineup): number {
   return Math.min(1, (Math.min(11, starters) / 11) * .8 + (bench ? .1 : 0) + (lineup.formation ? .05 : 0) + (lineup.coach?.name ? .05 : 0));
 }
 
-async function saveLineup(fixtureId: number, kickoff: Date, lineup: ApiFixtureLineup, at: Date) {
+export async function saveLineup(fixtureId: number, kickoff: Date, lineup: ApiFixtureLineup, at: Date) {
   const starters = lineup.startXI;
   const substitutes = lineup.substitutes;
   const status = starters.length === 11 ? "CONFIRMED" : "EXPECTED";

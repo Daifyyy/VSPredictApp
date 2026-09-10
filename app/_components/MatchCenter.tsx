@@ -12,12 +12,15 @@ import { buildCompareHref } from "./compareHref";
 import type { SessionUser } from "./sessionUser";
 
 type Stats = Partial<Record<"XG" | "SHOTS" | "SHOTS_ON_TARGET" | "POSSESSION" | "PASSES_TOTAL" | "CORNERS" | "FOULS" | "YELLOW_CARDS" | "RED_CARDS", number>>;
+type LineupPlayer = { playerId: number | null; name: string; number: number | null; position: string | null };
+type Lineup = { teamId: number; status: string; formation: string | null; coachName: string | null; capturedAt: string; completeness: number; starters: LineupPlayer[]; substitutes: LineupPlayer[] };
 type Payload = {
   match: null | { observedAt: string; minute: number | null; status: string; homeGoals: number | null; awayGoals: number | null; homeTeamId: number; awayTeamId: number; venueName: string | null; homeStats: Stats | null; awayStats: Stats | null; events: MatchEvent[] | null };
   venue: null | { name: string | null; address: string | null; city: string | null; capacity: number | null; surface: string | null; imageUrl: string | null };
   model: null | { probabilities: LiveProbabilities; lowConfidence: boolean; remainingLambdaHome: number; remainingLambdaAway: number };
   odds: Array<{ id: string; observedAt: string; market: string; side: string; line: number | null; decimalOdds: number; bookmaker: string; main: boolean; blocked: boolean; stopped: boolean }>;
   candidates: Array<{ id: string; market: string; side: string; line: number | null; modelProbability: number; marketProbability: number; edge: number; expectedValue: number; decimalOdds: number; bookmaker: string; minute: number; reason: string }>;
+  lineups: Lineup[];
   pro: boolean;
   updatedAt: string | null;
 };
@@ -118,10 +121,12 @@ function MatchCenterDetail({ fixture, state, watching, canWatch, onWatch }: { fi
   const latestOdds = useMemo(() => { const rows = payload?.odds ?? []; const newestAt = rows[0]?.observedAt; return newestAt ? rows.filter((row) => row.observedAt === newestAt) : []; }, [payload?.odds]);
   const probs = payload?.model?.probabilities;
   const scenarios = useMemo(() => probs ? buildLiveScenarios(probs, latestOdds, payload?.candidates ?? [], Boolean(payload?.model?.lowConfidence), match?.minute ?? 0) : [], [probs, latestOdds, payload?.candidates, payload?.model?.lowConfidence, match?.minute]);
+  const [failedVenueImage, setFailedVenueImage] = useState<string | null>(null);
+  const venueImageUrl = venue?.imageUrl ?? null;
   const href = buildCompareHref(fixture);
   return <div className="border-t border-border">
     <div className="relative min-h-52 overflow-hidden bg-[#245b3d]">
-      {venue?.imageUrl ? <Image src={venue.imageUrl} alt={venue.name ? `Stadion ${venue.name}` : "Místo utkání"} fill sizes="(max-width: 900px) 100vw, 900px" className="object-cover object-center opacity-70" /> : <div className="absolute inset-0 opacity-35" style={{ backgroundImage: "linear-gradient(90deg, transparent 49.7%, rgba(255,255,255,.8) 50%, transparent 50.3%), radial-gradient(circle at center, transparent 0 16%, rgba(255,255,255,.75) 16.5% 17%, transparent 17.5%), linear-gradient(rgba(255,255,255,.55),rgba(255,255,255,.55))", backgroundSize: "100% 100%, 100% 100%, calc(100% - 48px) calc(100% - 32px)", backgroundPosition: "center", backgroundRepeat: "no-repeat" }} />}
+      {venueImageUrl && venueImageUrl !== failedVenueImage ? <Image src={venueImageUrl} alt={venue?.name ? `Stadion ${venue.name}` : "Místo utkání"} fill sizes="(max-width: 900px) 100vw, 900px" className="object-cover object-center opacity-70" onError={() => setFailedVenueImage(venueImageUrl)} /> : <div className="absolute inset-0 opacity-35" style={{ backgroundImage: "linear-gradient(90deg, transparent 49.7%, rgba(255,255,255,.8) 50%, transparent 50.3%), radial-gradient(circle at center, transparent 0 16%, rgba(255,255,255,.75) 16.5% 17%, transparent 17.5%), linear-gradient(rgba(255,255,255,.55),rgba(255,255,255,.55))", backgroundSize: "100% 100%, 100% 100%, calc(100% - 48px) calc(100% - 32px)", backgroundPosition: "center", backgroundRepeat: "no-repeat" }} />}
       <div className="absolute inset-0 bg-gradient-to-t from-[#07140e]/95 via-[#102219]/45 to-black/20" />
       <div className="relative flex min-h-52 flex-col justify-between p-4 text-white sm:p-6">
         <div className="flex items-start justify-between gap-3 text-xs"><span>{venue?.name ?? match?.venueName ?? fixture.venueName ?? "Místo utkání není uvedeno"}{venue?.city ? ` · ${venue.city}` : ""}</span><button type="button" disabled={!canWatch} onClick={onWatch} className="rounded-full border border-white/30 bg-black/20 px-3 py-1.5 font-semibold disabled:opacity-50">{watching ? "★ Připnuto" : "☆ Připnout"}</button></div>
@@ -137,6 +142,7 @@ function MatchCenterDetail({ fixture, state, watching, canWatch, onWatch }: { fi
       <div className="space-y-4">
         <section className="rounded-xl border border-border bg-background p-3"><div className="flex items-center justify-between"><h3 className="text-sm font-bold">Živý průběh</h3>{newest ? <span className="text-[10px] font-semibold text-negative">Poslední událost {newest.minute}&apos;</span> : null}</div>{events.length ? <EventTimeline events={events} homeTeamId={fixture.home.id} newestFirst /> : <p className="mt-3 text-xs text-muted">Zatím bez zaznamenané události.</p>}</section>
         <section className="rounded-xl border border-border bg-background p-3"><h3 className="text-sm font-bold">Statistiky zápasu</h3><div className="mt-3 space-y-2">{([ ["xG", "XG"], ["Střely", "SHOTS"], ["Na branku", "SHOTS_ON_TARGET"], ["Držení", "POSSESSION", "%"], ["Přihrávky", "PASSES_TOTAL"], ["Rohy", "CORNERS"], ["Fauly", "FOULS"], ["Žluté karty", "YELLOW_CARDS"] ] as const).map(([label, key, suffix]) => home[key] == null && away[key] == null ? null : <div key={key} className="grid grid-cols-[3rem_1fr_3rem] items-center gap-2 text-xs"><b className="text-right tabular-nums">{stat(home[key], suffix)}</b><span className="text-center text-muted">{label}</span><b className="tabular-nums">{stat(away[key], suffix)}</b></div>)}</div></section>
+        <LineupsPanel fixture={fixture} lineups={payload?.lineups ?? []} />
       </div>
       <div className="space-y-4">
         <section className="rounded-xl border border-border bg-background p-3"><h3 className="text-sm font-bold">Průběh a momentum</h3><p className="mt-2 text-xs text-muted">{momentumText(home, away, fixture)}</p><div className="mt-3 grid grid-cols-2 gap-2"><MetricBox label="xG od začátku" value={`${stat(home.XG)} : ${stat(away.XG)}`} /><MetricBox label="Střely na branku" value={`${stat(home.SHOTS_ON_TARGET)} : ${stat(away.SHOTS_ON_TARGET)}`} /></div></section>
@@ -154,6 +160,12 @@ function MatchCenterDetail({ fixture, state, watching, canWatch, onWatch }: { fi
 
 function MetricBox({ label, value }: { label: string; value: string }) { return <div className="rounded-lg border border-border p-2"><span className="block text-[10px] text-muted">{label}</span><strong className="mt-0.5 block text-sm tabular-nums">{value}</strong></div>; }
 function Probability({ label, value }: { label: string; value: number }) { return <div className="rounded-lg bg-background p-2"><span className="block text-[10px] text-muted">{label}</span><strong>{pct(value)}</strong></div>; }
+function LineupsPanel({ fixture, lineups }: { fixture: UpcomingFixture; lineups: Lineup[] }) {
+  const sides = [fixture.home, fixture.away].map((team) => ({ team, lineup: lineups.find((row) => row.teamId === team.id) }));
+  return <section className="rounded-xl border border-border bg-background p-3"><div className="flex items-center justify-between gap-2"><h3 className="text-sm font-bold">Sestavy</h3>{lineups.length ? <span className="text-[10px] font-semibold text-positive">Potvrzené zdrojem</span> : <span className="text-[10px] text-muted">Čeká na data</span>}</div>
+    {lineups.length ? <div className="mt-3 grid gap-3 sm:grid-cols-2">{sides.map(({ team, lineup }) => <div key={team.id} className="min-w-0 rounded-lg border border-border p-2"><div className="flex items-center gap-2"><TeamLogo src={team.logoUrl} alt={team.name} size={24} /><strong className="truncate text-xs">{team.name}</strong></div>{lineup ? <><p className="mt-2 text-[10px] text-muted">{lineup.formation ? `Rozestavení ${lineup.formation}` : "Rozestavení neuvedeno"}{lineup.coachName ? ` · ${lineup.coachName}` : ""}</p><ol className="mt-2 space-y-1 text-xs">{lineup.starters.map((player) => <li key={`${player.playerId ?? player.name}-${player.number ?? ""}`} className="flex gap-2"><span className="w-5 shrink-0 text-right tabular-nums text-muted">{player.number ?? ""}</span><span className="truncate">{player.name}</span>{player.position ? <span className="ml-auto text-[10px] text-muted">{player.position}</span> : null}</li>)}</ol>{lineup.substitutes.length ? <details className="mt-2"><summary className="cursor-pointer text-[10px] font-semibold text-muted">Náhradníci ({lineup.substitutes.length})</summary><ul className="mt-2 space-y-1 text-xs">{lineup.substitutes.map((player) => <li key={`${player.playerId ?? player.name}-${player.number ?? ""}`} className="truncate">{player.number != null ? `${player.number}. ` : ""}{player.name}</li>)}</ul></details> : null}</> : <p className="mt-2 text-xs text-muted">Sestava tohoto týmu zatím není dostupná.</p>}</div>)}</div> : <p className="mt-3 text-xs text-muted">Poskytovatel zatím neposlal použitelnou sestavu. Match Center ji zobrazí automaticky po zachycení; chybějící hráče nedoplňujeme odhadem.</p>}
+  </section>;
+}
 function ModelOnlyOpportunities({ probabilities, scoreHome, scoreAway }: { probabilities: LiveProbabilities; scoreHome: number; scoreAway: number }) {
   const result = [{ label: "Domácí", value: probabilities.home }, { label: "Remíza", value: probabilities.draw }, { label: "Hosté", value: probabilities.away }].sort((a, b) => b.value - a.value)[0];
   const total = scoreHome + scoreAway;
