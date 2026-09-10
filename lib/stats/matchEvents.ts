@@ -8,7 +8,7 @@ import type { ApiFixtureEvent } from "@/lib/data/apiFootball";
  * i *statistiky*, ale ne *co se v zápase stalo* – `/fixtures/events` se nevolal vůbec.
  */
 
-export type MatchEventKind = "goal" | "ownGoal" | "penalty" | "yellow" | "red" | "sub" | "var";
+export type MatchEventKind = "goal" | "ownGoal" | "penalty" | "missedPenalty" | "yellow" | "secondYellow" | "red" | "sub" | "var";
 
 export interface MatchEvent {
   /** Minuta včetně nastavení (90+3 → `minute: 90`, `extra: 3`). */
@@ -18,13 +18,17 @@ export interface MatchEvent {
   teamId: number;
   /** Kdo to udělal; u střídání **odcházející** hráč. `null` = API jméno nedalo. */
   player: string | null;
+  playerId?: number | null;
   /**
    * Doplňkový hráč: u gólu asistent, u střídání **přicházející**. U vlastního gólu
    * schválně `null` – „asistence" u vlastňáku by byla nesmyslná.
    */
   assist: string | null;
+  assistId?: number | null;
   /** Popis rozhodnutí VAR; používá se jen u události VAR. */
   description?: string;
+  sourceDetail?: string;
+  sourceComment?: string | null;
 }
 
 /** Prázdné jméno („", „ ") je pro UI totéž co chybějící. */
@@ -44,12 +48,13 @@ function kindOf(e: ApiFixtureEvent): MatchEventKind | null {
 
   if (type === "goal") {
     // „Missed Penalty" je taky typ Goal, ale gól to není – nesmí se objevit na ose gólů.
-    if (detail.includes("missed")) return null;
+    if (detail.includes("missed") && detail.includes("penalty")) return "missedPenalty";
     if (detail.includes("own")) return "ownGoal";
     if (detail.includes("penalty")) return "penalty";
     return "goal";
   }
   if (type === "card") {
+    if (detail.includes("second yellow")) return "secondYellow";
     if (detail.includes("red")) return "red";
     if (detail.includes("yellow")) return "yellow";
     return null;
@@ -77,8 +82,12 @@ export function buildMatchEvents(raw: ApiFixtureEvent[]): MatchEvent[] {
       kind,
       teamId: e.team.id,
       player: name(e.player),
+      playerId: e.player?.id ?? null,
       assist: kind === "ownGoal" ? null : name(e.assist),
+      assistId: kind === "ownGoal" ? null : e.assist?.id ?? null,
       ...(kind === "var" ? { description: e.detail.trim() || "Kontrola VAR" } : {}),
+      sourceDetail: e.detail,
+      sourceComment: e.comments?.trim() || null,
     });
   }
   return out.sort(
@@ -97,7 +106,9 @@ export const EVENT_ICON: Record<MatchEventKind, string> = {
   goal: "⚽",
   ownGoal: "🥅",
   penalty: "⚽",
+  missedPenalty: "✕",
   yellow: "🟨",
+  secondYellow: "🟨",
   red: "🟥",
   sub: "🔁",
   var: "VAR",
@@ -108,7 +119,9 @@ export const EVENT_LABEL: Record<MatchEventKind, string> = {
   goal: "Gól",
   ownGoal: "Vlastní gól",
   penalty: "Gól z penalty",
+  missedPenalty: "Neproměněná penalta",
   yellow: "Žlutá karta",
+  secondYellow: "Druhá žlutá karta",
   red: "Červená karta",
   sub: "Střídání",
   var: "Rozhodnutí VAR",

@@ -58,8 +58,10 @@ describe("buildMatchEvents", () => {
     expect(e.assist).toBeNull();
   });
 
-  it("neproměněná penalta není gól", () => {
-    expect(buildMatchEvents([ev({ detail: "Missed Penalty" })])).toEqual([]);
+  it("neproměněnou penaltu zachová jako významnou šanci, ne jako gól", () => {
+    expect(buildMatchEvents([ev({ detail: "Missed Penalty" })])).toEqual([
+      expect.objectContaining({ kind: "missedPenalty", playerId: 1, assistId: 2, sourceDetail: "Missed Penalty" }),
+    ]);
   });
 
   it("rozliší žlutou a červenou", () => {
@@ -68,6 +70,11 @@ describe("buildMatchEvents", () => {
       ev({ type: "Card", detail: "Red Card" }),
     ]).map((e) => e.kind);
     expect(kinds).toEqual(["yellow", "red"]);
+  });
+
+  it("druhou žlutou zachová odděleně od přímé červené", () => {
+    const [event] = buildMatchEvents([ev({ type: "Card", detail: "Second Yellow card" })]);
+    expect(event.kind).toBe("secondYellow");
   });
 
   it("VAR zachová s vysvětlením a neznámé typy zahazuje", () => {

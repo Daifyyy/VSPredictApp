@@ -21,6 +21,7 @@ name: Cron
 on:
   schedule:
     - cron: "*/5 * * * *" # nezaujatý live výzkumný sběr; endpoint zpracovává krátké dávky
+    - cron: "13,33,53 * * * *" # prospektivní absence, sestavy a lineup shadow
     # Snímky kurzů – nejčastější úloha, kvůli zavírací linii u večerních zápasů.
     # HODINOVĚ (od 28. 7. 2026): `fixturesNeedingOdds` v posledních 3 h průběžně přepisuje
     # kandidáta na closing. Hodinová kadence dává typicky poslední bod 0–60 min před výkopem.
@@ -73,6 +74,7 @@ on:
           - send-notifications
           - audit-pipeline
           - collect-live
+          - personnel-shadow
 
 jobs:
   run:
@@ -99,6 +101,7 @@ jobs:
           fi
           case "$SCHEDULE" in
             "*/5 * * * *") path="collect-live" ;;
+            "13,33,53 * * * *") path="personnel-shadow" ;;
             "20 * * * *")   path="snapshot-odds" ;;
             "7,22,37,52 * * * *") path="send-notifications" ;;
             "50 */3 * * *") path="refresh-referees" ;;
@@ -225,6 +228,20 @@ jobs:
               if [ "$remaining" -le 0 ]; then exit 0; fi
             done
             echo "Live sběr nedokončil všechny dávky; zbývá $remaining." >&2
+            exit 1
+          fi
+          if [ "$JOB" = "personnel-shadow" ]; then
+            cursor=0
+            for pass in $(seq 1 6); do
+              target="$url?limit=4&cursor=$cursor"
+              echo "→ $target (personnel dávka $pass)"
+              body=$(curl --fail-with-body --silent --show-error --location --max-time 70 --retry 1 --retry-delay 5 --header "Authorization: Bearer $CRON_SECRET" "$target")
+              echo "$body"
+              remaining=$(echo "$body" | jq -r '.remaining // 0')
+              cursor=$(echo "$body" | jq -r '.cursor // 0')
+              if [ "$remaining" -le 0 ]; then exit 0; fi
+            done
+            echo "Personální sběr nedokončil všechny dávky; zbývá $remaining." >&2
             exit 1
           fi
           echo "→ $url"

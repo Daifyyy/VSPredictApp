@@ -143,12 +143,21 @@ const lineupCoachSchema = z.object({
   name: z.string().nullable().optional(),
   photo: z.string().nullable().optional(),
 });
+const lineupPlayerSchema = z.object({
+  player: z.object({
+    id: z.number().nullable().optional(),
+    name: z.string(),
+    number: z.number().nullable().optional(),
+    pos: z.string().nullable().optional(),
+    grid: z.string().nullable().optional(),
+  }),
+});
 const lineupItemSchema = z.object({
   team: lineupTeamSchema,
   formation: z.string().nullable().optional(),
   coach: lineupCoachSchema.nullable().optional(),
-  startXI: z.array(z.unknown()).optional(),
-  substitutes: z.array(z.unknown()).optional(),
+  startXI: z.array(lineupPlayerSchema).default([]),
+  substitutes: z.array(lineupPlayerSchema).default([]),
 });
 const fixtureItemSchema = z.object({
   fixture: z.object({
@@ -239,9 +248,49 @@ const injuryItemSchema = z.object({
   player: z.object({ id: z.number(), name: z.string() }),
   type: z.string().nullable().optional(),
   reason: z.string().nullable().optional(),
-  fixture: z.object({ date: z.string().nullable().optional() }).optional(),
+  team: z.object({ id: z.number(), name: z.string().optional(), logo: z.string().optional() }).optional(),
+  fixture: z.object({ id: z.number().optional(), date: z.string().nullable().optional() }).optional(),
 });
 const injuriesSchema = z.array(injuryItemSchema);
+
+const leagueCoverageSchema = z.array(z.object({
+  league: z.object({ id: z.number(), name: z.string().optional() }),
+  seasons: z.array(z.object({
+    year: z.number(),
+    current: z.boolean().optional(),
+    coverage: z.object({
+      fixtures: z.object({
+        events: z.boolean().optional(), lineups: z.boolean().optional(),
+        statistics_fixtures: z.boolean().optional(), statistics_players: z.boolean().optional(),
+      }).partial().optional(),
+      standings: z.boolean().optional(), players: z.boolean().optional(), top_scorers: z.boolean().optional(),
+      top_assists: z.boolean().optional(), top_cards: z.boolean().optional(), injuries: z.boolean().optional(),
+      predictions: z.boolean().optional(), odds: z.boolean().optional(),
+    }).partial().optional(),
+  })).default([]),
+}));
+export type ApiLeagueCoverage = z.infer<typeof leagueCoverageSchema>[number];
+
+const nullableNumberLike = z.union([z.number(), z.string(), z.null()]).optional();
+const fixturePlayerSchema = z.object({
+  team: z.object({ id: z.number(), name: z.string().optional(), logo: z.string().optional() }),
+  players: z.array(z.object({
+    player: z.object({ id: z.number(), name: z.string(), photo: z.string().nullable().optional() }),
+    statistics: z.array(z.object({
+      games: z.object({ minutes: nullableNumberLike, number: nullableNumberLike, position: z.string().nullable().optional(), rating: nullableNumberLike, captain: z.boolean().optional(), substitute: z.boolean().optional() }).partial().optional(),
+      offsides: nullableNumberLike,
+      shots: z.object({ total: nullableNumberLike, on: nullableNumberLike }).partial().optional(),
+      goals: z.object({ total: nullableNumberLike, conceded: nullableNumberLike, assists: nullableNumberLike, saves: nullableNumberLike }).partial().optional(),
+      passes: z.object({ total: nullableNumberLike, key: nullableNumberLike, accuracy: nullableNumberLike }).partial().optional(),
+      tackles: z.object({ total: nullableNumberLike, blocks: nullableNumberLike, interceptions: nullableNumberLike }).partial().optional(),
+      duels: z.object({ total: nullableNumberLike, won: nullableNumberLike }).partial().optional(),
+      fouls: z.object({ drawn: nullableNumberLike, committed: nullableNumberLike }).partial().optional(),
+      cards: z.object({ yellow: nullableNumberLike, red: nullableNumberLike }).partial().optional(),
+    }).passthrough()).default([]),
+  })).default([]),
+});
+const fixturePlayersSchema = z.array(fixturePlayerSchema);
+export type ApiFixturePlayers = z.infer<typeof fixturePlayersSchema>;
 
 // /standings vrací per liga+sezóna vnořené pole tabulek (běžně 1, u skupin víc).
 // Bereme jen pole, která zobrazujeme: pozice, body, rozdíl skóre, forma + rozpad
@@ -762,6 +811,21 @@ export function isCornerBet(bet: { id: number; name?: string }): boolean {
 /** Oficiální sestavy jednoho zápasu; typicky dostupné 20–40 minut před výkopem. */
 export function fetchFixtureLineups(fixture: number) {
   return apiGet("/fixtures/lineups", { fixture }, z.array(lineupItemSchema));
+}
+
+/** Coverage je levna referencni informace a obnovuje ji pouze cron. */
+export function fetchLeagueCoverage(league: number, season: number) {
+  return apiGet("/leagues", { id: league, season }, leagueCoverageSchema);
+}
+
+/** Absence svazane s konkretnim zapasem; presnejsi nez sezonni tymovy fallback. */
+export function fetchFixtureInjuries(fixture: number) {
+  return apiGet("/injuries", { fixture }, injuriesSchema);
+}
+
+/** Individualni vykony obou tymu v jednom zapase. */
+export function fetchFixturePlayers(fixture: number) {
+  return apiGet("/fixtures/players", { fixture }, fixturePlayersSchema);
 }
 
 /**

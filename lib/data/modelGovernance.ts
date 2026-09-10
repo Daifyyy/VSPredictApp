@@ -4,6 +4,7 @@ import { MODEL_VERSION } from "./modelVersion";
 import { PUBLIC_CLUB_LEAGUES } from "./catalog";
 import { STRATEGY_CATALOG } from "@/lib/picks/modelLab";
 import { GUARDED_ONE_X_TWO_POLICY_VERSION } from "@/lib/picks/autonomousPortfolio";
+import { personnelShadowDashboard } from "./personnelShadow";
 
 const FINISHED = ["FT", "AET", "PEN"];
 const EPS = 1e-9;
@@ -31,7 +32,7 @@ function scores(rows: Array<{ homeWin: number; draw: number; awayWin: number; ho
 }
 
 export async function getModelGovernanceDashboard(now = new Date()) {
-  const [predictions, definitions, checkpoints, incidents, shadowCounts, strategyTips] = await Promise.all([
+  const [predictions, definitions, checkpoints, incidents, shadowCounts, strategyTips, personnel] = await Promise.all([
     prisma.fixturePrediction.findMany({
       where: { modelVersion: MODEL_VERSION, modelContext: "LEAGUE", status: { in: FINISHED }, homeGoals: { not: null }, awayGoals: { not: null } },
       select: { fixtureId: true, leagueId: true, homeWin: true, draw: true, awayWin: true, homeGoals: true, awayGoals: true, oddsHome: true, oddsDraw: true, oddsAway: true, readinessSample: true, lowConfidence: true },
@@ -41,6 +42,7 @@ export async function getModelGovernanceDashboard(now = new Date()) {
     prisma.dataIncident.findMany({ where: { status: "OPEN", OR: [{ kind: "MODEL_DEGRADATION" }, { kind: "PORTFOLIO_CAPTURE_GAP" }, { kind: "COVERAGE" }] }, orderBy: { lastSeenAt: "desc" }, take: 20 }),
     prisma.autonomousTipSnapshot.groupBy({ by: ["status"], where: { strategy: "ONE_X_TWO_GUARDED", policyVersion: GUARDED_ONE_X_TWO_POLICY_VERSION, modelContext: "LEAGUE" }, _count: true }),
     prisma.autonomousTipSnapshot.findMany({ where: { modelContext: "LEAGUE", status: "candidate" }, select: { strategy: true, policyVersion: true, fixtureId: true } }),
+    personnelShadowDashboard(now),
   ]);
   const definitionsByKey = new Map(definitions.map((row) => [`${row.strategy}:${row.policyVersion}:${row.modelContext}`, row]));
   const finishedFixtures = new Set(predictions.map((row) => row.fixtureId));
@@ -70,5 +72,5 @@ export async function getModelGovernanceDashboard(now = new Date()) {
     ...leagues.filter((item) => item.status === "REVIEW").map((item) => ({ priority: "WATCH", title: `Proverit kohortu ${item.name}`, reason: `Modelovy log-loss je o ${((item.modelLogLoss! - item.marketLogLoss!) * 100).toFixed(1)} bodu horsi nez trh (n=${item.n})`, due: "pred zmenou modelu" })),
   ];
   const shadow = Object.fromEntries(shadowCounts.map((row) => [row.status, row._count]));
-  return { asOf: now, modelVersion: MODEL_VERSION, tasks, strategies, leagues, checkpoints, shadow: { total: Object.values(shadow).reduce((sum, value) => sum + value, 0), candidates: shadow.candidate ?? 0, watch: shadow.watch ?? 0 } };
+  return { asOf: now, modelVersion: MODEL_VERSION, tasks, strategies, leagues, checkpoints, personnel, shadow: { total: Object.values(shadow).reduce((sum, value) => sum + value, 0), candidates: shadow.candidate ?? 0, watch: shadow.watch ?? 0 } };
 }

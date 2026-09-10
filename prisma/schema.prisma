@@ -854,6 +854,240 @@ model CalibrationShadowPrediction {
   @@index([fixtureId])
 }
 
+/// Deklarovana dostupnost upstream dat pro konkretni soutez a sezonu. Planovac podle ni
+/// rozlisuje nepodporovana data od skutecneho vypadku.
+model LeagueDataCoverage {
+  id               String   @id @default(cuid())
+  leagueId         Int
+  season           Int
+  modelContext     String
+  events           Boolean  @default(false)
+  lineups          Boolean  @default(false)
+  fixtureStats     Boolean  @default(false)
+  playerStats      Boolean  @default(false)
+  standings        Boolean  @default(false)
+  injuries         Boolean  @default(false)
+  predictions      Boolean  @default(false)
+  prematchOdds     Boolean  @default(false)
+  liveOdds         Boolean  @default(false)
+  status           String   @default("NOT_YET_AVAILABLE")
+  sourceVersion    Int      @default(1)
+  verifiedAt       DateTime
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([leagueId, season, sourceVersion])
+  @@index([modelContext, status, verifiedAt])
+}
+
+/// Point-in-time absence vztazena ke konkretnimu zapasu. Radek se nikdy neprepisuje.
+model FixtureAvailabilitySnapshot {
+  id                   String   @id @default(cuid())
+  fixtureId            Int
+  kickoff              DateTime
+  teamId               Int
+  playerId             Int?
+  playerName           String
+  availabilityType     String
+  reason               String?
+  status               String
+  sourceKind           String
+  sourceAt             DateTime?
+  capturedAt           DateTime
+  normalizationVersion Int      @default(1)
+  createdAt            DateTime @default(now())
+
+  @@unique([fixtureId, teamId, playerName, availabilityType, capturedAt])
+  @@index([fixtureId, capturedAt])
+  @@index([teamId, kickoff])
+}
+
+model FixtureLineupSnapshot {
+  id            String   @id @default(cuid())
+  fixtureId     Int
+  kickoff       DateTime
+  teamId        Int
+  status        String
+  formation     String?
+  coachId       Int?
+  coachName     String?
+  publishedAt   DateTime?
+  capturedAt    DateTime
+  parserVersion Int      @default(1)
+  completeness  Float    @default(0)
+  sourceKind    String   @default("PROSPECTIVE")
+  createdAt     DateTime @default(now())
+  players       FixtureLineupPlayer[]
+
+  @@unique([fixtureId, teamId, capturedAt])
+  @@index([fixtureId, capturedAt])
+  @@index([teamId, kickoff])
+}
+
+model FixtureLineupPlayer {
+  id             String   @id @default(cuid())
+  snapshotId     String
+  playerId       Int?
+  playerName     String
+  role           String
+  position       String?
+  shirtNumber    Int?
+  sourceOrder    Int
+  expectedPlayer Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  snapshot       FixtureLineupSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@unique([snapshotId, role, sourceOrder])
+  @@index([playerId])
+}
+
+/// Prospektivni hracsky profil. `metrics` zachovava nullable pole poskytovatele bez
+/// predstirani nul a umozni rozsirit audit bez zpetne zmeny starsich snapshotu.
+model PlayerSeasonSnapshot {
+  id            String   @id @default(cuid())
+  playerId      Int
+  playerName    String
+  teamId        Int
+  leagueId      Int
+  season        Int
+  position      String?
+  minutes       Int?
+  starts        Int?
+  appearances   Int?
+  rating        Float?
+  goals         Int?
+  assists       Int?
+  shots         Int?
+  shotsOnTarget Int?
+  passes        Int?
+  keyPasses     Int?
+  yellowCards   Int?
+  redCards      Int?
+  saves         Int?
+  conceded      Int?
+  metrics       Json?
+  sourceAt      DateTime?
+  capturedAt    DateTime
+  parserVersion Int      @default(1)
+  completeness  Float    @default(0)
+  createdAt     DateTime @default(now())
+
+  @@unique([playerId, teamId, leagueId, season, capturedAt])
+  @@index([teamId, leagueId, season, capturedAt])
+}
+
+model PlayerMatchSnapshot {
+  id            String   @id @default(cuid())
+  fixtureId     Int
+  playerId      Int
+  playerName    String
+  teamId        Int
+  starter       Boolean?
+  position      String?
+  minutes       Int?
+  rating        Float?
+  goals         Int?
+  assists       Int?
+  shots         Int?
+  shotsOnTarget Int?
+  passes        Int?
+  keyPasses     Int?
+  tackles       Int?
+  interceptions Int?
+  duels         Int?
+  duelsWon      Int?
+  yellowCards   Int?
+  redCards      Int?
+  saves         Int?
+  conceded      Int?
+  metrics       Json?
+  sourceAt      DateTime?
+  capturedAt    DateTime
+  parserVersion Int      @default(1)
+  completeness  Float    @default(0)
+  createdAt     DateTime @default(now())
+
+  @@unique([fixtureId, playerId])
+  @@index([teamId, capturedAt])
+  @@index([fixtureId])
+}
+
+model FixturePersonnelFeatures {
+  id                    String   @id @default(cuid())
+  fixtureId             Int
+  teamId                Int
+  kickoff               DateTime
+  lineupSnapshotId      String?
+  availabilityCapturedAt DateTime?
+  calculatedAt          DateTime
+  featureVersion        Int      @default(1)
+  lineupChanges         Int?
+  regularStarters       Int?
+  defenseContinuity     Float?
+  goalkeeperContinuity  Boolean?
+  sharedMinutesRatio    Float?
+  formationChanged      Boolean?
+  coachChangedRecently  Boolean?
+  coachMatches          Int?
+  startingStrength      Float?
+  benchStrength         Float?
+  strengthLoss          Float?
+  missingGoalkeeper     Boolean?
+  missingKeyScorer      Boolean?
+  importantAbsences     Int?
+  completeness          Float
+  features              Json
+  createdAt             DateTime @default(now())
+
+  @@unique([fixtureId, teamId, featureVersion, calculatedAt])
+  @@index([fixtureId, calculatedAt])
+  @@index([teamId, kickoff])
+}
+
+model ShadowForecastSnapshot {
+  id                    String   @id @default(cuid())
+  fixtureId             Int
+  kickoff               DateTime
+  baselineModelVersion  Int
+  shadowModelVersion    Int      @default(1)
+  calculatedAt          DateTime
+  finalized             Boolean  @default(false)
+  status                String
+  homeFeatureId         String?
+  awayFeatureId         String?
+  baselineLambdaHome    Float
+  baselineLambdaAway    Float
+  shadowLambdaHome      Float
+  shadowLambdaAway      Float
+  baselineProbabilities Json
+  shadowProbabilities   Json
+  inputs                Json
+  completeness          Float
+  explanations          Json
+  createdAt             DateTime @default(now())
+
+  @@unique([fixtureId, shadowModelVersion, calculatedAt])
+  @@index([fixtureId, calculatedAt])
+  @@index([status, createdAt])
+}
+
+model ShadowModelReport {
+  id                 String   @id @default(cuid())
+  shadowModelVersion Int
+  datasetCutoff      DateTime
+  sampleSize         Int
+  trainingTo         DateTime?
+  holdoutFrom        DateTime?
+  metrics            Json
+  gates              Json
+  coefficients       Json?
+  recommendation     String
+  createdAt          DateTime @default(now())
+
+  @@unique([shadowModelVersion, datasetCutoff])
+  @@index([createdAt])
+}
+
 /// Nemenny vyber rychleho denniho prehledu. Radek vznikne pri prvnim splneni brany a
 /// pozdejsi pohyb modelu ani trhu jej nesmi prepsat; po zapase se pouze doplni audit vysledku.
 model QuickOverviewSelection {
