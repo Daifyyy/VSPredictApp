@@ -10,6 +10,7 @@ import { TeamLogo } from "./TeamLogo";
 import { EventTimeline } from "./EventTimeline";
 import { buildCompareHref } from "./compareHref";
 import type { SessionUser } from "./sessionUser";
+import { Tabs } from "./ui/primitives";
 
 type Stats = Partial<Record<"XG" | "SHOTS" | "SHOTS_ON_TARGET" | "POSSESSION" | "PASSES_TOTAL" | "CORNERS" | "FOULS" | "YELLOW_CARDS" | "RED_CARDS", number>>;
 type LineupPlayer = { playerId: number | null; name: string; number: number | null; position: string | null };
@@ -26,6 +27,7 @@ type Payload = {
 };
 
 const FINAL = new Set(["FT", "AET", "PEN", "CANC", "ABD"]);
+type DetailTab = "overview" | "events" | "lineups" | "stats" | "model";
 const pct = (n: number) => `${(n * 100).toFixed(0)} %`;
 const optionalPct = (n: number | undefined) => n == null || !Number.isFinite(n) ? "čeká na nový snímek" : pct(n);
 const stat = (value: number | undefined, suffix = "") => value == null ? "—" : `${Number.isInteger(value) ? value : value.toFixed(2)}${suffix}`;
@@ -109,6 +111,7 @@ export function MatchCenter({ fixtures, user }: { fixtures: UpcomingFixture[]; u
 }
 
 function MatchCenterDetail({ fixture, state, watching, canWatch, onWatch }: { fixture: UpcomingFixture; state: ReturnType<typeof useMatchCenter>; watching: boolean; canWatch: boolean; onWatch: () => void }) {
+  const [detailTab, setDetailTab] = useState<DetailTab>("overview");
   const payload = state.payload;
   const match = payload?.match;
   const venue = payload?.venue;
@@ -138,14 +141,15 @@ function MatchCenterDetail({ fixture, state, watching, canWatch, onWatch }: { fi
         <div className="flex flex-wrap justify-center gap-3 text-[11px] text-white/80"><span>{fixture.leagueName}</span>{fixture.competitionRound ? <span>{fixture.competitionRound}</span> : null}{venue?.capacity ? <span>{venue.capacity.toLocaleString("cs-CZ")} míst</span> : null}{venue?.surface ? <span>{venue.surface}</span> : null}</div>
       </div>
     </div>
-    {state.loading && !payload ? <p className="p-6 text-center text-sm text-muted">Načítám živý průběh…</p> : state.error && !payload ? <p className="p-6 text-center text-sm text-negative">Match Center se nepodařilo obnovit.</p> : <div className="grid gap-4 p-4 lg:grid-cols-[1.1fr_.9fr]">
-      <div className="space-y-4">
-        <section className="rounded-xl border border-border bg-background p-3"><div className="flex items-center justify-between"><h3 className="text-sm font-bold">Živý průběh</h3>{newest ? <span className="text-[10px] font-semibold text-negative">Poslední událost {newest.minute}&apos;</span> : null}</div>{events.length ? <EventTimeline events={events} homeTeamId={fixture.home.id} newestFirst /> : <p className="mt-3 text-xs text-muted">Zatím bez zaznamenané události.</p>}</section>
-        <section className="rounded-xl border border-border bg-background p-3"><h3 className="text-sm font-bold">Statistiky zápasu</h3><div className="mt-3 space-y-2">{([ ["xG", "XG"], ["Střely", "SHOTS"], ["Na branku", "SHOTS_ON_TARGET"], ["Držení", "POSSESSION", "%"], ["Přihrávky", "PASSES_TOTAL"], ["Rohy", "CORNERS"], ["Fauly", "FOULS"], ["Žluté karty", "YELLOW_CARDS"] ] as const).map(([label, key, suffix]) => home[key] == null && away[key] == null ? null : <div key={key} className="grid grid-cols-[3rem_1fr_3rem] items-center gap-2 text-xs"><b className="text-right tabular-nums">{stat(home[key], suffix)}</b><span className="text-center text-muted">{label}</span><b className="tabular-nums">{stat(away[key], suffix)}</b></div>)}</div></section>
-        <LineupsPanel fixture={fixture} lineups={payload?.lineups ?? []} />
-      </div>
-      <div className="space-y-4">
-        <section className="rounded-xl border border-border bg-background p-3"><h3 className="text-sm font-bold">Průběh a momentum</h3><p className="mt-2 text-xs text-muted">{momentumText(home, away, fixture)}</p><div className="mt-3 grid grid-cols-2 gap-2"><MetricBox label="xG od začátku" value={`${stat(home.XG)} : ${stat(away.XG)}`} /><MetricBox label="Střely na branku" value={`${stat(home.SHOTS_ON_TARGET)} : ${stat(away.SHOTS_ON_TARGET)}`} /></div></section>
+    <div className="border-t border-border bg-surface px-3 py-2 sm:px-4"><Tabs<DetailTab> label="Část Match Centeru" value={detailTab} onChange={setDetailTab} items={[{ value: "overview", label: "Přehled" }, { value: "events", label: "Průběh", badge: events.length }, { value: "lineups", label: "Sestavy", badge: payload?.lineups?.length ?? 0 }, { value: "stats", label: "Statistiky" }, { value: "model", label: "Model" }]} /></div>
+    {state.loading && !payload ? <p className="p-6 text-center text-sm text-muted">Načítám živý průběh…</p> : state.error && !payload ? <p className="p-6 text-center text-sm text-negative">Match Center se nepodařilo obnovit.</p> : <div className={detailTab === "overview" ? "grid gap-4 p-4 lg:grid-cols-[1.1fr_.9fr]" : "p-4"}>
+      {(detailTab === "overview" || detailTab === "events" || detailTab === "stats" || detailTab === "lineups") ? <div className="space-y-4">
+        {(detailTab === "overview" || detailTab === "events") && <section className="rounded-xl border border-border bg-background p-3"><div className="flex items-center justify-between"><h3 className="text-sm font-bold">Živý průběh</h3>{newest ? <span className="text-[10px] font-semibold text-negative">Poslední událost {newest.minute}&apos;</span> : null}</div>{events.length ? <EventTimeline events={detailTab === "overview" ? events.slice(-4) : events} homeTeamId={fixture.home.id} newestFirst /> : <p className="mt-3 text-xs text-muted">Zatím bez zaznamenané události.</p>}</section>}
+        {(detailTab === "overview" || detailTab === "stats") && <section className="rounded-xl border border-border bg-background p-3"><h3 className="text-sm font-bold">Statistiky zápasu</h3><div className="mt-3 space-y-2">{([ ["xG", "XG"], ["Střely", "SHOTS"], ["Na branku", "SHOTS_ON_TARGET"], ["Držení", "POSSESSION", "%"], ["Přihrávky", "PASSES_TOTAL"], ["Rohy", "CORNERS"], ["Fauly", "FOULS"], ["Žluté karty", "YELLOW_CARDS"] ] as const).map(([label, key, suffix]) => home[key] == null && away[key] == null ? null : <div key={key} className="grid grid-cols-[3rem_1fr_3rem] items-center gap-2 text-xs"><b className="text-right tabular-nums">{stat(home[key], suffix)}</b><span className="text-center text-muted">{label}</span><b className="tabular-nums">{stat(away[key], suffix)}</b></div>)}</div></section>}
+        {detailTab === "lineups" && <LineupsPanel fixture={fixture} lineups={payload?.lineups ?? []} />}
+      </div> : null}
+      {(detailTab === "overview" || detailTab === "model") ? <div className="space-y-4">
+        {detailTab === "overview" && <section className="rounded-xl border border-border bg-background p-3"><h3 className="text-sm font-bold">Průběh a momentum</h3><p className="mt-2 text-xs text-muted">{momentumText(home, away, fixture)}</p><div className="mt-3 grid grid-cols-2 gap-2"><MetricBox label="xG od začátku" value={`${stat(home.XG)} : ${stat(away.XG)}`} /><MetricBox label="Střely na branku" value={`${stat(home.SHOTS_ON_TARGET)} : ${stat(away.SHOTS_ON_TARGET)}`} /></div></section>}
         <section className="rounded-xl border border-accent-strong/30 bg-accent/10 p-3"><div className="flex items-center justify-between gap-2"><div><p className="page-kicker">Experimentální live model</p><h3 className="mt-0.5 text-sm font-extrabold">{payload?.pro ? payload.candidates.length ? "Kandidát ke zvážení" : payload.model?.lowConfidence ? "Málo dat" : "Sledovat vývoj" : "Pokročilá analýza PRO"}</h3></div><span className="rounded-full bg-warning/15 px-2 py-1 text-[10px] font-bold text-warning">LIVE TEST</span></div>
           {!payload?.pro ? <p className="mt-3 text-xs text-muted">PRO zpřístupní live pravděpodobnosti, skutečné kurzy, edge a experimentální 1u výběry.</p> : <>{probs ? <div className="mt-3 grid grid-cols-3 gap-1 text-center text-xs"><Probability label="Domácí" value={probs.home} /><Probability label="Remíza" value={probs.draw} /><Probability label="Hosté" value={probs.away} /></div> : <p className="mt-3 text-xs text-muted">Pro tento zápas zatím chybí použitelný modelový snapshot.</p>}
           {scenarios.length ? <div className="mt-3 space-y-2">{scenarios.map((row) => <div key={row.market} className={`rounded-lg border p-2 text-xs ${row.candidate ? "border-positive/30 bg-positive/10" : "border-border bg-background/70"}`}><div className="flex items-center justify-between gap-2"><strong>{row.label}</strong><span className={`rounded-full px-2 py-0.5 text-[9px] font-bold ${row.candidate ? "bg-positive/15 text-positive" : row.interesting ? "bg-warning/15 text-warning" : "bg-border text-muted"}`}>{row.status}</span></div><p className="mt-1 tabular-nums">Model {pct(row.model)} · trh {pct(row.marketProbability)} · kurz {row.odds.toFixed(2)} · EV {pct(row.ev)}</p><p className="mt-1 text-[10px] text-muted">{row.reason} · {row.bookmaker}</p></div>)}</div> : probs ? <ModelOnlyOpportunities probabilities={probs} scoreHome={match?.homeGoals ?? fixture.liveHome ?? 0} scoreAway={match?.awayGoals ?? fixture.liveAway ?? 0} /> : null}
@@ -153,7 +157,7 @@ function MatchCenterDetail({ fixture, state, watching, canWatch, onWatch }: { fi
           {href ? <Link href={href} className="mt-3 inline-flex text-xs font-bold underline underline-offset-2">Otevřít předzápasové Porovnání</Link> : null}
         </section>
         <p className="text-right text-[10px] text-muted">{payload?.updatedAt ? `Aktualizováno ${new Date(payload.updatedAt).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : "Čeká na první snímek"}</p>
-      </div>
+      </div> : null}
     </div>}
   </div>;
 }

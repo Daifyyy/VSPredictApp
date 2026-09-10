@@ -107,19 +107,19 @@ export function TeamCombobox({
         }}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className={`ui-control flex w-full items-center gap-2 px-3 text-left text-base transition ${ringFocus}`}
+        className={`ui-control flex w-full items-center gap-2 px-3 text-left text-sm font-semibold shadow-sm transition hover:border-foreground/20 ${ringFocus}`}
       >
         <TeamLogo src={selected?.logoUrl} alt={selected?.name ?? ""} size={24} />
         <span className={`flex-1 truncate ${selected ? "" : "text-muted"}`}>
           {selected?.name ?? "Vyber tým…"}
         </span>
         <span className="text-muted" aria-hidden>
-          ▾
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className={`h-4 w-4 transition ${open ? "rotate-180" : ""}`}><path d="m5 7.5 5 5 5-5" /></svg>
         </span>
       </button>
 
       {open && (
-        <div className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-border bg-surface shadow-lg">
+        <div className="absolute z-40 mt-2 w-full overflow-hidden rounded-xl border border-border bg-surface shadow-[var(--shadow-floating)]">
           <input
             autoFocus
             value={query}
@@ -134,7 +134,7 @@ export function TeamCombobox({
             aria-controls={listId}
             aria-autocomplete="list"
             aria-activedescendant={activeId}
-            className="min-h-11 w-full border-b border-border bg-background px-3 py-2 text-base outline-none"
+            className="min-h-12 w-full border-b border-border bg-background/70 px-3 py-2 text-base outline-none placeholder:text-muted focus:bg-surface"
           />
           <ul
             ref={listRef}
@@ -160,12 +160,13 @@ export function TeamCombobox({
                     tabIndex={-1}
                     onClick={() => select(t.id)}
                     onMouseEnter={() => setActiveIndex(idx)}
-                    className={`flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm ${
-                      active ? "bg-background" : "hover:bg-background"
+                    className={`flex min-h-11 w-full items-center gap-2 border-l-2 px-3 py-2 text-left text-sm transition ${
+                      active ? `bg-background ${accent === "home" ? "border-home" : "border-away"}` : "border-transparent hover:bg-background"
                     } ${t.id === value ? "font-semibold" : ""}`}
                   >
                     <TeamLogo src={t.logoUrl} alt={t.name} size={20} />
                     <span className="truncate">{t.name}</span>
+                    {t.id === value ? <span className="ml-auto text-positive" aria-label="Vybráno">✓</span> : null}
                   </button>
                 </li>
               );

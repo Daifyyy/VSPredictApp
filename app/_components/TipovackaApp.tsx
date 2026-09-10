@@ -14,6 +14,7 @@ import type { SessionUser } from "./sessionUser";
 import { competitionGroupLabel, groupCompetitionFixtures } from "@/lib/competitionGrouping";
 import type { CompetitionGroup } from "@/lib/data/catalog";
 import { CompetitionDayTabs } from "./CompetitionDayTabs";
+import { ActionLink, Alert, Button } from "./ui/primitives";
 
 type View = "tipovat" | "tipy" | "bilance";
 
@@ -151,7 +152,7 @@ export function TipovackaApp({
     return (
       <main className="app-page">
         <AppHeader user={user} />
-        <h1 className="mt-4 text-lg font-semibold text-foreground">Tipovačka</h1>
+        <header className="mt-6"><p className="page-kicker">Osobní trénink</p><h1 className="page-title">Tipovačka</h1></header>
         <SignInPrompt />
       </main>
     );
@@ -160,10 +161,9 @@ export function TipovackaApp({
   return (
     <main className="app-page">
       <AppHeader user={user} />
-      <h1 className="mt-4 text-lg font-semibold text-foreground">Tipovačka</h1>
-      <p className="mt-1 text-sm text-muted">
+      <header className="mt-6"><p className="page-kicker">Osobní trénink</p><h1 className="page-title">Tipovačka</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
         Tipuj na intuici bez kurzů. Po odehrání uvidíš úspěšnost, odhalený kurz a ROI.
-      </p>
+      </p></header>
 
       <ViewTabs
         tabs={[
@@ -179,16 +179,7 @@ export function TipovackaApp({
       />
 
       {loadError && (
-        <div className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-xs text-warning">
-          <span>⚠ Tvoje tipy se nepodařilo načíst – tenhle seznam nemusí být úplný.</span>
-          <button
-            type="button"
-            onClick={() => void refresh()}
-            className="shrink-0 rounded-full border border-border px-2.5 py-1 font-medium text-foreground transition hover:bg-background"
-          >
-            ↻ Znovu
-          </button>
-        </div>
+        <Alert className="mt-3 flex items-center justify-between gap-3" tone="warning"><span>Tvoje tipy se nepodařilo načíst – seznam nemusí být úplný.</span><Button type="button" onClick={() => void refresh()} size="sm">↻ Znovu</Button></Alert>
       )}
 
       {view === "tipovat" && (
@@ -203,7 +194,7 @@ export function TipovackaApp({
         <TipyView tips={tips} loading={loading} onDeleted={refresh} />
       )}
       {view === "bilance" && <BilanceView stats={stats} loading={loading} />}
-      <a href="/predikce?view=model#performance-portfolio" className="mt-4 block rounded-xl border border-border bg-surface px-4 py-3 text-sm font-semibold text-foreground transition hover:bg-background">Modelové portfolio a výkonnost najdeš v Predikcích → Výkonnost →</a>
+      <div className="mt-5"><ActionLink href="/predikce?view=model#performance-portfolio" variant="secondary">Otevřít modelové portfolio a výkonnost →</ActionLink></div>
     </main>
   );
 }

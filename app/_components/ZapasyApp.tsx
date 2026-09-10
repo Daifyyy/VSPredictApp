@@ -27,6 +27,7 @@ import { chooseFeaturedFixture } from "@/lib/homeFeaturedFixture";
 import { competitionGroupLabel, groupCompetitionFixtures, localDateKey } from "@/lib/competitionGrouping";
 import { MatchCenter } from "./MatchCenter";
 import type { CompetitionGroup } from "@/lib/data/catalog";
+import { ActionLink, Badge, Button, buttonClass } from "./ui/primitives";
 
 type View = "program" | "results";
 
@@ -802,7 +803,7 @@ function DashboardHeader({ today, todayCount, selectedDate, selectedCount, liveC
         </div> : <div><p className="text-sm font-semibold text-foreground">Žádné utkání není naplánované</p><p className="mt-1 text-xs text-muted">Jakmile přibude program sledované soutěže, objeví se zde.</p></div>}
 
         <div className="flex flex-wrap items-center gap-2 lg:max-w-56 lg:justify-end">
-          {live ? <a href="#match-center" className="inline-flex min-h-10 items-center rounded-xl bg-foreground px-4 text-xs font-bold text-background">Otevřít Match Center</a> : compareHref ? <Link href={compareHref} className="inline-flex min-h-10 items-center rounded-xl bg-foreground px-4 text-xs font-bold text-background">Prohlédnout analýzu</Link> : null}
+          {live ? <a href="#match-center" className={buttonClass("primary", "sm")}>Otevřít Match Center</a> : compareHref ? <ActionLink href={compareHref} variant="primary" size="sm">Prohlédnout analýzu</ActionLink> : null}
           <span className="text-[11px] text-muted">{analysisCount} {analysisCount === 1 ? "analýza" : analysisCount >= 2 && analysisCount <= 4 ? "analýzy" : "analýz"} · {selectedCount} {matchWord(selectedCount)}</span>
           {!live && nextKickoff ? <span className="w-full text-[10px] text-muted lg:text-right">Nejbližší výkop {new Date(nextKickoff).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}</span> : null}
         </div>
@@ -854,8 +855,8 @@ function SmartEmptyProgram({ days, activeIndex, onSelect }: { days: FixtureDay[]
         {next ? `Nejbližší program je ${label} a obsahuje ${next.fixtures.length} ${matchWord(next.fixtures.length)}.` : "Prohlédni si týmy a jejich herní profily nebo vytvoř vlastní porovnání."}
       </p>
       <div className="mt-4 flex flex-wrap justify-center gap-2">
-        {next ? <button type="button" onClick={() => onSelect(nextIndex)} className="min-h-11 rounded-xl bg-accent px-4 text-sm font-bold text-foreground transition hover:brightness-95">Zobrazit nejbližší program</button> : null}
-        <Link href="/porovnani" className="inline-flex min-h-11 items-center rounded-xl border border-border bg-background px-4 text-sm font-semibold text-foreground transition hover:border-accent-strong/40 hover:bg-accent/10">Porovnat týmy</Link>
+        {next ? <Button type="button" onClick={() => onSelect(nextIndex)} variant="accent">Zobrazit nejbližší program</Button> : null}
+        <ActionLink href="/porovnani" variant="secondary">Porovnat týmy</ActionLink>
       </div>
     </section>
   );
@@ -902,18 +903,20 @@ function FavoriteToggle({
 }) {
   return (
     <div className="mt-3 flex justify-end">
-      <button
+      <Button
         type="button"
         onClick={() => onChange(!onlyFav)}
         aria-pressed={onlyFav}
-        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+        variant="secondary"
+        size="sm"
+        className={`rounded-full ${
           onlyFav
-            ? "border-warning bg-warning/10 text-foreground"
-            : "border-border bg-surface text-muted hover:text-foreground"
+            ? "border-warning/30 bg-warning/10 text-foreground"
+            : "text-muted"
         }`}
       >
         {onlyFav ? "★" : "☆"} Jen oblíbené
-      </button>
+      </Button>
     </div>
   );
 }
@@ -932,22 +935,25 @@ function ProCtaBanner({
       </span>
       <div className="flex shrink-0 items-center gap-2">
         {!signedIn && (
-          <button
+          <Button
             type="button"
             onClick={() => void signIn("google")}
-            className="rounded-full bg-foreground px-3 py-1 text-xs font-semibold text-background transition hover:opacity-90"
+            variant="primary"
+            size="sm"
           >
             Přihlásit se
-          </button>
+          </Button>
         )}
-        <button
+        <Button
           type="button"
           onClick={onDismiss}
           aria-label="Zavřít"
-          className="text-muted transition hover:text-foreground"
+          variant="ghost"
+          size="sm"
+          className="min-w-9 px-0 text-muted"
         >
           ✕
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -1176,8 +1182,8 @@ function LeagueContainer({
               · {group.fixtures[0].competitionRound}
             </span>
           )}
-          {hasLive && <LiveDot />}
-          <span className="shrink-0 text-xs text-muted">({group.fixtures.length})</span>
+          {hasLive && <Badge tone="negative"><LiveDot /> živě</Badge>}
+          <Badge>{group.fixtures.length}</Badge>
           {!open && nextTime && (
             <span className="shrink-0 text-xs text-muted">· {nextTime}</span>
           )}
@@ -1189,7 +1195,7 @@ function LeagueContainer({
         />
         <Link
           href={`/predikce?date=${localDateKey(group.fixtures[0].kickoff)}&league=${group.leagueId}`}
-          className="hidden min-h-11 items-center rounded-lg px-2 text-[11px] font-semibold text-muted hover:bg-background hover:text-foreground sm:flex"
+          className="hidden min-h-9 items-center rounded-lg px-2 text-xs font-semibold text-muted transition hover:bg-background hover:text-foreground sm:flex"
         >
           Predikce
         </Link>
@@ -1199,7 +1205,7 @@ function LeagueContainer({
           aria-label={open ? "Sbalit" : "Rozbalit"}
           className="grid min-h-11 min-w-11 shrink-0 place-items-center rounded-lg text-muted transition hover:bg-background hover:text-foreground"
         >
-          {open ? "▲" : "▼"}
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className={`h-4 w-4 transition ${open ? "rotate-180" : ""}`} aria-hidden><path d="m5 7.5 5 5 5-5" /></svg>
         </button>
       </div>
       {open && (
@@ -1270,7 +1276,7 @@ function FixtureRow({
   // jen když se dohledala konfederace každého týmu). Jinak neklikací karta.
   const href = buildCompareHref(fixture);
   const clickable = href != null;
-  const cardClass = "ui-row block px-3 py-2.5";
+  const cardClass = "ui-row group block px-3 py-3";
   const inner = (
     <div className="grid min-h-12 grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-2">
       {fixture.live ? (
@@ -1301,11 +1307,11 @@ function FixtureRow({
             <span>{fixture.liveHome ?? 0}</span><span>{fixture.liveAway ?? 0}</span>
           </span>
         ) : (
-          <span className="text-xs font-medium text-muted">Detail</span>
+          <span className="hidden text-xs font-semibold text-muted transition group-hover:text-foreground sm:inline">Analýza</span>
         )}
       {clickable && (
         <span className="shrink-0 text-muted" aria-hidden>
-          ›
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4 transition group-hover:translate-x-0.5" aria-hidden><path d="m7.5 4.5 5 5.5-5 5.5" /></svg>
         </span>
       )}
       </div>
@@ -1323,14 +1329,16 @@ function FixtureRow({
         )}
         {!fixture.live && (
           <div className="mt-1">
-            <button
+            <Button
               type="button"
               aria-expanded={modelOpen}
               onClick={() => setModelOpen((open) => !open)}
-              className="min-h-11 rounded-lg px-3 text-xs font-semibold text-muted transition hover:bg-background hover:text-foreground"
+              variant="ghost"
+              size="sm"
+              className="text-muted"
             >
               {modelOpen ? "Skrýt model" : "Model před zápasem"}
-            </button>
+            </Button>
             {modelOpen && <FixtureModelCard fixtureId={fixture.fixtureId} />}
           </div>
         )}
@@ -1341,7 +1349,7 @@ function FixtureRow({
           href={buildTipHref(fixture)}
           aria-label="Tipnout zápas"
           title="Tipnout zápas"
-          className="grid min-h-11 min-w-11 shrink-0 place-items-center rounded-full text-base leading-none text-muted transition hover:bg-background hover:text-foreground"
+          className="grid min-h-11 min-w-11 shrink-0 place-items-center rounded-xl border border-transparent text-base leading-none text-muted transition hover:border-border hover:bg-background hover:text-foreground"
         >
           🎯
         </Link>
@@ -1460,8 +1468,8 @@ function PlayedLeagueContainer({
   const hits = tipped.filter((f) => f.tip!.hit).length;
 
   return (
-    <section className="overflow-hidden rounded-xl border border-border bg-surface shadow-sm">
-      <div className="flex items-center gap-2 px-3 py-2.5">
+    <section className="ui-panel overflow-hidden">
+      <div className="flex min-h-14 items-center gap-2 px-3.5 py-2.5">
         <button
           type="button"
           onClick={onToggleOpen}
@@ -1472,7 +1480,7 @@ function PlayedLeagueContainer({
           <span className="min-w-0 truncate text-sm font-semibold text-foreground">
             {group.name}
           </span>
-          <span className="shrink-0 text-xs text-muted">({group.fixtures.length})</span>
+          <Badge>{group.fixtures.length}</Badge>
           {!open && tipped.length > 0 && (
             <span className="shrink-0 text-xs text-muted">
               · {hits}/{tipped.length} ✓
@@ -1483,9 +1491,9 @@ function PlayedLeagueContainer({
           type="button"
           onClick={onToggleOpen}
           aria-label={open ? "Sbalit" : "Rozbalit"}
-          className="shrink-0 text-muted transition hover:text-foreground"
+          className="grid min-h-11 min-w-11 shrink-0 place-items-center rounded-lg text-muted transition hover:bg-background hover:text-foreground"
         >
-          {open ? "▲" : "▼"}
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" className={`h-4 w-4 transition ${open ? "rotate-180" : ""}`} aria-hidden><path d="m5 7.5 5 5 5-5" /></svg>
         </button>
       </div>
       {open && (
@@ -1514,7 +1522,7 @@ function PlayedRow({ fixture }: { fixture: PlayedFixture }) {
   const href = buildCompareHref(fixture);
   const tip = fixture.tip;
   const cardClass =
-    "block rounded-xl border border-border bg-surface px-3 py-2.5 shadow-sm";
+    "ui-row group block px-3 py-3";
   const inner = (
     <>
       <div className="flex items-center gap-2">
@@ -1597,14 +1605,16 @@ function PlayedRow({ fixture }: { fixture: PlayedFixture }) {
         <div className={cardClass}>{inner}</div>
       )}
       {/* Tlačítko je MIMO `Link` schválně – uvnitř by klik navigoval na Porovnání. */}
-      <button
+      <Button
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="w-full rounded-lg px-3 py-1 text-left text-[11px] text-muted transition hover:text-foreground"
+        variant="ghost"
+        size="sm"
+        className="w-full justify-start text-muted"
       >
         {open ? "▾" : "▸"} {fixture.modelReview ? "Předzápasový audit" : "Přehled zápasu"}
-      </button>
+      </Button>
       {/* Panel se montuje až po otevření → fetch se pustí jen na vyžádání. */}
       {open && (
         <div className="space-y-2">

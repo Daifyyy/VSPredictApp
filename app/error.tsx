@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect } from "react";
+import { Button, buttonClass } from "./_components/ui/primitives";
 
 /**
  * Kořenový error boundary (mimo /hra, které má vlastní). Bez něj dostane uživatel při
@@ -22,23 +23,20 @@ export default function RootError({
 
   return (
     <div className="flex-1 p-4">
-      <div className="mx-auto mt-10 max-w-md rounded-2xl border border-dashed border-border bg-surface/50 p-8 text-center">
-        <p className="text-3xl">⚠️</p>
-        <p className="mt-2 text-sm font-medium text-foreground">Něco se pokazilo</p>
-        <p className="mt-1 text-sm text-muted">
+      <div className="mx-auto mt-10 max-w-md rounded-2xl border border-border bg-surface p-8 text-center shadow-[var(--shadow-panel)]">
+        <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-negative/10 text-xl text-negative" aria-hidden>!</span>
+        <h1 className="mt-3 text-xl font-bold text-foreground">Něco se pokazilo</h1>
+        <p className="mt-2 text-sm leading-6 text-muted">
           Stránku se nepodařilo načíst. Zkus to znovu – pokud problém přetrvává, obnov
           stránku nebo se vrať na úvod.
         </p>
         <div className="mt-4 flex items-center justify-center gap-2">
-          <button
-            onClick={reset}
-            className="rounded-full bg-positive px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90"
-          >
+          <Button onClick={reset} variant="primary">
             Zkusit znovu
-          </button>
+          </Button>
           <Link
             href="/"
-            className="rounded-full border border-border bg-surface px-4 py-2.5 text-sm font-medium text-muted transition hover:text-foreground"
+            className={buttonClass("secondary")}
           >
             Na úvod
           </Link>

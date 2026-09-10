@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Alert, Button, Skeleton } from "./ui/primitives";
 
 type State = {
   configured: boolean;
@@ -27,6 +28,7 @@ const base64UrlToUint8Array = (value: string) => {
 };
 
 export function PushSettings({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const dialogRef = useRef<HTMLElement>(null);
   const [state, setState] = useState<State | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -41,6 +43,25 @@ export function PushSettings({ open, onClose }: { open: boolean; onClose: () => 
       })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Nastavení se nepodařilo načíst."));
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { onClose(); return; }
+      if (event.key !== "Tab") return;
+      const focusable = [...(dialogRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled), a[href], [tabindex]:not([tabindex='-1'])") ?? [])];
+      if (!focusable.length) return;
+      const first = focusable[0]; const last = focusable.at(-1)!;
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    requestAnimationFrame(() => dialogRef.current?.querySelector<HTMLElement>("button")?.focus());
+    return () => { document.removeEventListener("keydown", closeOnEscape); document.body.style.overflow = previousOverflow; previousFocus?.focus(); };
+  }, [open, onClose]);
 
   if (!open) return null;
   const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
@@ -133,13 +154,13 @@ export function PushSettings({ open, onClose }: { open: boolean; onClose: () => 
   }
 
   return <div className="fixed inset-0 z-[80] grid place-items-center bg-foreground/25 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <section role="dialog" aria-modal="true" aria-labelledby="push-title" className="w-full max-w-md rounded-2xl border border-border bg-surface p-5 shadow-xl">
+    <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="push-title" className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl border border-border bg-surface p-5 shadow-[var(--shadow-floating)]">
       <div className="flex items-start justify-between gap-4">
         <div><h2 id="push-title" className="text-lg font-bold text-foreground">Upozornění na zápasy</h2><p className="mt-1 text-sm leading-5 text-muted">Předzápasové, modelové a výsledkové zprávy na jednom místě.</p></div>
-        <button type="button" onClick={onClose} className="grid h-11 w-11 place-items-center rounded-full text-xl text-muted hover:bg-background" aria-label="Zavřít">×</button>
+        <Button type="button" onClick={onClose} variant="ghost" className="w-11 px-0 text-xl" aria-label="Zavřít">×</Button>
       </div>
-      {!supported ? <p className="mt-4 rounded-lg bg-warning/10 p-3 text-sm text-foreground">Tento prohlížeč Web Push nepodporuje. Na iPhonu nejdřív přidej aplikaci na plochu a otevři ji z její ikony.</p> : null}
-      {state && !state.configured ? <p className="mt-4 rounded-lg bg-warning/10 p-3 text-sm text-foreground">Server ještě nemá nastavené VAPID klíče.</p> : null}
+      {!supported ? <Alert className="mt-4" tone="warning">Tento prohlížeč Web Push nepodporuje. Na iPhonu nejdřív přidej aplikaci na plochu a otevři ji z její ikony.</Alert> : null}
+      {state && !state.configured ? <Alert className="mt-4" tone="warning">Server ještě nemá nastavené VAPID klíče.</Alert> : null}
       {state ? <div className="mt-4 space-y-4">
         <p className="text-xs font-bold uppercase tracking-[0.12em] text-muted">Před zápasem</p>
         <label className="flex min-h-11 items-center justify-between gap-3 text-sm font-semibold text-foreground"><span>Připomenout oblíbený zápas</span><input type="checkbox" checked={state.preference.favoriteKickoff} onChange={(event) => setState({ ...state, preference: { ...state.preference, favoriteKickoff: event.target.checked } })} className="h-5 w-5 accent-positive" /></label>
@@ -167,11 +188,11 @@ export function PushSettings({ open, onClose }: { open: boolean; onClose: () => 
         {error && <p role="alert" className="text-sm text-negative">{error}</p>}
         {testResult && <p role="status" className="text-sm font-semibold text-positive">{testResult}</p>}
         {state.subscribed ? <div className="grid gap-2 sm:grid-cols-2">
-          <button type="button" disabled={busy} onClick={() => void savePreference()} className="min-h-11 rounded-lg bg-positive px-4 text-sm font-bold text-white disabled:opacity-50">{busy ? "Ukládám…" : "Uložit nastavení"}</button>
-          <button type="button" disabled={busy} onClick={() => void sendTest()} className="min-h-11 rounded-lg border border-positive/30 bg-positive/10 px-4 text-sm font-bold text-positive disabled:opacity-50">Poslat test</button>
-          <button type="button" disabled={busy} onClick={() => void disable()} className="min-h-11 rounded-lg border border-border bg-background px-4 text-sm font-bold text-foreground disabled:opacity-50 sm:col-span-2">Vypnout na tomto zařízení</button>
-        </div> : <button type="button" disabled={busy || !supported || !state.configured} onClick={() => void enable()} className="min-h-11 w-full rounded-lg bg-positive px-4 text-sm font-bold text-white disabled:opacity-50">{busy ? "Ukládám…" : "Zapnout upozornění"}</button>}
-      </div> : !error ? <p className="mt-4 text-sm text-muted">Načítám nastavení…</p> : null}
+          <Button type="button" disabled={busy} onClick={() => void savePreference()} variant="primary">{busy ? "Ukládám…" : "Uložit nastavení"}</Button>
+          <Button type="button" disabled={busy} onClick={() => void sendTest()} variant="secondary">Poslat test</Button>
+          <Button type="button" disabled={busy} onClick={() => void disable()} variant="ghost" className="sm:col-span-2">Vypnout na tomto zařízení</Button>
+        </div> : <Button type="button" disabled={busy || !supported || !state.configured} onClick={() => void enable()} variant="primary" className="w-full">{busy ? "Ukládám…" : "Zapnout upozornění"}</Button>}
+      </div> : !error ? <Skeleton className="mt-4 h-20 w-full" /> : null}
     </section>
   </div>;
 }

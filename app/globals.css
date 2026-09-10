@@ -16,6 +16,10 @@
   --positive: #14854f;
   --negative: #d7393e;
   --sidebar: #fbfcfa;
+  --radius-control: 0.75rem;
+  --radius-panel: 1rem;
+  --shadow-panel: 0 5px 18px rgb(30 45 34 / 6%);
+  --shadow-floating: 0 18px 45px rgb(21 32 24 / 14%);
 }
 
 @theme inline {
@@ -245,6 +249,39 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+button, a, input, select, textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:not(:disabled), select:not(:disabled), summary, [role="button"] {
+  cursor: pointer;
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  border-color: var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--foreground);
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):focus,
+select:focus,
+textarea:focus {
+  border-color: color-mix(in srgb, var(--accent-strong) 65%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+  outline: none;
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: .55;
 }
 
 /* Klubový ředitel v2 ------------------------------------------------------- */

@@ -1,9 +1,10 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import { getCurrentUser } from "@/lib/authUser";
 import { isAdminEmail } from "@/lib/entitlements";
 import { auditPipeline } from "@/lib/operations";
 import { OperationsActions } from "./OperationsActions";
+import { Breadcrumbs, PageBackLink } from "@/app/_components/ui/PageNavigation";
+import { ActionLink, Badge } from "@/app/_components/ui/primitives";
 
 export const metadata = { title: "Provozní stav | Football Insight" };
 
@@ -24,10 +25,11 @@ export default async function OperationsPage() {
   return (
     <main className="page-shell py-6">
       <header className="mb-5">
+        <div className="mb-4 flex flex-wrap items-center gap-3"><PageBackLink /><Breadcrumbs items={[{ label: "Zápasy", href: "/" }, { label: "Provoz" }]} /></div>
         <p className="page-kicker">Administrace</p>
         <h1 className="page-title">Provoz predikční pipeline</h1>
         <p className="mt-2 text-sm text-muted">Stav k {new Date(health.asOf).toLocaleString("cs-CZ")}. Veřejné stránky tento audit nespouštějí.</p>
-        <nav className="mt-3 flex gap-2"><Link className="ui-button ui-button-primary" href="/provoz">Provoz pipeline</Link><Link className="ui-button ui-button-secondary" href="/provoz/modely">Modely a kontroly</Link></nav>
+        <nav className="mt-4 flex flex-wrap gap-2"><ActionLink variant="primary" size="sm" href="/provoz">Provoz pipeline</ActionLink><ActionLink variant="secondary" size="sm" href="/provoz/modely">Modely a kontroly</ActionLink></nav>
       </header>
       <section className="grid gap-3 md:grid-cols-3">
         {health.coverage.map((item) => (
@@ -54,7 +56,7 @@ export default async function OperationsPage() {
       <section className="ui-panel mt-4 p-4">
         <h2 className="text-lg font-bold">Otevřené incidenty</h2>
         {health.incidents.length ? <ul className="mt-3 space-y-2">{health.incidents.map((item) => (
-          <li key={item.id} className="rounded-lg border border-border p-3 text-sm"><strong>{item.severity}</strong> · {item.message}</li>
+          <li key={item.id} className="flex flex-wrap items-start gap-2 rounded-lg border border-border p-3 text-sm"><Badge tone={item.severity === "CRITICAL" ? "negative" : "warning"}>{item.severity}</Badge><span className="min-w-0 flex-1 leading-5">{item.message}</span></li>
         ))}</ul> : <p className="mt-2 text-sm text-muted">Žádný otevřený incident.</p>}
       </section>
       <OperationsActions />

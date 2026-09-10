@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Button } from "./ui/primitives";
 
 /**
  * Potvrzení destruktivní akce — náhrada za nativní `confirm()`.
@@ -36,14 +37,24 @@ export function ConfirmDialog({
   data: ConfirmDialogData | null;
   onClose: () => void;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
   // Esc zavírá. Bez toho je modal na klávesnici past – potvrzení jde odkliknout jen myší.
   useEffect(() => {
     if (!data) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") { onClose(); return; }
+      if (e.key !== "Tab") return;
+      const focusable = [...(dialogRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])") ?? [])];
+      if (!focusable.length) return;
+      const first = focusable[0]; const last = focusable.at(-1)!;
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     };
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = previousOverflow; previousFocus?.focus(); };
   }, [data, onClose]);
 
   if (!data) return null;
@@ -51,35 +62,39 @@ export function ConfirmDialog({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Potvrzení akce"
+      aria-labelledby="confirm-dialog-title"
       // Na mobilu u spodního okraje (palec), od `sm` na střed.
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
       onClick={onClose}
     >
       <div
+        ref={dialogRef}
         className="ui-panel w-full max-w-sm p-5 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <p className="text-sm text-foreground">{data.message}</p>
+        <h2 id="confirm-dialog-title" className="text-base font-bold text-foreground">Potvrdit akci?</h2>
+        <p className="mt-2 text-sm leading-6 text-muted">{data.message}</p>
         <div className="mt-4 flex gap-2">
-          <button
+          <Button
             type="button"
             onClick={onClose}
-            className="ui-control flex-1 px-4 py-2.5 text-sm font-semibold text-foreground transition hover:bg-background"
+            variant="secondary"
+            className="flex-1"
           >
             Zrušit
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
             autoFocus
             onClick={() => {
               data.onConfirm();
               onClose();
             }}
-            className="min-h-11 flex-1 rounded-lg bg-negative px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-negative/90"
+            variant="danger"
+            className="flex-1"
           >
             {data.confirmLabel}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

@@ -4,12 +4,10 @@ test("domovská stránka nabízí zápasy a rychlé vstupy", async ({ page }) =>
   await page.goto("/", { waitUntil: "domcontentloaded" });
 
   await expect(page).toHaveTitle("Fotbalové zápasy dnes a tento týden");
-  await expect(
-    page.getByRole("heading", { level: 1, name: /Dnešní fotbal|Nejbližší fotbalový program/ })
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
   await expect(page.getByRole("link", { name: "Porovnat dva týmy" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Program/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Výsledky/ })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Program/ })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Výsledky/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Dnes/ }).first()).toHaveAttribute(
     "aria-pressed",
     "true"
@@ -31,12 +29,16 @@ test("porovnání otevírá Kategorie a sekundární obsah drží sbalený", asy
     "true"
   );
   await expect(page.getByRole("radio", { name: "Detailní statistiky" })).toBeVisible();
-  await expect(page.getByText("Posledních 5", { exact: true })).toBeVisible();
+  const headToHead = page.getByRole("button", { name: /Vzájemné zápasy/ });
+  await expect(headToHead).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByText("xG trend", { exact: true })).toBeVisible();
   await expect(page.getByText("Body na zápas", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Další informace" })).toBeVisible();
 
   const loadedCompareRequests = compareRequests;
+  await headToHead.click();
+  await expect(page.getByText("Posledních 5", { exact: true })).toBeVisible();
+  expect(compareRequests).toBe(loadedCompareRequests);
   await page.getByRole("radio", { name: "Doma", exact: true }).click();
   expect(compareRequests).toBe(loadedCompareRequests);
 

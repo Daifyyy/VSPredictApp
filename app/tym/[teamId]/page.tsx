@@ -14,6 +14,8 @@ import { valueOrTotal } from "@/lib/stats/metricLookup";
 import { comparePerformance, signedMetricDelta, type PerformanceTone } from "@/lib/stats/performanceTone";
 import type { SessionUser } from "@/app/_components/sessionUser";
 import type { TacticalProfile } from "@/lib/tactics";
+import { ActionLink } from "@/app/_components/ui/primitives";
+import { Breadcrumbs, PageBackLink } from "@/app/_components/ui/PageNavigation";
 
 const VENUES: { value: Venue; label: string }[] = [
   { value: "TOTAL", label: "Celkem" },
@@ -88,6 +90,7 @@ export default async function TeamPage(props: Props) {
   return (
     <main className="app-page">
       <AppHeader user={user} share />
+      <div className="mt-4 flex flex-wrap items-center gap-3"><PageBackLink /><Breadcrumbs items={[{ label: "Zápasy", href: "/" }, { label: "Tým" }, { label: profile.team.name }]} /></div>
       <header className="ui-panel mt-6 p-5 sm:p-7">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-4">
@@ -99,8 +102,8 @@ export default async function TeamPage(props: Props) {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href="#recent-performances-title" className="inline-flex min-h-11 items-center justify-center rounded-lg border border-border bg-surface px-4 text-sm font-semibold text-foreground transition hover:bg-background">Poslední výkony</Link>
-            <Link href={`/porovnani?homeLeague=${leagueId}&home=${profile.team.id}`} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-positive px-4 text-sm font-semibold text-white">Porovnat tým</Link>
+            <ActionLink href="#recent-performances-title" variant="secondary">Poslední výkony</ActionLink>
+            <ActionLink href={`/porovnani?homeLeague=${leagueId}&home=${profile.team.id}`} variant="primary">Porovnat tým</ActionLink>
           </div>
         </div>
       </header>

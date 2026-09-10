@@ -32,6 +32,7 @@ import { computeCategoryScores } from "@/lib/stats/categories";
 import { computePlayStyle } from "@/lib/stats/playStyle";
 import { TeamHeading } from "./TeamHeading";
 import { TeamCombobox } from "./TeamCombobox";
+import { TeamLogo } from "./TeamLogo";
 import { AppHeader } from "./AppHeader";
 import { Empty as SharedEmpty } from "./Empty";
 import { ProLock } from "./ProLock";
@@ -44,6 +45,7 @@ import type { SessionUser } from "./sessionUser";
 import { FixtureModelCard } from "./FixtureModelCard";
 import { HeadToHeadCard } from "./HeadToHeadCard";
 import type { TacticalProfile } from "@/lib/tactics";
+import { Badge, Button, Panel, Tabs } from "./ui/primitives";
 
 interface TeamLite {
   id: number;
@@ -505,20 +507,14 @@ export function CompareApp({
   return (
     <main className="app-page">
       <AppHeader user={user} share />
+      <header className="mt-6 flex flex-wrap items-end justify-between gap-4">
+        <div><p className="page-kicker">Analýza zápasu</p><h1 className="page-title">Porovnání týmů</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Vyber soupeře a nejdřív uvidíš modelový závěr. Forma, herní styl a podrobné statistiky zůstávají jako vysvětlení.</p></div>
+        <Tabs items={[{ value: "CLUB" as EntityType, label: "Kluby" }, { value: "NATIONAL" as EntityType, label: "Reprezentace" }]} value={mode} onChange={handleMode} label="Typ porovnání" />
+      </header>
 
-      <div className="mt-4">
-        <Segmented
-          options={[
-            { value: "CLUB" as EntityType, label: "Kluby" },
-            { value: "NATIONAL" as EntityType, label: "Reprezentace" },
-          ]}
-          value={mode}
-          onChange={handleMode}
-          ariaLabel="Typ porovnání"
-        />
-      </div>
-
-      <section className="ui-panel mt-4 p-4 sm:p-5">
+      <Panel className="mt-5 overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background/55 px-4 py-3 sm:px-5"><div><h2 className="text-sm font-bold">Sestavit porovnání</h2><p className="mt-0.5 text-[11px] text-muted">Liga a tým pro každou stranu zápasu</p></div><Badge tone={canCompare ? "positive" : "neutral"}>{canCompare ? "Připraveno" : `${homeId != null ? 1 : 0}/2 týmy`}</Badge></div>
+        <div className="p-4 sm:p-5">
         <div className="grid gap-3 md:grid-cols-[1fr_auto_1fr] md:items-center">
           <TeamSelect
             accent="home"
@@ -533,15 +529,15 @@ export function CompareApp({
             leagueId={homeLeagueId}
             onLeagueChange={handleHomeLeague}
           />
-          <button
-            type="button"
+          <Button
             onClick={handleSwap}
             title="Prohodit domácí a hostující tým"
             aria-label="Prohodit domácí a hostující tým"
-            className="ui-control order-3 grid min-w-11 place-items-center px-3 text-muted transition hover:border-accent-strong/40 hover:text-foreground md:order-none"
+            variant="secondary"
+            className="order-3 min-w-11 px-3 text-lg md:order-none"
           >
             ⇄
-          </button>
+          </Button>
           <TeamSelect
             accent="away"
             heading="Host"
@@ -556,18 +552,20 @@ export function CompareApp({
             onLeagueChange={handleAwayLeague}
           />
         </div>
-      </section>
+        {canCompare ? <div className="mt-4 flex items-center gap-2 rounded-xl border border-positive/20 bg-positive/5 px-3 py-2 text-xs text-positive"><span aria-hidden>✓</span><span>Porovnání se aktualizuje automaticky při změně týmu.</span></div> : <p className="mt-4 text-center text-xs text-muted">Vyber oba týmy. Výsledek se načte automaticky.</p>}
+        </div>
+      </Panel>
 
       {(homeId != null || awayId != null) && (
         <div className="mt-2 flex items-center justify-center gap-2">
-          <button
-            type="button"
+          <Button
             onClick={handleReset}
             title="Vymazat výběr a začít nové porovnání"
-            className="rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-muted transition hover:text-foreground"
+            variant="ghost"
+            size="sm"
           >
             ✕ Nové porovnání
-          </button>
+          </Button>
         </div>
       )}
 
@@ -793,13 +791,8 @@ function ResultPanel({
         </section>
       ) : (
         <section id="vysledek-analyzy" className="scroll-mt-20 rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6">
-          <div className="mb-4 flex items-center justify-between gap-3 border-b border-border pb-3">
-            <div>
-              <p className="page-kicker">Výsledek analýzy</p>
-              <h2 className="mt-1 text-lg font-bold text-foreground">
-                {result.home.team.name} vs. {result.away.team.name}
-              </h2>
-            </div>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
+            <div className="min-w-0"><p className="page-kicker">Výsledek analýzy</p><div className="mt-2 flex min-w-0 items-center gap-2"><TeamLogo src={result.home.team.logoUrl} alt={result.home.team.name} size={30} /><h2 className="min-w-0 text-lg font-bold text-foreground"><span>{result.home.team.name}</span><span className="mx-2 font-normal text-muted">vs.</span><span>{result.away.team.name}</span></h2><TeamLogo src={result.away.team.logoUrl} alt={result.away.team.name} size={30} /></div></div>
             <span className="rounded-full bg-accent/20 px-2.5 py-1 text-[11px] font-semibold text-accent-ink">
               {VENUE_LABELS[venue]}
             </span>
@@ -922,23 +915,6 @@ function ResultPanel({
       )}
       </section>
 
-      {result.headToHead && (
-        <HeadToHeadCard
-          summary={result.headToHead}
-          teamAName={result.home.team.name}
-          teamBName={result.away.team.name}
-        />
-      )}
-
-      {result.tactics && (result.tactics.home.sampleSize > 0 || result.tactics.away.sampleSize > 0) && (
-        <TacticalComparison
-          home={result.tactics.home}
-          away={result.tactics.away}
-          homeTeam={result.home.team}
-          awayTeam={result.away.team}
-        />
-      )}
-
       <section id="forma-tymu" className="scroll-mt-20 rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6">
         <div className="mb-4">
           <p className="page-kicker">Kontext zápasu</p>
@@ -976,7 +952,20 @@ function ResultPanel({
           <h2 id="comparison-more-heading" className="mt-1 text-lg font-bold text-foreground">
             Další informace
           </h2>
+          <p className="mt-1 text-xs text-muted">Kontext, který pomáhá vysvětlit závěr, ale nemá přebít hlavní modelový výstup.</p>
         </div>
+
+        {result.headToHead && (
+          <DetailAccordion title="Vzájemné zápasy" summary="Historický kontext">
+            <HeadToHeadCard summary={result.headToHead} teamAName={result.home.team.name} teamBName={result.away.team.name} embedded />
+          </DetailAccordion>
+        )}
+
+        {result.tactics && (result.tactics.home.sampleSize > 0 || result.tactics.away.sampleSize > 0) && (
+          <DetailAccordion title="Rozestavení a trenéři" summary="Taktický kontext">
+            <TacticalComparison home={result.tactics.home} away={result.tactics.away} homeTeam={result.home.team} awayTeam={result.away.team} embedded />
+          </DetailAccordion>
+        )}
 
         {leagueTable && leagueTable.rows.some((r) => r.played > 0) && (
           <LeagueTableSection
@@ -1075,10 +1064,8 @@ function TeamSelect({
 }) {
   const ring = accent === "home" ? "text-home" : "text-away";
   return (
-    <div className={`min-w-0 rounded-xl border bg-background/60 p-4 ${accent === "home" ? "border-home/25" : "border-away/25"}`}>
-      <p className={`text-[11px] font-semibold uppercase tracking-wide ${ring}`}>
-        {heading}
-      </p>
+    <div className={`min-w-0 rounded-xl border bg-background/60 p-4 transition ${value != null ? accent === "home" ? "border-home/40 shadow-sm" : "border-away/40 shadow-sm" : "border-border"}`}>
+      <div className="flex items-center gap-2"><span className={`grid size-6 place-items-center rounded-full text-[10px] font-black text-white ${accent === "home" ? "bg-home" : "bg-away"}`}>{accent === "home" ? "1" : "2"}</span><p className={`text-[11px] font-bold uppercase tracking-wide ${ring}`}>{heading}</p>{value != null ? <span className="ml-auto text-[10px] font-bold text-positive">Vybráno</span> : null}</div>
       <label className="mt-2 block text-[10px] font-medium uppercase tracking-wide text-muted">
         {leagueLabel}
       </label>
@@ -1200,18 +1187,19 @@ function DetailAccordion({
   );
 }
 
-function TacticalComparison({ home, away, homeTeam, awayTeam }: {
+function TacticalComparison({ home, away, homeTeam, awayTeam, embedded = false }: {
   home: TacticalProfile;
   away: TacticalProfile;
   homeTeam: { name: string; logoUrl: string };
   awayTeam: { name: string; logoUrl: string };
+  embedded?: boolean;
 }) {
   const line = (profile: TacticalProfile) => profile.defensiveLine === "BACK_THREE"
     ? "častěji tříčlenná obrana"
     : profile.defensiveLine === "BACK_FOUR"
       ? "častěji čtyřčlenná obrana"
       : profile.defensiveLine === "MIXED" ? "střídá obranné systémy" : "bez určeného systému";
-  return <section className="scroll-mt-20 rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6" aria-labelledby="tactical-comparison-title">
+  return <section className={embedded ? "" : "scroll-mt-20 rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6"} aria-labelledby="tactical-comparison-title">
     <div className="mb-4"><p className="page-kicker">Taktický kontext</p><h2 id="tactical-comparison-title" className="mt-1 text-lg font-bold text-foreground">Rozestavení a trenéři</h2><p className="mt-1 text-xs text-muted">Oficiální výchozí sestavy z posledních zápasů; nejde o odhad pozice týmu během celého utkání.</p></div>
     <div className="grid gap-3 sm:grid-cols-2">
       {([[home, homeTeam, "home"], [away, awayTeam, "away"]] as const).map(([profile, team, accent]) => <article key={accent} className="rounded-xl border border-border bg-background p-4">

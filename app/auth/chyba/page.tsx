@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { buttonClass } from "@/app/_components/ui/primitives";
 
 const MESSAGES: Record<string, { title: string; text: string }> = {
   Configuration: {
@@ -39,8 +40,8 @@ export default async function AuthErrorPage({
         <p className="mt-2 text-sm leading-6 text-muted">{message.text}</p>
         {error && <p className="mt-3 text-xs text-muted">Kód chyby: <code>{error}</code></p>}
         <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
-          <Link href={safeReturn} className="ui-control inline-flex items-center justify-center px-4 text-sm font-semibold text-foreground">Zpět do aplikace</Link>
-          <Link href="/api/auth/signin" className="inline-flex min-h-11 items-center justify-center rounded-lg bg-positive px-4 text-sm font-semibold text-white">Zkusit znovu</Link>
+          <Link href={safeReturn} className={buttonClass("secondary")}>Zpět do aplikace</Link>
+          <Link href="/api/auth/signin" className={buttonClass("primary")}>Zkusit znovu</Link>
         </div>
       </section>
     </main>

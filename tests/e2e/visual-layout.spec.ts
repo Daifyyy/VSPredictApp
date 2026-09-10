@@ -26,7 +26,9 @@ for (const width of widths) {
   test(`ligové žebříčky při šířce ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto("/tabulky", { waitUntil: "networkidle" });
-    await expect(page.getByRole("heading", { name: "Ligový puls" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Ligový puls" })).toBeVisible({
+      timeout: 15_000,
+    });
     await testInfo.attach(`standings-${width}.png`, {
       body: await page.screenshot({ fullPage: true }),
       contentType: "image/png",
@@ -39,6 +41,9 @@ for (const width of widths) {
       "/porovnani?mode=CLUB&homeLeague=140&awayLeague=140&home=541&away=529",
       { waitUntil: "networkidle" }
     );
+    const headToHead = page.getByRole("button", { name: /Vzájemné zápasy/ });
+    await expect(headToHead).toBeVisible();
+    await headToHead.click();
     await expect(page.getByText("Posledních 5", { exact: true })).toBeVisible();
     await expect(page.getByText("xG trend", { exact: true })).toBeVisible();
     await testInfo.attach(`compare-context-${width}.png`, {

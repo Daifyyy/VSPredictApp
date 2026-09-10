@@ -10,17 +10,18 @@ export interface NavItem {
   label: string;
   section: NavSection;
   description?: string;
+  icon: IconName;
 }
 
 /** Veřejné URL zůstávají stabilní; seskupení mění jen informační architekturu. */
 export const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Zápasy", section: "matches", description: "Program a výsledky" },
-  { href: "/porovnani", label: "Porovnání", section: "analysis", description: "Tým proti týmu" },
-  { href: "/tabulky", label: "Tabulky", section: "analysis", description: "Ligové pořadí" },
-  { href: "/predikce", label: "Predikce", section: "analysis", description: "Co čeká model" },
-  { href: "/transfers", label: "Přestupy", section: "analysis", description: "Pohyb v klubech" },
-  { href: "/tipovacka", label: "Moje tipy", section: "tips", description: "Osobní deník" },
-  { href: "/hra", label: "Manažer", section: "game", description: "Vlastní kariéra" },
+  { href: "/", label: "Zápasy", section: "matches", description: "Program a výsledky", icon: "matches" },
+  { href: "/porovnani", label: "Porovnání", section: "analysis", description: "Tým proti týmu", icon: "compare" },
+  { href: "/tabulky", label: "Tabulky", section: "analysis", description: "Ligové pořadí", icon: "table" },
+  { href: "/predikce", label: "Predikce", section: "analysis", description: "Co čeká model", icon: "prediction" },
+  { href: "/transfers", label: "Přestupy", section: "analysis", description: "Pohyb v klubech", icon: "transfer" },
+  { href: "/tipovacka", label: "Moje tipy", section: "tips", description: "Osobní deník", icon: "tips" },
+  { href: "/hra", label: "Manažer", section: "game", description: "Vlastní kariéra", icon: "game" },
 ];
 
 const PRIMARY_ITEMS: Array<{
@@ -77,7 +78,7 @@ export function SectionNav() {
                   key={item.href}
                   href={item.href}
                   aria-current={active ? "page" : undefined}
-                  className={`shrink-0 rounded-full border px-3 py-1.5 text-sm font-medium transition ${
+                  className={`inline-flex min-h-10 shrink-0 items-center rounded-full border px-3 py-1.5 text-sm font-bold transition focus-visible:outline-none ${
                     active
                       ? "border-accent-strong/30 bg-accent/25 text-foreground"
                       : "border-border bg-surface text-muted hover:text-foreground"
@@ -126,7 +127,7 @@ export function DesktopSidebar() {
                 }`}
               >
                 <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${active ? "bg-accent/60" : "bg-background"}`}>
-                  <NavIcon name={item.section === "matches" ? "matches" : item.section === "tips" ? "tips" : item.section === "game" ? "game" : "analysis"} />
+                  <NavIcon name={item.icon} />
                 </span>
                 <span className="min-w-0">
                   <span className="block text-sm font-extrabold leading-tight">{item.label}</span>
@@ -163,10 +164,12 @@ export function MobileBottomNav() {
               key={item.section}
               href={item.href}
               aria-current={active ? "page" : undefined}
-              className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] font-semibold transition ${
-                active ? "text-foreground" : "text-muted"
+              aria-label={`${item.label}${active ? ", aktuální sekce" : ""}`}
+              className={`relative flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] font-bold transition focus-visible:outline-none ${
+                active ? "text-foreground" : "text-muted hover:bg-background hover:text-foreground"
               }`}
             >
+              {active ? <span aria-hidden className="absolute inset-x-5 top-0 h-0.5 rounded-full bg-accent-strong" /> : null}
               <span
                 className={`grid h-7 w-12 place-items-center rounded-full transition ${
                   active ? "bg-accent/55 text-accent-ink" : ""
@@ -183,12 +186,16 @@ export function MobileBottomNav() {
   );
 }
 
-type IconName = "matches" | "analysis" | "tips" | "game";
+type IconName = "matches" | "analysis" | "compare" | "table" | "prediction" | "transfer" | "tips" | "game";
 
 function NavIcon({ name }: { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
     matches: <path d="M7 2v3m10-3v3M3.5 9h17M5 4h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm3 9h2v2H8v-2Zm6 0h2v2h-2v-2Z" />,
     analysis: <path d="M4 19V9m5 10V5m5 14v-7m5 7V3M2 21h20" />,
+    compare: <path d="M7 7h12m0 0-3-3m3 3-3 3M17 17H5m0 0 3 3m-3-3 3-3" />,
+    table: <path d="M4 5h16v14H4V5Zm0 5h16M9 5v14m5-14v14" />,
+    prediction: <path d="M4 19V9m5 10V5m5 14v-7m5 7V3M2 21h20" />,
+    transfer: <path d="M4 8h13m0 0-3-3m3 3-3 3M20 16H7m0 0 3 3m-3-3 3-3" />,
     tips: <path d="m12 3 2.1 4.26 4.7.69-3.4 3.31.8 4.68L12 13.7l-4.2 2.24.8-4.68-3.4-3.31 4.7-.69L12 3Zm-7 16h14" />,
     game: <path d="M8.5 8h7a5.5 5.5 0 0 1 5.17 7.38l-.73 2a2.5 2.5 0 0 1-4.11.94L14.5 17h-5l-1.33 1.32a2.5 2.5 0 0 1-4.11-.94l-.73-2A5.5 5.5 0 0 1 8.5 8ZM8 11v4m-2-2h4m6-1h.01M18 14h.01" />,
   };

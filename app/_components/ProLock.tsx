@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 import { track } from "@vercel/analytics";
 import type { SessionUser } from "./sessionUser";
+import { ActionLink, Button } from "./ui/primitives";
 
 const PRO_FEATURES = [
   { icon: "📊", text: "Predikce výsledku (V/R/P, skóre, BTTS, Over 2.5)" },
@@ -79,33 +79,33 @@ export function ProLock({
       <div className="mt-4">
         {!user ? (
           <>
-            <button
+            <Button
               type="button"
               onClick={() => {
                 track("signin_from_prolock");
                 void signIn("google");
               }}
-              className="min-h-11 rounded-lg bg-positive px-4 py-2 text-sm font-semibold text-white transition hover:bg-positive/90"
+              variant="primary"
             >
               Přihlas se a vyzkoušej PRO zdarma (1×)
-            </button>
+            </Button>
             <p className="mt-2 text-xs text-muted">
               Po přihlášení odemkneš jedno porovnání s plnou analýzou.
             </p>
           </>
         ) : hasTrial && onUnlockTrial ? (
           <>
-            <button
+            <Button
               type="button"
               onClick={() => {
                 track("trial_unlock");
                 onUnlockTrial();
               }}
               disabled={unlocking}
-              className="min-h-11 rounded-lg bg-positive px-4 py-2 text-sm font-semibold text-white transition hover:bg-positive/90 disabled:opacity-60"
+              variant="primary"
             >
               {unlocking ? "Odemykám…" : "Vyzkoušet PRO zdarma (1×)"}
-            </button>
+            </Button>
             <p className="mt-2 text-xs text-muted">
               Máš jedno PRO porovnání zdarma. Vyzkoušej ho na tomto zápase.
             </p>
@@ -114,12 +114,12 @@ export function ProLock({
           // Trial odemyká jedno *porovnání*, takže se tady spotřebovat nedá – ale mlčet
           // o něm (nebo tvrdit, že je pryč) je horší než poslat člověka tam, kde platí.
           <>
-            <Link
+            <ActionLink
               href="/porovnani"
-              className="inline-flex min-h-11 items-center rounded-lg bg-positive px-4 py-2 text-sm font-semibold text-white transition hover:bg-positive/90"
+              variant="primary"
             >
               Vyzkoušet PRO zdarma (1×)
-            </Link>
+            </ActionLink>
             <p className="mt-2 text-xs text-muted">
               Máš ještě jedno PRO porovnání zdarma – uplatníš ho v Porovnání.{" "}
               <button
@@ -134,14 +134,14 @@ export function ProLock({
           </>
         ) : (
           <>
-            <button
+            <Button
               type="button"
               onClick={startCheckout}
               disabled={checkoutLoading}
-              className="min-h-11 rounded-lg bg-positive px-4 py-2 text-sm font-semibold text-white transition hover:bg-positive/90 disabled:opacity-60"
+              variant="primary"
             >
               {checkoutLoading ? "Přesměrovávám…" : "Upgradovat na PRO"}
-            </button>
+            </Button>
             <p className="mt-2 text-xs text-muted">
               Trial jsi využil. Odemkni všechny PRO funkce předplatným.
             </p>

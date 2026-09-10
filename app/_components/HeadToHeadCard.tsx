@@ -8,11 +8,13 @@ export function HeadToHeadCard({
   teamAName,
   teamBName,
   compact = false,
+  embedded = false,
 }: {
   summary: HeadToHeadSummary;
   teamAName: string;
   teamBName: string;
   compact?: boolean;
+  embedded?: boolean;
 }) {
   if (!summary.sample) {
     return <section className="rounded-xl border border-border bg-surface px-3 py-3 text-xs text-muted" aria-label="Vzájemné zápasy">
@@ -22,7 +24,7 @@ export function HeadToHeadCard({
   }
   const shown = summary.meetings.slice(0, compact ? 5 : 10);
   const pct = (value: number) => `${Math.round(value / summary.sample * 100)} %`;
-  return <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-5" aria-labelledby={compact ? undefined : "h2h-heading"}>
+  return <section className={embedded ? "" : "rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-5"} aria-labelledby={compact ? undefined : "h2h-heading"}>
     <div className="flex flex-wrap items-start justify-between gap-2">
       <div>
         <p className="page-kicker">Vzájemné zápasy</p>

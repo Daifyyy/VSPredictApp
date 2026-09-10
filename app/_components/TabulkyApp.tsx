@@ -211,10 +211,7 @@ export function TabulkyApp() {
     <main className="app-page">
       <AppHeader user={user} />
 
-      <h1>Ligové tabulky</h1>
-      <p className="mt-1 text-sm text-muted">
-        Aktuální pořadí vybrané ligy – pozice, body, skóre a forma.
-      </p>
+      <header className="mt-6"><p className="page-kicker">Ligový přehled</p><h1 className="page-title">Tabulky</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-muted">Pořadí, forma a herní profil týmů v jednom pohledu. Výběrem prostředí oddělíš celkový výkon, domácí zápasy a venkovní zápasy.</p></header>
 
       <LeagueToolbar selected={leagueId} venue={venue} onSelect={select} onVenue={setVenue} />
 

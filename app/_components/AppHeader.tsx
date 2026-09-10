@@ -8,6 +8,7 @@ import { DesktopSidebar, MobileBottomNav, SectionNav } from "./nav";
 import type { SessionUser } from "./sessionUser";
 import { shareOrCopy } from "./share";
 import { TeamSearch } from "./TeamSearch";
+import { Button } from "./ui/primitives";
 
 /**
  * Sdílená hlavička všech stránek: řádek s logem a účtem, pod ním pásek sekcí.
@@ -80,15 +81,17 @@ function ShareButton() {
         ? "Nešlo zkopírovat"
         : "Sdílet";
   return (
-    <button
+    <Button
       type="button"
       onClick={share}
       title="Sdílet odkaz na toto porovnání"
       aria-label="Sdílet"
-      className="min-h-11 rounded-full border border-border bg-surface px-3 py-1.5 text-sm font-bold text-muted transition hover:-translate-y-0.5 hover:border-foreground/30 hover:text-foreground"
+      variant="secondary"
+      size="md"
+      className="rounded-full px-3 text-muted"
     >
       <span aria-hidden>{emoji}</span>
       <span className="hidden sm:inline"> {label}</span>
-    </button>
+    </Button>
   );
 }

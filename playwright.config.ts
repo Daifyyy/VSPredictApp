@@ -28,7 +28,9 @@ export default defineConfig({
     // produkční build dál používá výchozí Turbopack.
     command: `node node_modules/next/dist/bin/next dev --webpack --hostname 127.0.0.1 --port ${PORT}`,
     url: `http://127.0.0.1:${PORT}`,
-    reuseExistingServer: false,
+    // Lokálně dovolí použít už běžící dev server. Na Windows se tak Playwright nemusí
+    // pokoušet ukončovat celý procesní strom Nextu; v CI si server vždy spustí a ukončí sám.
+    reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     env: {
       ...process.env,
