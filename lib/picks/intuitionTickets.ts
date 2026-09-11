@@ -2,7 +2,7 @@ import { localDateKey } from "@/lib/competitionGrouping";
 import { drawTau, poissonVector } from "@/lib/stats/predict";
 import { bestLinePrice, bestPrice, bestResultTotalPrice, parseBooks, sharpFair, sharpLineFair } from "./books";
 
-export const INTUITION_POLICY_VERSION = 4;
+export const INTUITION_POLICY_VERSION = 5;
 
 const MIN_READINESS_SAMPLE = 6;
 const EXTREME_EDGE_SAMPLE = 8;
@@ -21,6 +21,13 @@ const TICKET_MIN_EV = .10;
 const ELO_MARKET_WEIGHT = .30;
 const EXTREME_ELO_EDGE = .12;
 export const ELO_SHADOW_ONLY_LEAGUE_IDS = new Set([40]); // English Championship
+
+function pedigreeBonus(rating: number, sample: number) {
+  if (sample < 30 || rating < 1500) return 0;
+  const strength = Math.min(1, (rating - 1500) / 100);
+  const history = Math.min(1, (sample - 30) / 70);
+  return strength * 4 + history * 3;
+}
 
 export type IntuitionSource = {
   fixtureId: number; leagueId: number; kickoff: Date; homeName: string; awayName: string;
@@ -228,14 +235,17 @@ function evaluateElo(row: IntuitionSource, winner: "HOME" | "AWAY"): { candidate
   const chosen = options[0];
   if (!chosen) return none;
   const winnerName = winner === "HOME" ? row.homeName : row.awayName;
+  const winnerLongRating = winner === "HOME" ? elo.homeLongRating : elo.awayLongRating;
+  const pedigree = pedigreeBonus(winnerLongRating, longSample);
+  const established = winnerLongRating >= 1550 && longSample >= 40;
   return { divergence: null, candidate: {
     fixtureId: row.fixtureId, leagueId: row.leagueId, kickoff: row.kickoff, homeName: row.homeName, awayName: row.awayName,
-    winner, winnerName, total: chosen.total, line: chosen.line, role: "ELO", score: chosen.eloEv * 80 + calibrated * 50 + Math.min(longSample, 30) / 3,
+    winner, winnerName, total: chosen.total, line: chosen.line, role: "ELO", score: chosen.eloEv * 80 + calibrated * 50 + Math.min(longSample, 30) / 3 + pedigree,
     modelProbability: chosen.modelJoint, marketWinnerProbability: market, winnerOdds: winPrice.odds, decimalOdds: chosen.direct.odds, bookmaker: chosen.direct.bookmaker, priceKind: "DIRECT",
     eloLongProbability: longProbability, eloFastProbability: fastProbability, eloWinnerProbability: calibrated, eloJointProbability: chosen.eloJoint,
     eloLongHomeRating: elo.homeLongRating, eloLongAwayRating: elo.awayLongRating, eloFastHomeRating: elo.homeFastRating, eloFastAwayRating: elo.awayFastRating,
     eloLongSample: longSample, eloFastSample: fastSample, modelExpectedValue: chosen.modelEv, eloExpectedValue: chosen.eloEv,
-    reason: `LONG a FAST Elo podporují ${winnerName}; po kalibraci směrem k trhu je edge ${Math.round((calibrated - market) * 100)} p. b.`,
+    reason: `LONG a FAST Elo podporují ${winnerName}; po kalibraci směrem k trhu je edge ${Math.round((calibrated - market) * 100)} p. b.${established ? " Dlouhodobý rating a vzorek navíc potvrzují zavedený výkonnostní standard klubu." : ""}`,
     risk: chosen.modelEv < 0 ? "Hlavní gólový model má záporné EV; v experimentu je to viditelný rozpor, nikoli filtr." : "Elo měří výsledkovou sílu, nikoli sestavy ani aktuální kontext.",
   } };
 }

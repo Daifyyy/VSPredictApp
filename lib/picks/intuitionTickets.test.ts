@@ -70,4 +70,14 @@ describe("intuition tickets", () => {
     expect(rankEloCandidates([source])).toEqual([]);
     expect(rankEloDivergences([source])).toMatchObject([{ fixtureId: 40, leagueId: 40, reason: "LEAGUE_SHADOW_ONLY" }]);
   });
+
+  it("uses established-club history only as an ELO ranking bonus", () => {
+    const established = row(51, "2026-09-12", .42, 3.4);
+    const newcomer = row(52, "2026-09-12", .42, 3.4);
+    const elo = { homeLongRating: 1560, awayLongRating: 1500, homeFastRating: 1550, awayFastRating: 1500, homeLongSample: 60, awayLongSample: 60, homeFastSample: 10, awayFastSample: 10, homeProbability: .46, awayProbability: .28, longHomeProb: .47, longAwayProb: .27, fastHomeProb: .45, fastAwayProb: .29 };
+    established.elo = elo;
+    newcomer.elo = { ...elo, homeLongRating: 1500, homeLongSample: 30, awayLongSample: 30 };
+    const ranked = rankEloCandidates([newcomer, established]);
+    expect(ranked.map((item) => item.fixtureId)).toEqual([51, 52]);
+  });
 });
