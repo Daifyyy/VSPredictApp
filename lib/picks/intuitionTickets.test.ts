@@ -4,7 +4,7 @@ import { buildIntuitionTickets, rankIntuitionCandidates, type IntuitionSource } 
 const books = (home: number, away: number) => [{ id: 4, name: "Test", home, draw: 3.5, away, over25: 1.9, under25: 1.9, btts: 1.9, bttsNo: 1.9,
   resultTotals: [{ winner: "home", total: "over", line: 1.5, odds: home * 1.18 }, { winner: "away", total: "over", line: 1.5, odds: away * 1.18 }] }];
 function row(id: number, date: string, homeWin: number, homeOdds: number): IntuitionSource {
-  return { fixtureId: id, leagueId: 39, kickoff: new Date(`${date}T14:00:00Z`), homeName: `H${id}`, awayName: `A${id}`, homeWin, awayWin: .2, lambdaHome: 1.8, lambdaAway: .8, lowConfidence: false, readinessSample: 8, oddsBooks: books(homeOdds, 4.5) };
+  return { fixtureId: id, leagueId: 39, kickoff: new Date(`${date}T14:00:00Z`), homeName: `H${id}`, awayName: `A${id}`, homeWin, awayWin: .2, lambdaHome: 2.4, lambdaAway: .6, lowConfidence: false, readinessSample: 8, oddsBooks: books(homeOdds, 4.5) };
 }
 
 describe("intuition tickets", () => {
@@ -13,9 +13,16 @@ describe("intuition tickets", () => {
   });
 
   it("estimates a correlated synthetic quote from separate winner and total prices", () => {
-    const source = row(7, "2026-09-12", .62, 1.8);
-    source.oddsBooks = [{ id: 4, name: "Test", home: 1.8, draw: 3.5, away: 4.5, over25: 1.9, under25: 1.9, btts: 1.9, bttsNo: 1.9, matchTotals: [{ line: 1.5, over: 1.25, under: 4.2 }, { line: 4.5, over: 5, under: 1.18 }] }];
+    const source = row(7, "2026-09-12", .62, 1.9);
+    source.oddsBooks = [{ id: 4, name: "Test", home: 1.9, draw: 3.5, away: 4.5, over25: 1.9, under25: 1.9, btts: 1.9, bttsNo: 1.9, matchTotals: [{ line: 1.5, over: 1.5, under: 4.2 }, { line: 4.5, over: 5, under: 1.18 }] }];
     expect(rankIntuitionCandidates([source])[0]).toMatchObject({ fixtureId: 7, priceKind: "SYNTHETIC" });
+  });
+
+  it("rejects a short combined price with negative model EV", () => {
+    const source = row(8, "2026-09-12", .8, 1.23);
+    source.oddsBooks = [{ id: 4, name: "Test", home: 1.23, draw: 6, away: 12, over25: 1.4, under25: 3.1, btts: 1.9, bttsNo: 1.9,
+      resultTotals: [{ winner: "home", total: "over", line: 1.5, odds: 1.37 }] }];
+    expect(rankIntuitionCandidates([source])).toEqual([]);
   });
 
   it("builds two disjoint tickets only from at least six fixtures", () => {

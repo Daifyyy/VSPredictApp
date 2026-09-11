@@ -2,7 +2,22 @@ import { localDateKey } from "@/lib/competitionGrouping";
 import { drawTau, poissonVector } from "@/lib/stats/predict";
 import { bestLinePrice, bestPrice, bestResultTotalPrice, parseBooks, sharpFair, sharpLineFair } from "./books";
 
-export const INTUITION_POLICY_VERSION = 1;
+export const INTUITION_POLICY_VERSION = 2;
+
+const MIN_READINESS_SAMPLE = 6;
+const EXTREME_EDGE_SAMPLE = 8;
+const EXTREME_WINNER_EDGE = .15;
+const MIN_DIRECT_ODDS = 1.6;
+const MIN_SYNTHETIC_ODDS = 1.7;
+const MAX_LEG_ODDS = 6;
+const MIN_DIRECT_EV = .03;
+const MIN_SYNTHETIC_EV = .08;
+const VALUE_MIN_ODDS = 2.4;
+const VALUE_MIN_EV = .08;
+const SUPPORT_MIN_PROBABILITY = .48;
+const TICKET_MIN_ODDS = 8;
+const TICKET_MAX_ODDS = 30;
+const TICKET_MIN_EV = .10;
 
 export type IntuitionSource = {
   fixtureId: number; leagueId: number; kickoff: Date; homeName: string; awayName: string;
@@ -62,7 +77,7 @@ function syntheticPrice(row: IntuitionSource, books: ReturnType<typeof parseBook
 }
 
 function candidateFor(row: IntuitionSource, winner: "HOME" | "AWAY"): IntuitionCandidate | null {
-  if (row.lowConfidence || row.readinessSample < 4) return null;
+  if (row.lowConfidence || row.readinessSample < MIN_READINESS_SAMPLE) return null;
   const books = parseBooks(row.oddsBooks);
   const side = winner === "HOME" ? "home" : "away";
   const winProbability = winner === "HOME" ? row.homeWin : row.awayWin;
@@ -71,10 +86,12 @@ function candidateFor(row: IntuitionSource, winner: "HOME" | "AWAY"): IntuitionC
   const fair = sharpFair(books);
   const marketProbability = fair?.[side] ?? null;
   const edge = marketProbability == null ? null : winProbability - marketProbability;
-  const role = winPrice.odds >= 2.5 && edge != null && edge >= .03 ? "VALUE" : winPrice.odds <= 2.2 && winProbability >= .5 ? "SUPPORT" : null;
-  if (!role) return null;
+  if (edge != null && edge > EXTREME_WINNER_EDGE && row.readinessSample < EXTREME_EDGE_SAMPLE) return null;
+  const valueEligible = winPrice.odds >= 2.5 && edge != null && edge >= .03;
+  const supportEligible = winPrice.odds <= 2.2 && winProbability >= .5;
+  if (!valueEligible && !supportEligible) return null;
 
-  const totalOptions = role === "VALUE"
+  const totalOptions = valueEligible
     ? ([{ total: "OVER", line: 1.5 }, { total: "UNDER", line: 4.5 }] as const)
     : winProbability >= .72
       ? ([{ total: "UNDER", line: 5.5 }, { total: "UNDER", line: 4.5 }, { total: "OVER", line: 1.5 }] as const)
@@ -86,12 +103,24 @@ function candidateFor(row: IntuitionSource, winner: "HOME" | "AWAY"): IntuitionC
     const price = direct ?? synthetic;
     return { ...option, probability, price, priceKind: direct ? "DIRECT" as const : synthetic ? "SYNTHETIC" as const : "NONE" as const, ev: price ? probability * price.odds - 1 : null };
   });
-  const quoted = options.filter((option) => option.price && option.ev != null && option.ev >= 0).sort((a, b) => (b.ev ?? 0) - (a.ev ?? 0));
-  const chosen = quoted[0] ?? options[0];
-  if (chosen.probability < (role === "VALUE" ? .16 : .42)) return null;
+  const eligible = options.flatMap((option) => {
+    if (!option.price || option.ev == null) return [];
+    const minOdds = option.priceKind === "DIRECT" ? MIN_DIRECT_ODDS : MIN_SYNTHETIC_ODDS;
+    const minEv = option.priceKind === "DIRECT" ? MIN_DIRECT_EV : MIN_SYNTHETIC_EV;
+    if (option.price.odds < minOdds || option.price.odds > MAX_LEG_ODDS || option.ev < minEv) return [];
+    const role = valueEligible && option.priceKind === "DIRECT" && option.price.odds >= VALUE_MIN_ODDS && option.ev >= VALUE_MIN_EV
+      ? "VALUE" as const
+      : supportEligible && option.price.odds < VALUE_MIN_ODDS && option.probability >= SUPPORT_MIN_PROBABILITY
+        ? "SUPPORT" as const
+        : null;
+    return role ? [{ ...option, role }] : [];
+  }).sort((a, b) => (b.ev ?? 0) - (a.ev ?? 0));
+  const chosen = eligible[0];
+  if (!chosen) return null;
+  const role = chosen.role;
   const winnerName = winner === "HOME" ? row.homeName : row.awayName;
   const opposition = winner === "HOME" ? row.awayName : row.homeName;
-  const score = winProbability * 55 + (edge ?? 0) * 180 + chosen.probability * 25 + (chosen.price ? 5 : 0);
+  const score = chosen.probability * 60 + Math.min(chosen.ev ?? 0, .25) * 80 + (chosen.priceKind === "DIRECT" ? 5 : 0) + (role === "VALUE" ? 4 : 0);
   return {
     fixtureId: row.fixtureId, leagueId: row.leagueId, kickoff: row.kickoff, homeName: row.homeName, awayName: row.awayName,
     winner, winnerName, total: chosen.total, line: chosen.line, role, score, modelProbability: chosen.probability,
@@ -108,32 +137,49 @@ export function rankIntuitionCandidates(rows: IntuitionSource[]) {
     .sort((a, b) => b.score - a.score);
 }
 
+function ticketMetrics(legs: IntuitionCandidate[]) {
+  if (legs.some((leg) => leg.decimalOdds == null)) return null;
+  const odds = legs.reduce((value, leg) => value * leg.decimalOdds!, 1);
+  const probability = legs.reduce((value, leg) => value * leg.modelProbability, 1);
+  return { odds, ev: probability * odds - 1 };
+}
+
+function assembleTickets(pool: IntuitionCandidate[]): IntuitionTicket[] {
+  const unique = [...new Map(pool.map((item) => [item.fixtureId, item])).values()];
+  const anchors = unique.filter((item) => item.role === "VALUE");
+  const supports = unique.filter((item) => item.role === "SUPPORT").slice(0, 24);
+  if (!anchors.length || supports.length < 2) return [];
+  const used = new Set<number>();
+  const tickets: IntuitionTicket[] = [];
+
+  for (let slot = 1; slot <= 2; slot++) {
+    let best: { legs: IntuitionCandidate[]; odds: number; quality: number } | null = null;
+    for (const anchor of anchors) {
+      if (used.has(anchor.fixtureId)) continue;
+      const available = supports.filter((item) => !used.has(item.fixtureId));
+      for (let i = 0; i < available.length; i++) for (let j = i + 1; j < available.length; j++) {
+        const variants: IntuitionCandidate[][] = [[anchor, available[i], available[j]]];
+        for (let k = j + 1; k < available.length; k++) variants.push([anchor, available[i], available[j], available[k]]);
+        for (const legs of variants) {
+          const metrics = ticketMetrics(legs);
+          if (!metrics || metrics.odds < TICKET_MIN_ODDS || metrics.odds > TICKET_MAX_ODDS || metrics.ev < TICKET_MIN_EV) continue;
+          const quality = legs.reduce((sum, leg) => sum + leg.score, 0) - Math.abs(Math.log(metrics.odds / 12)) * 4 - (legs.length - 3);
+          if (!best || quality > best.quality) best = { legs, odds: metrics.odds, quality };
+        }
+      }
+    }
+    if (!best) break;
+    best.legs.forEach((leg) => used.add(leg.fixtureId));
+    tickets.push({ slot, dateKeys: [...new Set(best.legs.map((item) => localDateKey(item.kickoff)))], odds: best.odds, legs: best.legs });
+  }
+  return tickets;
+}
+
 export function buildIntuitionTickets(rows: IntuitionSource[], requestedDate: string): IntuitionTicket[] {
   const ranked = rankIntuitionCandidates(rows);
   const firstDay = ranked.filter((item) => localDateKey(item.kickoff) === requestedDate);
-  const pool = firstDay.length >= 3 && firstDay.some((item) => item.role === "VALUE") ? firstDay : ranked;
-  const unique = [...new Map(pool.map((item) => [item.fixtureId, item])).values()];
-  const anchors = unique.filter((item) => item.role === "VALUE");
-  if (!anchors.length || unique.length < 3) return [];
-  const ticketCount = anchors.length >= 2 && unique.length >= 6 ? 2 : 1;
-  const used = new Set<number>();
-  const tickets: IntuitionTicket[] = [];
-  for (let slot = 1; slot <= ticketCount; slot++) {
-    const anchor = anchors.find((item) => !used.has(item.fixtureId));
-    if (!anchor) break;
-    const legs = [anchor]; used.add(anchor.fixtureId);
-    for (const item of unique) {
-      if (legs.length >= 3 || used.has(item.fixtureId) || item.role !== "SUPPORT") continue;
-      legs.push(item); used.add(item.fixtureId);
-    }
-    if (legs.length < 3) break;
-    tickets.push({ slot, dateKeys: [...new Set(legs.map((item) => localDateKey(item.kickoff)))], odds: null, legs });
-  }
-  for (const ticket of tickets) {
-    const extra = unique.find((item) => item.role === "SUPPORT" && !used.has(item.fixtureId));
-    if (extra) { ticket.legs.push(extra); used.add(extra.fixtureId); }
-    ticket.dateKeys = [...new Set(ticket.legs.map((item) => localDateKey(item.kickoff)))];
-    ticket.odds = ticket.legs.every((item) => item.decimalOdds != null) ? ticket.legs.reduce((value, item) => value * item.decimalOdds!, 1) : null;
-  }
-  return tickets;
+  const sameDay = assembleTickets(firstDay);
+  if (sameDay.length >= 2) return sameDay;
+  const extended = assembleTickets(ranked);
+  return extended.length > sameDay.length ? extended : sameDay;
 }

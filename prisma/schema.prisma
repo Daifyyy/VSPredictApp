@@ -1143,6 +1143,7 @@ model QuickOverviewSelection {
   openingMarketProbability Float?
   decimalOdds              Float?
   bookmaker                String?
+  oddsAt                   DateTime?
   modelVersion             Int
   contextVersion           Int
   policyVersion            Int       @default(1)
