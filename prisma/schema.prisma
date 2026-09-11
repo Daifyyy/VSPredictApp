@@ -1177,6 +1177,7 @@ model IntuitionTicket {
   windowKey     String
   slot          Int
   policyVersion Int                  @default(1)
+  strategy      String               @default("VALUE")
   status        String               @default("LOCKED")
   combinedOdds  Float?
   priceKind     String               @default("NONE")
@@ -1187,7 +1188,8 @@ model IntuitionTicket {
   profit        Float?
   legs          IntuitionTicketLeg[]
 
-  @@unique([windowKey, slot, policyVersion])
+  @@unique([windowKey, strategy, slot, policyVersion])
+  @@index([strategy, status, settledAt])
   @@index([status, lockedAt])
 }
 
@@ -1206,6 +1208,18 @@ model IntuitionTicketLeg {
   role                    String
   score                   Float
   modelProbability        Float
+  eloLongProbability      Float?
+  eloFastProbability      Float?
+  eloWinnerProbability    Float?
+  eloJointProbability     Float?
+  eloLongHomeRating       Float?
+  eloLongAwayRating       Float?
+  eloFastHomeRating       Float?
+  eloFastAwayRating       Float?
+  eloLongSample           Float?
+  eloFastSample           Float?
+  modelExpectedValue      Float?
+  eloExpectedValue        Float?
   marketWinnerProbability Float?
   winnerOdds              Float?
   decimalOdds             Float?
@@ -1221,6 +1235,78 @@ model IntuitionTicketLeg {
 
   @@unique([ticketId, fixtureId])
   @@index([fixtureId])
+}
+
+/// Neměnný vstup deterministického Elo replaye. Jeden fixture se zapisuje idempotentně.
+model ClubEloMatch {
+  fixtureId  Int      @id
+  leagueId   Int
+  season     Int
+  kickoff    DateTime
+  homeTeamId Int
+  awayTeamId Int
+  homeGoals  Int
+  awayGoals  Int
+  neutral    Boolean  @default(false)
+  context    String   @default("LEAGUE")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([kickoff, fixtureId])
+  @@index([leagueId, season])
+}
+
+model ClubEloState {
+  id           String    @id @default(cuid())
+  modelVersion Int
+  teamId       Int
+  leagueId     Int
+  longRating   Float
+  fastRating   Float
+  longSample   Float
+  fastSample   Float
+  lastMatchAt  DateTime?
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([modelVersion, teamId])
+  @@index([modelVersion, leagueId])
+}
+
+/// Point-in-time ratingy a pravděpodobnosti vznikají před započtením daného zápasu.
+model ClubEloFixtureSnapshot {
+  id              String   @id @default(cuid())
+  fixtureId       Int
+  modelVersion    Int
+  generatedAt     DateTime
+  homeLongRating  Float
+  awayLongRating  Float
+  homeFastRating  Float
+  awayFastRating  Float
+  homeLongSample  Float
+  awayLongSample  Float
+  homeFastSample  Float
+  awayFastSample  Float
+  homeProbability Float
+  drawProbability Float
+  awayProbability Float
+  longHomeProb    Float
+  longAwayProb    Float
+  fastHomeProb    Float
+  fastAwayProb    Float
+
+  @@unique([fixtureId, modelVersion])
+  @@index([modelVersion, generatedAt])
+}
+
+model ClubEloModelDefinition {
+  id             String    @id @default(cuid())
+  version        Int       @unique
+  status         String    @default("ACTIVE")
+  parameters     Json
+  trainedThrough DateTime?
+  metrics        Json?
+  createdAt      DateTime  @default(now())
+  activatedAt    DateTime?
 }
 
 /// Anonymni diagnostika selhani PWA/app shellu. Neobsahuje URL parametry, session ani user-agent.

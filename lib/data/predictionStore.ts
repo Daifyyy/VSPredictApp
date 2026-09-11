@@ -276,6 +276,7 @@ export interface OddsSnapshotCandidate {
   oddsFetchedAt: Date | null;
   oddsCloseAt: Date | null;
   oddsSeriesAt: Date | null;
+  oddsCurrentAt: Date | null;
   /** Dosavadní časová řada (JSON sloupec) – parsuje ji `parseSeries`. */
   oddsSeries: unknown;
 }
@@ -313,6 +314,7 @@ export async function fixturesNeedingOdds(opts: {
       oddsFetchedAt: true,
       oddsCloseAt: true,
       oddsSeriesAt: true,
+      oddsCurrentAt: true,
       oddsSeries: true,
     },
     orderBy: { kickoff: "asc" },

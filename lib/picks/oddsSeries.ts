@@ -118,6 +118,8 @@ export interface SnapshotState {
   oddsFetchedAt: Date | null;
   oddsCloseAt: Date | null;
   oddsSeriesAt: Date | null;
+  /** Chybějící aktuální plné knihy jsou samy o sobě důvodem pro fetch/backfill. */
+  oddsCurrentAt?: Date | null;
 }
 
 /**
@@ -143,7 +145,7 @@ export function snapshotPlan(
   const series = seriesDue(hoursToKickoff, minutesSince(state.oddsSeriesAt));
   const close = series && hoursToKickoff <= closingHours;
 
-  return { fetch: open || close || series, open, close, series };
+  return { fetch: open || state.oddsCurrentAt === null || close || series, open, close, series };
 }
 
 /** Řada z JSON sloupce. Neplatný tvar → `[]` (stejná obranná logika jako `parseBooks`). */

@@ -11,7 +11,7 @@ export async function GET(request: Request) {
   if (!allowRequest(`intuition-tickets:${clientKey(request)}`, 60, 60_000)) return tooMany();
   const date = new URL(request.url).searchParams.get("date") ?? "";
   if (!DATE.test(date)) return NextResponse.json({ error: "Neplatné datum" }, { status: 400 });
-  if (!isRealDataConfigured()) return NextResponse.json({ date, frozen: false, tickets: [] });
+  if (!isRealDataConfigured()) return NextResponse.json({ date, strategies: ["VALUE", "ELO_INTUITION"].map((strategy) => ({ strategy, frozen: false, tickets: [], emptyReason: "NOT_ENOUGH_CANDIDATES", coverage: { fixtures: 0, withOdds: 0, candidates: 0 } })) });
   try {
     return NextResponse.json({ date, ...(await previewIntuitionTickets(date)) }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {

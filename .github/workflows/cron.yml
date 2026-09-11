@@ -34,6 +34,7 @@ on:
     # Denní údržba (časy odpovídají původnímu vercel.json).
     - cron: "0 3 * * *" # refresh-league-styles
     - cron: "0 4 * * *" # warm
+    - cron: "15 4 * * *" # deterministický Elo replay před predikcemi
     - cron: "30 4 * * *" # predict-upcoming
     - cron: "30 12 * * *" # predict-upcoming (průběžné doplnění)
     - cron: "30 16 * * *" # predict-upcoming (večerní opravný průchod)
@@ -66,6 +67,7 @@ on:
           - snapshot-odds
           - refresh-league-styles
           - warm
+          - refresh-elo
           - predict-upcoming
           - refresh-referees
           - refresh-tactics
@@ -111,6 +113,7 @@ jobs:
             "30 2 * * *")   path="refresh-tactics" ;;
             "0 3 * * *")    path="refresh-league-styles" ;;
             "0 4 * * *")    path="warm" ;;
+            "15 4 * * *")   path="refresh-elo" ;;
             "30 4 * * *")   path="predict-upcoming" ;;
             "30 12 * * *")  path="predict-upcoming" ;;
             "30 16 * * *")  path="predict-upcoming" ;;

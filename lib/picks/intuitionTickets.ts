@@ -24,19 +24,27 @@ export type IntuitionSource = {
   homeWin: number; awayWin: number; lambdaHome: number; lambdaAway: number;
   lowConfidence: boolean; readinessSample: number; oddsBooks: unknown;
   homeGoals?: number | null; awayGoals?: number | null;
+  elo?: {
+    homeLongRating: number; awayLongRating: number; homeFastRating: number; awayFastRating: number;
+    homeLongSample: number; awayLongSample: number; homeFastSample: number; awayFastSample: number;
+    homeProbability: number; awayProbability: number; longHomeProb: number; longAwayProb: number; fastHomeProb: number; fastAwayProb: number;
+  } | null;
 };
 
 export type IntuitionCandidate = {
   fixtureId: number; leagueId: number; kickoff: Date; homeName: string; awayName: string;
   winner: "HOME" | "AWAY"; winnerName: string; total: "OVER" | "UNDER"; line: number;
-  role: "VALUE" | "SUPPORT"; score: number; modelProbability: number;
+  role: "VALUE" | "SUPPORT" | "ELO"; score: number; modelProbability: number;
+  eloLongProbability?: number | null; eloFastProbability?: number | null; eloWinnerProbability?: number | null; eloJointProbability?: number | null;
+  eloLongHomeRating?: number | null; eloLongAwayRating?: number | null; eloFastHomeRating?: number | null; eloFastAwayRating?: number | null;
+  eloLongSample?: number | null; eloFastSample?: number | null; modelExpectedValue?: number | null; eloExpectedValue?: number | null;
   marketWinnerProbability: number | null; winnerOdds: number | null;
   decimalOdds: number | null; bookmaker: string | null; priceKind: "DIRECT" | "SYNTHETIC" | "NONE"; reason: string; risk: string;
 };
 
 export type IntuitionTicket = { slot: number; dateKeys: string[]; odds: number | null; legs: IntuitionCandidate[] };
 
-function scoreProbabilities(row: IntuitionSource, winner: "HOME" | "AWAY", total: "OVER" | "UNDER", line: number) {
+export function scoreProbabilities(row: IntuitionSource, winner: "HOME" | "AWAY", total: "OVER" | "UNDER", line: number) {
   const ph = poissonVector(row.lambdaHome), pa = poissonVector(row.lambdaAway);
   let norm = 0, joint = 0, win = 0, totalProbability = 0;
   for (let h = 0; h < ph.length; h++) for (let a = 0; a < pa.length; a++) {
@@ -147,8 +155,8 @@ function ticketMetrics(legs: IntuitionCandidate[]) {
 function assembleTickets(pool: IntuitionCandidate[]): IntuitionTicket[] {
   const unique = [...new Map(pool.map((item) => [item.fixtureId, item])).values()];
   const anchors = unique.filter((item) => item.role === "VALUE");
-  const supports = unique.filter((item) => item.role === "SUPPORT").slice(0, 24);
-  if (!anchors.length || supports.length < 2) return [];
+  const fillers = unique.slice(0, 24);
+  if (!anchors.length || fillers.length < 3) return [];
   const used = new Set<number>();
   const tickets: IntuitionTicket[] = [];
 
@@ -156,7 +164,7 @@ function assembleTickets(pool: IntuitionCandidate[]): IntuitionTicket[] {
     let best: { legs: IntuitionCandidate[]; odds: number; quality: number } | null = null;
     for (const anchor of anchors) {
       if (used.has(anchor.fixtureId)) continue;
-      const available = supports.filter((item) => !used.has(item.fixtureId));
+      const available = fillers.filter((item) => item.fixtureId !== anchor.fixtureId && !used.has(item.fixtureId));
       for (let i = 0; i < available.length; i++) for (let j = i + 1; j < available.length; j++) {
         const variants: IntuitionCandidate[][] = [[anchor, available[i], available[j]]];
         for (let k = j + 1; k < available.length; k++) variants.push([anchor, available[i], available[j], available[k]]);
@@ -175,11 +183,85 @@ function assembleTickets(pool: IntuitionCandidate[]): IntuitionTicket[] {
   return tickets;
 }
 
+function eloCandidateFor(row: IntuitionSource, winner: "HOME" | "AWAY"): IntuitionCandidate | null {
+  const elo = row.elo;
+  if (!elo) return null;
+  const longSample = Math.min(elo.homeLongSample, elo.awayLongSample), fastSample = Math.min(elo.homeFastSample, elo.awayFastSample);
+  if (longSample < 10 || fastSample < 5) return null;
+  const books = parseBooks(row.oddsBooks), side = winner === "HOME" ? "home" : "away";
+  const market = sharpFair(books)?.[side] ?? null;
+  const longProbability = winner === "HOME" ? elo.longHomeProb : elo.longAwayProb;
+  const fastProbability = winner === "HOME" ? elo.fastHomeProb : elo.fastAwayProb;
+  const blended = winner === "HOME" ? elo.homeProbability : elo.awayProbability;
+  if (market == null || !((longProbability >= market && fastProbability >= market && blended - market >= .03) || (longProbability - market >= .06 && fastProbability - market >= -.02))) return null;
+  const winPrice = bestPrice(books, side);
+  if (!winPrice) return null;
+  const options = ([{ total: "OVER", line: 1.5 }, { total: "UNDER", line: 4.5 }, { total: "UNDER", line: 5.5 }] as const).flatMap((option) => {
+    const direct = bestResultTotalPrice(books, side, option.total.toLowerCase() as "over" | "under", option.line);
+    if (!direct || direct.odds < 1.6 || direct.odds > 6) return [];
+    const model = scoreProbabilities(row, winner, option.total, option.line);
+    if (model.win <= 0) return [];
+    const eloJoint = blended * model.joint / model.win;
+    return [{ ...option, direct, modelJoint: model.joint, eloJoint, eloEv: eloJoint * direct.odds - 1, modelEv: model.joint * direct.odds - 1 }];
+  }).sort((a, b) => b.eloEv - a.eloEv);
+  const chosen = options[0];
+  if (!chosen) return null;
+  const winnerName = winner === "HOME" ? row.homeName : row.awayName;
+  return {
+    fixtureId: row.fixtureId, leagueId: row.leagueId, kickoff: row.kickoff, homeName: row.homeName, awayName: row.awayName,
+    winner, winnerName, total: chosen.total, line: chosen.line, role: "ELO", score: chosen.eloEv * 80 + blended * 50 + Math.min(longSample, 30) / 3,
+    modelProbability: chosen.modelJoint, marketWinnerProbability: market, winnerOdds: winPrice.odds, decimalOdds: chosen.direct.odds, bookmaker: chosen.direct.bookmaker, priceKind: "DIRECT",
+    eloLongProbability: longProbability, eloFastProbability: fastProbability, eloWinnerProbability: blended, eloJointProbability: chosen.eloJoint,
+    eloLongHomeRating: elo.homeLongRating, eloLongAwayRating: elo.awayLongRating, eloFastHomeRating: elo.homeFastRating, eloFastAwayRating: elo.awayFastRating,
+    eloLongSample: longSample, eloFastSample: fastSample, modelExpectedValue: chosen.modelEv, eloExpectedValue: chosen.eloEv,
+    reason: `LONG a FAST Elo podporují ${winnerName}; blended edge proti odmarženému trhu je ${Math.round((blended - market) * 100)} p. b.`,
+    risk: chosen.modelEv < 0 ? "Hlavní gólový model má záporné EV; v experimentu je to viditelný rozpor, nikoli filtr." : "Elo měří výsledkovou sílu, nikoli sestavy ani aktuální kontext.",
+  };
+}
+
+export function rankEloCandidates(rows: IntuitionSource[]) {
+  return rows.flatMap((row) => [eloCandidateFor(row, "HOME"), eloCandidateFor(row, "AWAY")]).filter((x): x is IntuitionCandidate => x != null).sort((a, b) => b.score - a.score);
+}
+
+function assembleEloTickets(pool: IntuitionCandidate[]) {
+  const unique = [...new Map(pool.map((item) => [item.fixtureId, item])).values()].slice(0, 28);
+  const used = new Set<number>(), tickets: IntuitionTicket[] = [];
+  for (let slot = 1; slot <= 2; slot++) {
+    let best: { legs: IntuitionCandidate[]; odds: number; quality: number } | null = null;
+    const available = unique.filter((x) => !used.has(x.fixtureId));
+    const visit = (start: number, legs: IntuitionCandidate[]) => {
+      if (legs.length >= 3) {
+        const odds = legs.reduce((v, x) => v * x.decimalOdds!, 1);
+        if (odds >= TICKET_MIN_ODDS && odds <= TICKET_MAX_ODDS) {
+          const quality = legs.reduce((v, x) => v + x.score, 0) - Math.abs(Math.log(odds / 12)) * 4;
+          if (!best || quality > best.quality) best = { legs: [...legs], odds, quality };
+        }
+      }
+      if (legs.length === 4) return;
+      for (let i = start; i < available.length; i++) visit(i + 1, [...legs, available[i]]);
+    };
+    visit(0, []);
+    if (!best) break;
+    const selected = best as { legs: IntuitionCandidate[]; odds: number; quality: number };
+    selected.legs.forEach((leg) => used.add(leg.fixtureId));
+    tickets.push({ slot, dateKeys: [...new Set(selected.legs.map((x) => localDateKey(x.kickoff)))], odds: selected.odds, legs: selected.legs });
+  }
+  return tickets;
+}
+
 export function buildIntuitionTickets(rows: IntuitionSource[], requestedDate: string): IntuitionTicket[] {
   const ranked = rankIntuitionCandidates(rows);
   const firstDay = ranked.filter((item) => localDateKey(item.kickoff) === requestedDate);
   const sameDay = assembleTickets(firstDay);
   if (sameDay.length >= 2) return sameDay;
   const extended = assembleTickets(ranked);
+  return extended.length > sameDay.length ? extended : sameDay;
+}
+
+export function buildEloIntuitionTickets(rows: IntuitionSource[], requestedDate: string): IntuitionTicket[] {
+  const ranked = rankEloCandidates(rows);
+  const sameDay = assembleEloTickets(ranked.filter((item) => localDateKey(item.kickoff) === requestedDate));
+  if (sameDay.length >= 2) return sameDay;
+  const extended = assembleEloTickets(ranked);
   return extended.length > sameDay.length ? extended : sameDay;
 }

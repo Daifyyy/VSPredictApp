@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildIntuitionTickets, rankIntuitionCandidates, type IntuitionSource } from "./intuitionTickets";
+import { buildEloIntuitionTickets, buildIntuitionTickets, rankEloCandidates, rankIntuitionCandidates, type IntuitionSource } from "./intuitionTickets";
 
 const books = (home: number, away: number) => [{ id: 4, name: "Test", home, draw: 3.5, away, over25: 1.9, under25: 1.9, btts: 1.9, bttsNo: 1.9,
   resultTotals: [{ winner: "home", total: "over", line: 1.5, odds: home * 1.18 }, { winner: "away", total: "over", line: 1.5, odds: away * 1.18 }] }];
@@ -35,5 +35,23 @@ describe("intuition tickets", () => {
   it("extends to the next day only when the first day has fewer than three candidates", () => {
     const tickets = buildIntuitionTickets([row(1, "2026-09-12", .43, 3.4), row(2, "2026-09-12", .62, 1.8), row(3, "2026-09-13", .6, 1.9)], "2026-09-12");
     expect(tickets[0]?.dateKeys).toEqual(["2026-09-12", "2026-09-13"]);
+  });
+
+  it("accepts a Monaco-type direct candidate in ELO even when the main-model EV is negative", () => {
+    const source = row(20, "2026-09-12", .18, 3.4);
+    source.lambdaHome = .45; source.lambdaAway = 1.5;
+    source.elo = { homeLongRating: 1580, awayLongRating: 1510, homeFastRating: 1570, awayFastRating: 1515, homeLongSample: 20, awayLongSample: 20, homeFastSample: 12, awayFastSample: 12, homeProbability: .43, awayProbability: .20, longHomeProb: .44, longAwayProb: .20, fastHomeProb: .42, fastAwayProb: .20 };
+    const candidate = rankEloCandidates([source])[0];
+    expect(candidate).toMatchObject({ fixtureId: 20, winner: "HOME", role: "ELO", priceKind: "DIRECT" });
+    expect(candidate.modelExpectedValue).toBeLessThan(0);
+  });
+
+  it("ELO odmítá syntetickou cenu a drží unikátní fixtures mezi A/B", () => {
+    const rows = Array.from({ length: 7 }, (_, index) => { const source = row(30 + index, "2026-09-12", .2, 3.4); source.elo = { homeLongRating: 1600, awayLongRating: 1500, homeFastRating: 1590, awayFastRating: 1500, homeLongSample: 20, awayLongSample: 20, homeFastSample: 10, awayFastSample: 10, homeProbability: .46, awayProbability: .28, longHomeProb: .47, longAwayProb: .27, fastHomeProb: .45, fastAwayProb: .29 }; return source; });
+    rows[0].oddsBooks = [{ id: 4, name: "Test", home: 3.4, draw: 3.5, away: 4.5, matchTotals: [{ line: 1.5, over: 1.5, under: 4.2 }] }];
+    expect(rankEloCandidates([rows[0]])).toEqual([]);
+    const tickets = buildEloIntuitionTickets(rows.slice(1), "2026-09-12");
+    expect(tickets.every((ticket) => ticket.legs.length >= 3 && ticket.legs.length <= 4 && ticket.odds! >= 8 && ticket.odds! <= 30)).toBe(true);
+    expect(new Set(tickets.flatMap((ticket) => ticket.legs.map((leg) => leg.fixtureId))).size).toBe(tickets.flatMap((ticket) => ticket.legs).length);
   });
 });
