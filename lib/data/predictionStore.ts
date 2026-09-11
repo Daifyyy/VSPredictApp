@@ -352,8 +352,27 @@ export async function saveOdds(
       oddsUnder25: odds.under25 ?? null,
       oddsBttsNo: odds.bttsNo ?? null,
       // Všechny knihy z téže odpovědi → nejlepší cena + sharp konsenzus (0 volání navíc).
-      ...(odds.books ? { oddsBooks: odds.books as Prisma.InputJsonValue } : {}),
+      ...(odds.books ? {
+        oddsBooks: odds.books as Prisma.InputJsonValue,
+        oddsCurrentBooks: odds.books as Prisma.InputJsonValue,
+        oddsCurrentAt: new Date(),
+      } : {}),
       oddsFetchedAt: new Date(),
+    },
+  });
+}
+
+/** Refreshes the complete current offer without mutating the opening snapshot used for CLV. */
+export async function saveCurrentOddsBooks(
+  fixtureId: number,
+  books: unknown,
+  at: Date,
+): Promise<void> {
+  await prisma.fixturePrediction.update({
+    where: { fixtureId },
+    data: {
+      oddsCurrentBooks: books as Prisma.InputJsonValue,
+      oddsCurrentAt: at,
     },
   });
 }

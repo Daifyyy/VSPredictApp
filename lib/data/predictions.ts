@@ -54,6 +54,7 @@ import {
   hasBenchmark,
   saveBenchmark,
   saveOdds,
+  saveCurrentOddsBooks,
   saveClosingOdds,
   saveOddsSeries,
   fixturesNeedingOdds,
@@ -673,6 +674,8 @@ export async function runSnapshotOdds(
       if (plan.open) {
         await saveOdds(item.fixtureId, odds);
         open++;
+      } else if (odds.books?.length) {
+        await saveCurrentOddsBooks(item.fixtureId, odds.books, now);
       }
       if (plan.close) {
         await saveClosingOdds(item.fixtureId, now, odds);

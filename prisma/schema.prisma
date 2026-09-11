@@ -489,6 +489,11 @@ model FixturePrediction {
   // to, co už máme. Z toho se čte nejlepší cena (`bestPrice`) i sharp konsenzus
   // (`sharpFair`) – obojí čistou funkcí v `lib/picks/books.ts`.
   oddsBooks                Json?
+  // Latest complete offer from the most recent already-scheduled `/odds` fetch. Unlike
+  // the immutable opening snapshot this is refreshed for pricing intuition tickets.
+  // It reuses an existing response and therefore consumes no additional API calls.
+  oddsCurrentBooks         Json?
+  oddsCurrentAt            DateTime?
   oddsCloseBooks           Json?
   // Kandidát na zavírací linii: v posledních 3 h se přepisuje každým bodem řady, takže po
   // výkopu zůstane poslední úspěšný předvýkopový vzorek. Rozdíl proti prvnímu snímku je CLV

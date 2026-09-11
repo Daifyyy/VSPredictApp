@@ -17,6 +17,8 @@ import { describe, expect, it } from "vitest";
 
 const ROOT = process.cwd();
 const source = readFileSync(join(ROOT, "lib/data/predictions.ts"), "utf8");
+const storeSource = readFileSync(join(ROOT, "lib/data/predictionStore.ts"), "utf8");
+const intuitionSource = readFileSync(join(ROOT, "lib/data/intuitionTicketStore.ts"), "utf8");
 const workflow = readFileSync(join(ROOT, ".github/workflows/cron.yml"), "utf8");
 
 /** `export const ODDS_CLOSING_HOURS = 3;` → 3 */
@@ -66,6 +68,12 @@ describe("nastavení snímků kurzů", () => {
     expect(constantOf("ODDS_LOOKAHEAD_HOURS")).toBeGreaterThan(
       constantOf("ODDS_CLOSING_HOURS") * 5
     );
+  });
+
+  it("každý úspěšný fetch zpřístupní aktuální knihy pro ocenění tiketů", () => {
+    expect(storeSource).toContain("oddsCurrentBooks: odds.books as Prisma.InputJsonValue");
+    expect(source).toContain("await saveCurrentOddsBooks(item.fixtureId, odds.books, now)");
+    expect(intuitionSource).toContain("oddsBooks: oddsCurrentBooks ?? row.oddsBooks");
   });
 
   it("rozvrh ve workflow je opravdu zaregistrovaný v `schedule`", () => {

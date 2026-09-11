@@ -15,14 +15,18 @@ async function sources(windowKey: string, now: Date): Promise<IntuitionSource[]>
     select: { fixtureId: true },
   });
   const reservedIds = reserved.map((item) => item.fixtureId);
-  return prisma.fixturePrediction.findMany({
+  const rows = await prisma.fixturePrediction.findMany({
     where: {
       available: true, kickoff: { gte: start, lt: end }, leagueId: { in: [...FIXTURE_LIST_LEAGUE_IDS] },
       status: { notIn: ["PST", "CANC", "ABD"] }, ...(reservedIds.length ? { fixtureId: { notIn: reservedIds } } : {}),
     },
     orderBy: [{ kickoff: "asc" }, { fixtureId: "asc" }],
-    select: { fixtureId: true, leagueId: true, kickoff: true, homeName: true, awayName: true, homeWin: true, awayWin: true, lambdaHome: true, lambdaAway: true, lowConfidence: true, readinessSample: true, oddsBooks: true, homeGoals: true, awayGoals: true },
+    select: { fixtureId: true, leagueId: true, kickoff: true, homeName: true, awayName: true, homeWin: true, awayWin: true, lambdaHome: true, lambdaAway: true, lowConfidence: true, readinessSample: true, oddsBooks: true, oddsCurrentBooks: true, homeGoals: true, awayGoals: true },
   });
+  return rows.map(({ oddsCurrentBooks, ...row }) => ({
+    ...row,
+    oddsBooks: oddsCurrentBooks ?? row.oddsBooks,
+  }));
 }
 
 export async function previewIntuitionTickets(windowKey: string, now = new Date()) {
