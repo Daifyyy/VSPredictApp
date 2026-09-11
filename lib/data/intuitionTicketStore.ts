@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { localDateKey } from "@/lib/competitionGrouping";
 import { pragueDateBounds } from "@/lib/recentWindow";
-import { buildEloIntuitionTickets, buildIntuitionTickets, INTUITION_POLICY_VERSION, rankEloCandidates, rankIntuitionCandidates, type IntuitionSource, type IntuitionTicket } from "@/lib/picks/intuitionTickets";
+import { buildEloIntuitionTickets, buildIntuitionTickets, INTUITION_POLICY_VERSION, rankEloCandidates, rankEloDivergences, rankIntuitionCandidates, type IntuitionSource, type IntuitionTicket } from "@/lib/picks/intuitionTickets";
 import { CLUB_ELO_MODEL_VERSION } from "@/lib/picks/clubElo";
 import { FIXTURE_LIST_LEAGUE_IDS } from "./catalog";
 
@@ -65,6 +65,11 @@ export async function captureIntuitionTickets(fixtureId: number, at: Date): Prom
   if (!trigger || trigger.kickoff <= at) return 0;
   const windowKey = localDateKey(trigger.kickoff);
   const rows = await sources(windowKey);
+  const divergences = rankEloDivergences(rows);
+  if (divergences.length) await prisma.clubEloDivergence.createMany({
+    data: divergences.map((item) => ({ ...item, modelVersion: CLUB_ELO_MODEL_VERSION, policyVersion: INTUITION_POLICY_VERSION, observedAt: at })),
+    skipDuplicates: true,
+  });
   let saved = 0;
   for (const strategy of ["VALUE", "ELO_INTUITION"] as const) {
     if (await prisma.intuitionTicket.count({ where: { windowKey, strategy, policyVersion: INTUITION_POLICY_VERSION } })) continue;
@@ -92,6 +97,8 @@ export async function captureIntuitionTickets(fixtureId: number, at: Date): Prom
 
 export async function settleIntuitionTickets(fixtureId: number, homeGoals: number | null, awayGoals: number | null, at: Date) {
   if (homeGoals == null || awayGoals == null) return 0;
+  const divergences = await prisma.clubEloDivergence.findMany({ where: { fixtureId, settledAt: null }, select: { id: true, winner: true } });
+  for (const item of divergences) await prisma.clubEloDivergence.update({ where: { id: item.id }, data: { homeGoals, awayGoals, hit: item.winner === "HOME" ? homeGoals > awayGoals : awayGoals > homeGoals, settledAt: at } });
   const legs = await prisma.intuitionTicketLeg.findMany({ where: { fixtureId, settledAt: null }, select: { id: true, ticketId: true, winner: true, totalSide: true, totalLine: true } });
   for (const leg of legs) {
     const winnerHit = leg.winner === "HOME" ? homeGoals > awayGoals : awayGoals > homeGoals;

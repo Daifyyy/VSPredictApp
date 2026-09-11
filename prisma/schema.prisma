@@ -1309,6 +1309,37 @@ model ClubEloModelDefinition {
   activatedAt    DateTime?
 }
 
+/// ExtrĂ©mnĂ­ Elo rozpor proti shodÄ› trhu a hlavnĂ­ho modelu. Sleduje se, ale nejde do tiketu.
+model ClubEloDivergence {
+  id                       String    @id @default(cuid())
+  fixtureId                Int
+  leagueId                 Int
+  modelVersion             Int
+  policyVersion            Int
+  kickoff                  DateTime
+  homeName                 String
+  awayName                 String
+  winner                   String
+  winnerName               String
+  reason                   String
+  modelProbability         Float
+  marketProbability        Float
+  eloRawProbability        Float
+  eloCalibratedProbability Float
+  longProbability          Float
+  fastProbability          Float
+  rawEdge                  Float
+  observedAt               DateTime
+  homeGoals                Int?
+  awayGoals                Int?
+  hit                      Boolean?
+  settledAt                DateTime?
+
+  @@unique([fixtureId, modelVersion, policyVersion, winner])
+  @@index([policyVersion, kickoff])
+  @@index([settledAt, kickoff])
+}
+
 /// Anonymni diagnostika selhani PWA/app shellu. Neobsahuje URL parametry, session ani user-agent.
 model PwaDiagnostic {
   id         String   @id @default(cuid())

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildEloIntuitionTickets, buildIntuitionTickets, rankEloCandidates, rankIntuitionCandidates, type IntuitionSource } from "./intuitionTickets";
+import { buildEloIntuitionTickets, buildIntuitionTickets, rankEloCandidates, rankEloDivergences, rankIntuitionCandidates, type IntuitionSource } from "./intuitionTickets";
 
 const books = (home: number, away: number) => [{ id: 4, name: "Test", home, draw: 3.5, away, over25: 1.9, under25: 1.9, btts: 1.9, bttsNo: 1.9,
   resultTotals: [{ winner: "home", total: "over", line: 1.5, odds: home * 1.18 }, { winner: "away", total: "over", line: 1.5, odds: away * 1.18 }] }];
@@ -53,5 +53,14 @@ describe("intuition tickets", () => {
     const tickets = buildEloIntuitionTickets(rows.slice(1), "2026-09-12");
     expect(tickets.every((ticket) => ticket.legs.length >= 3 && ticket.legs.length <= 4 && ticket.odds! >= 8 && ticket.odds! <= 30)).toBe(true);
     expect(new Set(tickets.flatMap((ticket) => ticket.legs.map((leg) => leg.fixtureId))).size).toBe(tickets.flatMap((ticket) => ticket.legs).length);
+  });
+
+  it("Lazio-type extrém proti shodě trhu a modelu ukládá jako divergenci, ne kandidáta", () => {
+    const source = row(1550121, "2026-09-12", .2721, 3.4);
+    source.awayWin = .4628; source.lambdaHome = 1.0919; source.lambdaAway = 1.5012;
+    source.elo = { homeLongRating: 1653.17, awayLongRating: 1657.48, homeFastRating: 1638.18, awayFastRating: 1584.63, homeLongSample: 137, awayLongSample: 139, homeFastSample: 15.2, awayFastSample: 15.3, homeProbability: .4694, awayProbability: .2864, longHomeProb: .4435, longAwayProb: .3039, fastHomeProb: .5174, fastAwayProb: .2541 };
+    source.oddsBooks = books(3.4, 2.31);
+    expect(rankEloCandidates([source]).some((item) => item.winner === "HOME")).toBe(false);
+    expect(rankEloDivergences([source])).toMatchObject([{ fixtureId: 1550121, winner: "HOME", reason: "MARKET_AND_MODEL_OPPOSE_EXTREME_ELO" }]);
   });
 });

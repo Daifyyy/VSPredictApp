@@ -2,7 +2,7 @@ import { localDateKey } from "@/lib/competitionGrouping";
 import { drawTau, poissonVector } from "@/lib/stats/predict";
 import { bestLinePrice, bestPrice, bestResultTotalPrice, parseBooks, sharpFair, sharpLineFair } from "./books";
 
-export const INTUITION_POLICY_VERSION = 2;
+export const INTUITION_POLICY_VERSION = 3;
 
 const MIN_READINESS_SAMPLE = 6;
 const EXTREME_EDGE_SAMPLE = 8;
@@ -18,6 +18,8 @@ const SUPPORT_MIN_PROBABILITY = .48;
 const TICKET_MIN_ODDS = 8;
 const TICKET_MAX_ODDS = 30;
 const TICKET_MIN_EV = .10;
+const ELO_MARKET_WEIGHT = .30;
+const EXTREME_ELO_EDGE = .12;
 
 export type IntuitionSource = {
   fixtureId: number; leagueId: number; kickoff: Date; homeName: string; awayName: string;
@@ -43,6 +45,12 @@ export type IntuitionCandidate = {
 };
 
 export type IntuitionTicket = { slot: number; dateKeys: string[]; odds: number | null; legs: IntuitionCandidate[] };
+export type EloDivergence = {
+  fixtureId: number; leagueId: number; kickoff: Date; homeName: string; awayName: string;
+  winner: "HOME" | "AWAY"; winnerName: string; reason: "MARKET_AND_MODEL_OPPOSE_EXTREME_ELO";
+  modelProbability: number; marketProbability: number; eloRawProbability: number; eloCalibratedProbability: number;
+  longProbability: number; fastProbability: number; rawEdge: number;
+};
 
 export function scoreProbabilities(row: IntuitionSource, winner: "HOME" | "AWAY", total: "OVER" | "UNDER", line: number) {
   const ph = poissonVector(row.lambdaHome), pa = poissonVector(row.lambdaAway);
@@ -183,44 +191,57 @@ function assembleTickets(pool: IntuitionCandidate[]): IntuitionTicket[] {
   return tickets;
 }
 
-function eloCandidateFor(row: IntuitionSource, winner: "HOME" | "AWAY"): IntuitionCandidate | null {
+function evaluateElo(row: IntuitionSource, winner: "HOME" | "AWAY"): { candidate: IntuitionCandidate | null; divergence: EloDivergence | null } {
+  const none = { candidate: null, divergence: null };
   const elo = row.elo;
-  if (!elo) return null;
+  if (!elo) return none;
   const longSample = Math.min(elo.homeLongSample, elo.awayLongSample), fastSample = Math.min(elo.homeFastSample, elo.awayFastSample);
-  if (longSample < 10 || fastSample < 5) return null;
-  const books = parseBooks(row.oddsBooks), side = winner === "HOME" ? "home" : "away";
-  const market = sharpFair(books)?.[side] ?? null;
+  if (longSample < 10 || fastSample < 5) return none;
+  const books = parseBooks(row.oddsBooks), side = winner === "HOME" ? "home" : "away", opposite = winner === "HOME" ? "away" : "home";
+  const fair = sharpFair(books), market = fair?.[side] ?? null;
   const longProbability = winner === "HOME" ? elo.longHomeProb : elo.longAwayProb;
   const fastProbability = winner === "HOME" ? elo.fastHomeProb : elo.fastAwayProb;
   const blended = winner === "HOME" ? elo.homeProbability : elo.awayProbability;
-  if (market == null || !((longProbability >= market && fastProbability >= market && blended - market >= .03) || (longProbability - market >= .06 && fastProbability - market >= -.02))) return null;
+  if (market == null || !((longProbability >= market && fastProbability >= market && blended - market >= .03) || (longProbability - market >= .06 && fastProbability - market >= -.02))) return none;
   const winPrice = bestPrice(books, side);
-  if (!winPrice) return null;
+  if (!winPrice) return none;
+  const modelWin = winner === "HOME" ? row.homeWin : row.awayWin;
+  const modelOpposite = winner === "HOME" ? row.awayWin : row.homeWin;
+  const rawEdge = blended - market;
+  const calibrated = blended * (1 - ELO_MARKET_WEIGHT) + market * ELO_MARKET_WEIGHT;
+  const marketOpposes = fair?.[opposite] != null && market < fair[opposite]!;
+  if (marketOpposes && modelWin < modelOpposite && (rawEdge > EXTREME_ELO_EDGE || modelWin < market - .05)) {
+    return { candidate: null, divergence: { fixtureId: row.fixtureId, leagueId: row.leagueId, kickoff: row.kickoff, homeName: row.homeName, awayName: row.awayName, winner, winnerName: winner === "HOME" ? row.homeName : row.awayName, reason: "MARKET_AND_MODEL_OPPOSE_EXTREME_ELO", modelProbability: modelWin, marketProbability: market, eloRawProbability: blended, eloCalibratedProbability: calibrated, longProbability, fastProbability, rawEdge } };
+  }
   const options = ([{ total: "OVER", line: 1.5 }, { total: "UNDER", line: 4.5 }, { total: "UNDER", line: 5.5 }] as const).flatMap((option) => {
     const direct = bestResultTotalPrice(books, side, option.total.toLowerCase() as "over" | "under", option.line);
     if (!direct || direct.odds < 1.6 || direct.odds > 6) return [];
     const model = scoreProbabilities(row, winner, option.total, option.line);
     if (model.win <= 0) return [];
-    const eloJoint = blended * model.joint / model.win;
+    const eloJoint = calibrated * model.joint / model.win;
     return [{ ...option, direct, modelJoint: model.joint, eloJoint, eloEv: eloJoint * direct.odds - 1, modelEv: model.joint * direct.odds - 1 }];
   }).sort((a, b) => b.eloEv - a.eloEv);
   const chosen = options[0];
-  if (!chosen) return null;
+  if (!chosen) return none;
   const winnerName = winner === "HOME" ? row.homeName : row.awayName;
-  return {
+  return { divergence: null, candidate: {
     fixtureId: row.fixtureId, leagueId: row.leagueId, kickoff: row.kickoff, homeName: row.homeName, awayName: row.awayName,
-    winner, winnerName, total: chosen.total, line: chosen.line, role: "ELO", score: chosen.eloEv * 80 + blended * 50 + Math.min(longSample, 30) / 3,
+    winner, winnerName, total: chosen.total, line: chosen.line, role: "ELO", score: chosen.eloEv * 80 + calibrated * 50 + Math.min(longSample, 30) / 3,
     modelProbability: chosen.modelJoint, marketWinnerProbability: market, winnerOdds: winPrice.odds, decimalOdds: chosen.direct.odds, bookmaker: chosen.direct.bookmaker, priceKind: "DIRECT",
-    eloLongProbability: longProbability, eloFastProbability: fastProbability, eloWinnerProbability: blended, eloJointProbability: chosen.eloJoint,
+    eloLongProbability: longProbability, eloFastProbability: fastProbability, eloWinnerProbability: calibrated, eloJointProbability: chosen.eloJoint,
     eloLongHomeRating: elo.homeLongRating, eloLongAwayRating: elo.awayLongRating, eloFastHomeRating: elo.homeFastRating, eloFastAwayRating: elo.awayFastRating,
     eloLongSample: longSample, eloFastSample: fastSample, modelExpectedValue: chosen.modelEv, eloExpectedValue: chosen.eloEv,
-    reason: `LONG a FAST Elo podporují ${winnerName}; blended edge proti odmarženému trhu je ${Math.round((blended - market) * 100)} p. b.`,
+    reason: `LONG a FAST Elo podporují ${winnerName}; po kalibraci směrem k trhu je edge ${Math.round((calibrated - market) * 100)} p. b.`,
     risk: chosen.modelEv < 0 ? "Hlavní gólový model má záporné EV; v experimentu je to viditelný rozpor, nikoli filtr." : "Elo měří výsledkovou sílu, nikoli sestavy ani aktuální kontext.",
-  };
+  } };
 }
 
 export function rankEloCandidates(rows: IntuitionSource[]) {
-  return rows.flatMap((row) => [eloCandidateFor(row, "HOME"), eloCandidateFor(row, "AWAY")]).filter((x): x is IntuitionCandidate => x != null).sort((a, b) => b.score - a.score);
+  return rows.flatMap((row) => [evaluateElo(row, "HOME").candidate, evaluateElo(row, "AWAY").candidate]).filter((x): x is IntuitionCandidate => x != null).sort((a, b) => b.score - a.score);
+}
+
+export function rankEloDivergences(rows: IntuitionSource[]) {
+  return rows.flatMap((row) => [evaluateElo(row, "HOME").divergence, evaluateElo(row, "AWAY").divergence]).filter((x): x is EloDivergence => x != null).sort((a, b) => b.rawEdge - a.rawEdge);
 }
 
 function assembleEloTickets(pool: IntuitionCandidate[]) {
