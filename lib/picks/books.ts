@@ -49,6 +49,7 @@ export function parseBooks(value: unknown): BookOdds[] {
     const cards = parseLines(b.cards);
     const totalHome = parseLines(b.totalHome);
     const totalAway = parseLines(b.totalAway);
+    const resultTotals = parseResultTotals(b.resultTotals);
     out.push({
       id: typeof b.id === "number" ? b.id : 0,
       name: b.name,
@@ -59,6 +60,7 @@ export function parseBooks(value: unknown): BookOdds[] {
       under25: num("under25"),
       btts: num("btts"),
       bttsNo: num("bttsNo"),
+      ...(resultTotals.length ? { resultTotals } : {}),
       ...(corners.length ? { corners } : {}),
       ...(cards.length ? { cards } : {}),
       ...(totalHome.length ? { totalHome } : {}),
@@ -66,6 +68,30 @@ export function parseBooks(value: unknown): BookOdds[] {
     });
   }
   return out;
+}
+
+function parseResultTotals(value: unknown): NonNullable<BookOdds["resultTotals"]> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((raw) => {
+    if (typeof raw !== "object" || raw === null) return [];
+    const item = raw as Record<string, unknown>;
+    if ((item.winner !== "home" && item.winner !== "away") || (item.total !== "over" && item.total !== "under") || typeof item.line !== "number" || typeof item.odds !== "number" || item.odds <= 1) return [];
+    return [{ winner: item.winner, total: item.total, line: item.line, odds: item.odds }];
+  });
+}
+
+export function bestResultTotalPrice(
+  books: BookOdds[], winner: "home" | "away", total: "over" | "under", line: number
+): BestPrice | null {
+  let best: BestPrice | null = null;
+  let count = 0;
+  for (const book of books) {
+    const quote = book.resultTotals?.find((item) => item.winner === winner && item.total === total && item.line === line);
+    if (!quote) continue;
+    count++;
+    if (!best || quote.odds > best.odds) best = { odds: quote.odds, bookmaker: book.name, books: 0 };
+  }
+  return best ? { ...best, books: count } : null;
 }
 
 /** Linky trhu z JSON (stejná obranná logika jako `parseBooks`). */

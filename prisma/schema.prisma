@@ -46,23 +46,23 @@ model CronRun {
 /// Neměnný bod živého průběhu. Nikdy se nemíchá do MatchStatCache, která smí obsahovat
 /// pouze definitivní pozápasové statistiky.
 model LiveMatchSnapshot {
-  id          String   @id @default(cuid())
-  fixtureId   Int
-  leagueId    Int
-  observedAt  DateTime
-  minute      Int?
-  status      String
-  homeGoals   Int?
-  awayGoals   Int?
-  homeTeamId  Int
-  awayTeamId  Int
-  venueId     Int?
-  venueName   String?
-  homeStats   Json?
-  awayStats   Json?
-  events      Json?
-  sourceAt    DateTime?
-  createdAt   DateTime @default(now())
+  id         String    @id @default(cuid())
+  fixtureId  Int
+  leagueId   Int
+  observedAt DateTime
+  minute     Int?
+  status     String
+  homeGoals  Int?
+  awayGoals  Int?
+  homeTeamId Int
+  awayTeamId Int
+  venueId    Int?
+  venueName  String?
+  homeStats  Json?
+  awayStats  Json?
+  events     Json?
+  sourceAt   DateTime?
+  createdAt  DateTime  @default(now())
 
   @@unique([fixtureId, observedAt])
   @@index([fixtureId, observedAt])
@@ -72,7 +72,7 @@ model LiveMatchSnapshot {
 /// Live ceny mají jiný katalog trhů než předzápasové /odds. Jeden řádek je přesná
 /// strana a linie jedné sázkovky v jednom zdrojovém okamžiku.
 model LiveOddsSnapshot {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   fixtureId   Int
   observedAt  DateTime
   bookmakerId Int?
@@ -83,29 +83,29 @@ model LiveOddsSnapshot {
   line        Float?
   lineKey     String
   decimalOdds Float
-  main        Boolean  @default(false)
-  blocked     Boolean  @default(false)
-  stopped     Boolean  @default(false)
+  main        Boolean   @default(false)
+  blocked     Boolean   @default(false)
+  stopped     Boolean   @default(false)
   sourceAt    DateTime?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
 
   @@unique([fixtureId, observedAt, bookmaker, marketId, side, lineKey])
   @@index([fixtureId, market, observedAt])
 }
 
 model LiveModelSnapshot {
-  id            String   @id @default(cuid())
-  fixtureId     Int
-  matchSnapshotId String
-  calculatedAt  DateTime
-  minute        Int
-  modelVersion  Int
-  probabilities Json
+  id                  String   @id @default(cuid())
+  fixtureId           Int
+  matchSnapshotId     String
+  calculatedAt        DateTime
+  minute              Int
+  modelVersion        Int
+  probabilities       Json
   remainingLambdaHome Float
   remainingLambdaAway Float
-  inputs        Json
-  lowConfidence Boolean @default(true)
-  createdAt     DateTime @default(now())
+  inputs              Json
+  lowConfidence       Boolean  @default(true)
+  createdAt           DateTime @default(now())
 
   @@unique([matchSnapshotId, modelVersion])
   @@index([fixtureId, calculatedAt])
@@ -132,20 +132,20 @@ model LiveCandidateSnapshot {
   scoreAway         Int
   modelProbability  Float
   marketProbability Float
-  edge               Float
-  expectedValue      Float
-  decimalOdds        Float
-  bookmaker          String
-  qualifiedAt        DateTime
-  reason             String
-  stake              Float     @default(1)
-  settlementStatus   String    @default("PENDING")
-  hit                 Boolean?
-  profit              Float?
-  settledAt           DateTime?
-  modelSnapshotId     String
-  oddsSnapshotId      String
-  createdAt           DateTime @default(now())
+  edge              Float
+  expectedValue     Float
+  decimalOdds       Float
+  bookmaker         String
+  qualifiedAt       DateTime
+  reason            String
+  stake             Float     @default(1)
+  settlementStatus  String    @default("PENDING")
+  hit               Boolean?
+  profit            Float?
+  settledAt         DateTime?
+  modelSnapshotId   String
+  oddsSnapshotId    String
+  createdAt         DateTime  @default(now())
 
   @@unique([fixtureId, market, policyVersion])
   @@index([market, qualifiedAt])
@@ -171,15 +171,15 @@ model LiveFixtureWatch {
 /// Dlouhodobě cacheované přesné místo utkání. Fixture může být na neutrální půdě,
 /// proto se obrázek nikdy nesmí slepě převzít od domácího klubu.
 model VenueCache {
-  venueId    Int      @id
-  name       String?
-  address    String?
-  city       String?
-  capacity   Int?
-  surface    String?
-  imageUrl   String?
-  fetchedAt  DateTime
-  updatedAt  DateTime @updatedAt
+  venueId   Int      @id
+  name      String?
+  address   String?
+  city      String?
+  capacity  Int?
+  surface   String?
+  imageUrl  String?
+  fetchedAt DateTime
+  updatedAt DateTime @updatedAt
 }
 
 /// Provozní problém odvozený z měřitelných podmínek. Fingerprint zajišťuje, že
@@ -311,7 +311,7 @@ model User {
   pushSubscriptions      PushSubscription[]
   notificationPreference NotificationPreference?
   notificationDeliveries NotificationDelivery[]
-  liveFixtureWatches      LiveFixtureWatch[]
+  liveFixtureWatches     LiveFixtureWatch[]
 }
 
 model Account {
@@ -857,24 +857,24 @@ model CalibrationShadowPrediction {
 /// Deklarovana dostupnost upstream dat pro konkretni soutez a sezonu. Planovac podle ni
 /// rozlisuje nepodporovana data od skutecneho vypadku.
 model LeagueDataCoverage {
-  id               String   @id @default(cuid())
-  leagueId         Int
-  season           Int
-  modelContext     String
-  events           Boolean  @default(false)
-  lineups          Boolean  @default(false)
-  fixtureStats     Boolean  @default(false)
-  playerStats      Boolean  @default(false)
-  standings        Boolean  @default(false)
-  injuries         Boolean  @default(false)
-  predictions      Boolean  @default(false)
-  prematchOdds     Boolean  @default(false)
-  liveOdds         Boolean  @default(false)
-  status           String   @default("NOT_YET_AVAILABLE")
-  sourceVersion    Int      @default(1)
-  verifiedAt       DateTime
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id            String   @id @default(cuid())
+  leagueId      Int
+  season        Int
+  modelContext  String
+  events        Boolean  @default(false)
+  lineups       Boolean  @default(false)
+  fixtureStats  Boolean  @default(false)
+  playerStats   Boolean  @default(false)
+  standings     Boolean  @default(false)
+  injuries      Boolean  @default(false)
+  predictions   Boolean  @default(false)
+  prematchOdds  Boolean  @default(false)
+  liveOdds      Boolean  @default(false)
+  status        String   @default("NOT_YET_AVAILABLE")
+  sourceVersion Int      @default(1)
+  verifiedAt    DateTime
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@unique([leagueId, season, sourceVersion])
   @@index([modelContext, status, verifiedAt])
@@ -883,22 +883,22 @@ model LeagueDataCoverage {
 /// Audit kaĹľdĂ©ho pokusu personĂˇlnĂ­ pipeline. PrĂˇzdnĂˇ odpovÄ›ÄŹ je platnĂ˝ vĂ˝sledek,
 /// nikoliv neviditelnĂ© selhĂˇnĂ­; `attemptKey` zajiĹˇĹĄuje idempotenci opakovanĂ©ho cronu.
 model PersonnelFetchAttempt {
-  id          String   @id @default(cuid())
-  attemptKey  String   @unique
-  dataType    String
-  endpoint    String
-  status      String
-  fixtureId   Int?
-  leagueId    Int?
-  teamId      Int?
-  season      Int?
-  rowCount    Int?
-  durationMs  Int?
-  errorCode   String?
+  id           String   @id @default(cuid())
+  attemptKey   String   @unique
+  dataType     String
+  endpoint     String
+  status       String
+  fixtureId    Int?
+  leagueId     Int?
+  teamId       Int?
+  season       Int?
+  rowCount     Int?
+  durationMs   Int?
+  errorCode    String?
   errorMessage String?
-  details     Json?
-  attemptedAt DateTime
-  createdAt   DateTime @default(now())
+  details      Json?
+  attemptedAt  DateTime
+  createdAt    DateTime @default(now())
 
   @@index([dataType, status, attemptedAt])
   @@index([fixtureId, dataType, attemptedAt])
@@ -907,7 +907,7 @@ model PersonnelFetchAttempt {
 
 /// Point-in-time absence vztazena ke konkretnimu zapasu. Radek se nikdy neprepisuje.
 model FixtureAvailabilitySnapshot {
-  id                   String   @id @default(cuid())
+  id                   String    @id @default(cuid())
   fixtureId            Int
   kickoff              DateTime
   teamId               Int
@@ -919,8 +919,8 @@ model FixtureAvailabilitySnapshot {
   sourceKind           String
   sourceAt             DateTime?
   capturedAt           DateTime
-  normalizationVersion Int      @default(1)
-  createdAt            DateTime @default(now())
+  normalizationVersion Int       @default(1)
+  createdAt            DateTime  @default(now())
 
   @@unique([fixtureId, teamId, playerName, availabilityType, capturedAt])
   @@index([fixtureId, capturedAt])
@@ -928,7 +928,7 @@ model FixtureAvailabilitySnapshot {
 }
 
 model FixtureLineupSnapshot {
-  id            String   @id @default(cuid())
+  id            String                @id @default(cuid())
   fixtureId     Int
   kickoff       DateTime
   teamId        Int
@@ -938,10 +938,10 @@ model FixtureLineupSnapshot {
   coachName     String?
   publishedAt   DateTime?
   capturedAt    DateTime
-  parserVersion Int      @default(1)
-  completeness  Float    @default(0)
-  sourceKind    String   @default("PROSPECTIVE")
-  createdAt     DateTime @default(now())
+  parserVersion Int                   @default(1)
+  completeness  Float                 @default(0)
+  sourceKind    String                @default("PROSPECTIVE")
+  createdAt     DateTime              @default(now())
   players       FixtureLineupPlayer[]
 
   @@unique([fixtureId, teamId, capturedAt])
@@ -950,7 +950,7 @@ model FixtureLineupSnapshot {
 }
 
 model FixtureLineupPlayer {
-  id             String   @id @default(cuid())
+  id             String                @id @default(cuid())
   snapshotId     String
   playerId       Int?
   playerName     String
@@ -958,8 +958,8 @@ model FixtureLineupPlayer {
   position       String?
   shirtNumber    Int?
   sourceOrder    Int
-  expectedPlayer Boolean  @default(false)
-  createdAt      DateTime @default(now())
+  expectedPlayer Boolean               @default(false)
+  createdAt      DateTime              @default(now())
   snapshot       FixtureLineupSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
 
   @@unique([snapshotId, role, sourceOrder])
@@ -969,7 +969,7 @@ model FixtureLineupPlayer {
 /// Prospektivni hracsky profil. `metrics` zachovava nullable pole poskytovatele bez
 /// predstirani nul a umozni rozsirit audit bez zpetne zmeny starsich snapshotu.
 model PlayerSeasonSnapshot {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   playerId      Int
   playerName    String
   teamId        Int
@@ -993,16 +993,16 @@ model PlayerSeasonSnapshot {
   metrics       Json?
   sourceAt      DateTime?
   capturedAt    DateTime
-  parserVersion Int      @default(1)
-  completeness  Float    @default(0)
-  createdAt     DateTime @default(now())
+  parserVersion Int       @default(1)
+  completeness  Float     @default(0)
+  createdAt     DateTime  @default(now())
 
   @@unique([playerId, teamId, leagueId, season, capturedAt])
   @@index([teamId, leagueId, season, capturedAt])
 }
 
 model PlayerMatchSnapshot {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   fixtureId     Int
   playerId      Int
   playerName    String
@@ -1028,9 +1028,9 @@ model PlayerMatchSnapshot {
   metrics       Json?
   sourceAt      DateTime?
   capturedAt    DateTime
-  parserVersion Int      @default(1)
-  completeness  Float    @default(0)
-  createdAt     DateTime @default(now())
+  parserVersion Int       @default(1)
+  completeness  Float     @default(0)
+  createdAt     DateTime  @default(now())
 
   @@unique([fixtureId, playerId])
   @@index([teamId, capturedAt])
@@ -1038,31 +1038,31 @@ model PlayerMatchSnapshot {
 }
 
 model FixturePersonnelFeatures {
-  id                    String   @id @default(cuid())
-  fixtureId             Int
-  teamId                Int
-  kickoff               DateTime
-  lineupSnapshotId      String?
+  id                     String    @id @default(cuid())
+  fixtureId              Int
+  teamId                 Int
+  kickoff                DateTime
+  lineupSnapshotId       String?
   availabilityCapturedAt DateTime?
-  calculatedAt          DateTime
-  featureVersion        Int      @default(1)
-  lineupChanges         Int?
-  regularStarters       Int?
-  defenseContinuity     Float?
-  goalkeeperContinuity  Boolean?
-  sharedMinutesRatio    Float?
-  formationChanged      Boolean?
-  coachChangedRecently  Boolean?
-  coachMatches          Int?
-  startingStrength      Float?
-  benchStrength         Float?
-  strengthLoss          Float?
-  missingGoalkeeper     Boolean?
-  missingKeyScorer      Boolean?
-  importantAbsences     Int?
-  completeness          Float
-  features              Json
-  createdAt             DateTime @default(now())
+  calculatedAt           DateTime
+  featureVersion         Int       @default(1)
+  lineupChanges          Int?
+  regularStarters        Int?
+  defenseContinuity      Float?
+  goalkeeperContinuity   Boolean?
+  sharedMinutesRatio     Float?
+  formationChanged       Boolean?
+  coachChangedRecently   Boolean?
+  coachMatches           Int?
+  startingStrength       Float?
+  benchStrength          Float?
+  strengthLoss           Float?
+  missingGoalkeeper      Boolean?
+  missingKeyScorer       Boolean?
+  importantAbsences      Int?
+  completeness           Float
+  features               Json
+  createdAt              DateTime  @default(now())
 
   @@unique([fixtureId, teamId, featureVersion, calculatedAt])
   @@index([fixtureId, calculatedAt])
@@ -1097,7 +1097,7 @@ model ShadowForecastSnapshot {
 }
 
 model ShadowModelReport {
-  id                 String   @id @default(cuid())
+  id                 String    @id @default(cuid())
   shadowModelVersion Int
   datasetCutoff      DateTime
   sampleSize         Int
@@ -1107,7 +1107,7 @@ model ShadowModelReport {
   gates              Json
   coefficients       Json?
   recommendation     String
-  createdAt          DateTime @default(now())
+  createdAt          DateTime  @default(now())
 
   @@unique([shadowModelVersion, datasetCutoff])
   @@index([createdAt])
@@ -1163,6 +1163,56 @@ model QuickOverviewSelection {
   @@index([category, policyVersion, qualifiedAt])
   @@index([settledAt])
   @@index([leagueId, kickoff])
+}
+
+/// Neměnný experimentální akumulátor sestavený pouze z předzápasových snapshotů.
+model IntuitionTicket {
+  id            String               @id @default(cuid())
+  windowKey     String
+  slot          Int
+  policyVersion Int                  @default(1)
+  status        String               @default("LOCKED")
+  combinedOdds  Float?
+  generatedAt   DateTime
+  lockedAt      DateTime
+  settledAt     DateTime?
+  hit           Boolean?
+  profit        Float?
+  legs          IntuitionTicketLeg[]
+
+  @@unique([windowKey, slot, policyVersion])
+  @@index([status, lockedAt])
+}
+
+model IntuitionTicketLeg {
+  id                      String          @id @default(cuid())
+  ticketId                String
+  fixtureId               Int
+  leagueId                Int
+  kickoff                 DateTime
+  homeName                String
+  awayName                String
+  winner                  String
+  winnerName              String
+  totalSide               String
+  totalLine               Float
+  role                    String
+  score                   Float
+  modelProbability        Float
+  marketWinnerProbability Float?
+  winnerOdds              Float?
+  decimalOdds             Float?
+  bookmaker               String?
+  reason                  String
+  risk                    String
+  homeGoals               Int?
+  awayGoals               Int?
+  hit                     Boolean?
+  settledAt               DateTime?
+  ticket                  IntuitionTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@unique([ticketId, fixtureId])
+  @@index([fixtureId])
 }
 
 /// Anonymni diagnostika selhani PWA/app shellu. Neobsahuje URL parametry, session ani user-agent.

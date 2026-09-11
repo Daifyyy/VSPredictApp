@@ -663,6 +663,8 @@ export interface BookOdds {
   under25: number | null;
   btts: number | null;
   bttsNo: number | null;
+  /** Přímý bookmaker trh „výsledek zápasu + celkový počet gólů“. */
+  resultTotals?: ResultTotalOdds[];
   /**
    * Rohy Over/Under. **Pole, ne jedna hodnota** – knihy nabízejí RŮZNÉ linie (9.5, 10.5,
    * 11.5, někdy i čtvrtinové 10.25) a porovnávat kurz na 10.5 s kurzem na 11.5 by byla
@@ -750,6 +752,13 @@ export function fetchOddsRaw(fixture: number) {
   return apiGet("/odds", { fixture }, oddsSchema);
 }
 
+export interface ResultTotalOdds {
+  winner: "home" | "away";
+  total: "over" | "under";
+  line: number;
+  odds: number;
+}
+
 export function fetchVenue(venue: number) {
   return apiGet("/venues", { id: venue }, venueSchema);
 }
@@ -788,6 +797,7 @@ export async function fetchOdds(
         b.home != null ||
         b.over25 != null ||
         b.btts != null ||
+        b.resultTotals?.length ||
         b.corners?.length ||
         b.cards?.length ||
         b.totalHome?.length ||
@@ -800,6 +810,7 @@ export async function fetchOdds(
     out.home == null &&
     out.over25 == null &&
     out.btts == null &&
+    !out.books?.some((b) => b.resultTotals?.length) &&
     !out.books?.some(
       (b) => b.corners?.length || b.cards?.length || b.totalHome?.length || b.totalAway?.length
     )
@@ -942,6 +953,26 @@ function lineOddsOf(
   return [...byLine.values()].sort((a, b) => a.line - b.line);
 }
 
+function resultTotalOddsOf(
+  bets: { id: number; name?: string; values: { value: string; odd: string }[] }[]
+): ResultTotalOdds[] {
+  const result: ResultTotalOdds[] = [];
+  for (const bet of bets) {
+    const name = bet.name ?? "";
+    if (!/(result|winner|match).*(total|goal)|(?:total|goal).*(result|winner|match)|home.*away.*over.*under/i.test(name)) continue;
+    for (const value of bet.values) {
+      const normalized = value.value.replace(/[_-]/g, " ").trim();
+      const winner = /\bhome\b/i.test(normalized) ? "home" : /\baway\b/i.test(normalized) ? "away" : null;
+      const total = /\bover\b/i.test(normalized) ? "over" : /\bunder\b/i.test(normalized) ? "under" : null;
+      const lineMatch = /(?:over|under)\s*(\d+(?:\.\d+)?)/i.exec(normalized);
+      const odds = Number(value.odd);
+      if (!winner || !total || !lineMatch || !Number.isFinite(odds) || odds <= 1) continue;
+      result.push({ winner, total, line: Number(lineMatch[1]), odds });
+    }
+  }
+  return [...new Map(result.map((item) => [`${item.winner}:${item.total}:${item.line}`, item])).values()];
+}
+
 /**
  * Jedna sázkovka z odpovědi `/odds` na náš tvar (1X2 + total 2.5 + BTTS + rohy + karty
  * + týmové totaly). **Exportováno pro testy** – je to jediné místo, kde se trhy podle
@@ -961,6 +992,7 @@ export function bookOddsOf(book: {
   const cards = lineOddsOf(book.bets, isCardBet);
   const totalHome = lineOddsOf(book.bets, (b) => teamTotalSide(b) === "home");
   const totalAway = lineOddsOf(book.bets, (b) => teamTotalSide(b) === "away");
+  const resultTotals = resultTotalOddsOf(book.bets);
   return {
     id: book.id,
     name: book.name,
@@ -971,6 +1003,7 @@ export function bookOddsOf(book: {
     under25: oddOf(goals, "Under 2.5"),
     btts: oddOf(btts, "Yes"),
     bttsNo: oddOf(btts, "No"),
+    ...(resultTotals.length ? { resultTotals } : {}),
     ...(corners.length ? { corners } : {}),
     ...(cards.length ? { cards } : {}),
     ...(totalHome.length ? { totalHome } : {}),

@@ -405,7 +405,9 @@ export async function refreshDailyPlayerProfiles(input: { limit?: number; cursor
   const limit = Math.min(4, Math.max(1, input.limit ?? 2));
   const cursor = Math.max(0, input.cursor ?? 0);
   const fixtures = await prisma.fixturePrediction.findMany({
-    where: { modelContext: "LEAGUE", leagueId: { in: [...PUBLIC_CLUB_LEAGUE_IDS] }, kickoff: { gt: now, lte: new Date(now.getTime() + 7 * 86_400_000) } },
+    // This is an on-demand diagnostic refresh. Keep it focused on teams whose
+    // profiles can be used by the near-term personnel shadow pipeline.
+    where: { modelContext: "LEAGUE", leagueId: { in: [...PUBLIC_CLUB_LEAGUE_IDS] }, kickoff: { gt: now, lte: new Date(now.getTime() + 48 * 60 * 60_000) } },
     orderBy: [{ kickoff: "asc" }, { fixtureId: "asc" }],
     select: { leagueId: true, season: true, homeTeamId: true, awayTeamId: true },
   });

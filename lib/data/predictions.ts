@@ -88,6 +88,7 @@ import { captureAutonomousPortfolio, closeAutonomousPortfolio, settleAutonomousC
 import { captureQuickOverviewDay, closeQuickOverviewSelections, settleQuickOverviewSelections } from "./quickOverviewStore";
 import { invalidateCachedJson } from "./cache";
 import { captureCalibrationShadows } from "./calibrationShadowStore";
+import { captureIntuitionTickets, settleIntuitionTickets } from "./intuitionTicketStore";
 
 /**
  * Orchestrace predikční pipeline (běží jen na pozadí / cron, real data).
@@ -693,6 +694,7 @@ export async function runSnapshotOdds(
       }
       autonomousCandidates += await captureAutonomousPortfolio(item.fixtureId, odds.books ?? [], now);
       await captureQuickOverviewDay(item.fixtureId, odds.books ?? [], now);
+      await captureIntuitionTickets(item.fixtureId, now);
       // Kandidat muze poprve vzniknout prave v zaviracim bode; nejdriv jej zmrazime a az
       // potom k nemu pripojime srovnatelne uzavreni stejne strany/linie.
       if (plan.close) {
@@ -803,6 +805,12 @@ export async function runSettleResults(): Promise<{
       } catch (error) {
         errors++;
         logError("predictions.runSettleResults.quickOverview", error, { fixtureId: f.fixture.id });
+      }
+      try {
+        await settleIntuitionTickets(f.fixture.id, ft?.home ?? null, ft?.away ?? null, new Date());
+      } catch (error) {
+        errors++;
+        logError("predictions.runSettleResults.intuitionTickets", error, { fixtureId: f.fixture.id });
       }
       try {
         await settleAutonomousCountPortfolio(f.fixture.id, new Date());

@@ -23,6 +23,7 @@ import { InstallLink } from "./InstallLink";
 import { preferredProgramDayIndex } from "@/lib/homeDashboard";
 import { FixtureModelCard } from "./FixtureModelCard";
 import { QuickMatchOverview } from "./QuickMatchOverview";
+import { IntuitionTickets } from "./IntuitionTickets";
 import { chooseFeaturedFixture } from "@/lib/homeFeaturedFixture";
 import { competitionGroupLabel, groupCompetitionFixtures, localDateKey } from "@/lib/competitionGrouping";
 import { MatchCenter } from "./MatchCenter";
@@ -687,6 +688,7 @@ export function ZapasyApp({
           />
 
           <QuickMatchOverview date={active?.date ?? null} user={user} compact />
+          <IntuitionTickets date={active?.date ?? null} />
 
           {proCta && (
             <ProCtaBanner
