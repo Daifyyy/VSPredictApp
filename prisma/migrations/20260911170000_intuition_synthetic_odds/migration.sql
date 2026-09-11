@@ -1,0 +1,2 @@
+ALTER TABLE "IntuitionTicket" ADD COLUMN "priceKind" TEXT NOT NULL DEFAULT 'NONE';
+ALTER TABLE "IntuitionTicketLeg" ADD COLUMN "priceKind" TEXT NOT NULL DEFAULT 'NONE';

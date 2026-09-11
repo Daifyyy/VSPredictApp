@@ -32,7 +32,7 @@ export async function previewIntuitionTickets(windowKey: string, now = new Date(
   if (frozen.length) return { frozen: true, tickets: frozen };
   const tickets = buildIntuitionTickets(await sources(windowKey, now), windowKey);
   return { frozen: false, tickets: tickets.map((ticket) => ({
-    slot: ticket.slot, status: "DRAFT", combinedOdds: ticket.odds, generatedAt: now, lockedAt: null, hit: null, profit: null, settledAt: null,
+    slot: ticket.slot, status: "DRAFT", combinedOdds: ticket.odds, priceKind: ticket.legs.every((leg) => leg.priceKind === "DIRECT") ? "DIRECT" : ticket.odds == null ? "NONE" : "SYNTHETIC", generatedAt: now, lockedAt: null, hit: null, profit: null, settledAt: null,
     legs: ticket.legs.map((leg) => ({ ...leg, totalSide: leg.total, totalLine: leg.line, hit: null, homeGoals: null, awayGoals: null, settledAt: null })),
   })) };
 }
@@ -48,13 +48,13 @@ export async function captureIntuitionTickets(fixtureId: number, at: Date): Prom
   const firstKickoff = Math.min(...tickets.flatMap((ticket) => ticket.legs.map((leg) => leg.kickoff.getTime())));
   if (firstKickoff - at.getTime() > LOCK_MINUTES * 60_000) return 0;
   await prisma.$transaction(tickets.map((ticket) => prisma.intuitionTicket.create({ data: {
-    windowKey, slot: ticket.slot, policyVersion: INTUITION_POLICY_VERSION, status: "LOCKED", combinedOdds: ticket.odds,
+    windowKey, slot: ticket.slot, policyVersion: INTUITION_POLICY_VERSION, status: "LOCKED", combinedOdds: ticket.odds, priceKind: ticket.legs.every((leg) => leg.priceKind === "DIRECT") ? "DIRECT" : ticket.odds == null ? "NONE" : "SYNTHETIC",
     generatedAt: at, lockedAt: at,
     legs: { create: ticket.legs.map((leg) => ({
       fixtureId: leg.fixtureId, leagueId: leg.leagueId, kickoff: leg.kickoff, homeName: leg.homeName, awayName: leg.awayName,
       winner: leg.winner, winnerName: leg.winnerName, totalSide: leg.total, totalLine: leg.line, role: leg.role,
       score: leg.score, modelProbability: leg.modelProbability, marketWinnerProbability: leg.marketWinnerProbability,
-      winnerOdds: leg.winnerOdds, decimalOdds: leg.decimalOdds, bookmaker: leg.bookmaker, reason: leg.reason, risk: leg.risk,
+      winnerOdds: leg.winnerOdds, decimalOdds: leg.decimalOdds, bookmaker: leg.bookmaker, priceKind: leg.priceKind, reason: leg.reason, risk: leg.risk,
     })) },
   } })));
   return tickets.length;

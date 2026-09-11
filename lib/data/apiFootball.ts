@@ -665,6 +665,8 @@ export interface BookOdds {
   bttsNo: number | null;
   /** Přímý bookmaker trh „výsledek zápasu + celkový počet gólů“. */
   resultTotals?: ResultTotalOdds[];
+  /** Všechny dostupné linky celkového počtu gólů v zápase. */
+  matchTotals?: LineOdds[];
   /**
    * Rohy Over/Under. **Pole, ne jedna hodnota** – knihy nabízejí RŮZNÉ linie (9.5, 10.5,
    * 11.5, někdy i čtvrtinové 10.25) a porovnávat kurz na 10.5 s kurzem na 11.5 by byla
@@ -798,6 +800,7 @@ export async function fetchOdds(
         b.over25 != null ||
         b.btts != null ||
         b.resultTotals?.length ||
+        b.matchTotals?.length ||
         b.corners?.length ||
         b.cards?.length ||
         b.totalHome?.length ||
@@ -810,7 +813,7 @@ export async function fetchOdds(
     out.home == null &&
     out.over25 == null &&
     out.btts == null &&
-    !out.books?.some((b) => b.resultTotals?.length) &&
+    !out.books?.some((b) => b.resultTotals?.length || b.matchTotals?.length) &&
     !out.books?.some(
       (b) => b.corners?.length || b.cards?.length || b.totalHome?.length || b.totalAway?.length
     )
@@ -993,6 +996,7 @@ export function bookOddsOf(book: {
   const totalHome = lineOddsOf(book.bets, (b) => teamTotalSide(b) === "home");
   const totalAway = lineOddsOf(book.bets, (b) => teamTotalSide(b) === "away");
   const resultTotals = resultTotalOddsOf(book.bets);
+  const matchTotals = lineOddsOf(book.bets, (b) => b.id === 5);
   return {
     id: book.id,
     name: book.name,
@@ -1004,6 +1008,7 @@ export function bookOddsOf(book: {
     btts: oddOf(btts, "Yes"),
     bttsNo: oddOf(btts, "No"),
     ...(resultTotals.length ? { resultTotals } : {}),
+    ...(matchTotals.length ? { matchTotals } : {}),
     ...(corners.length ? { corners } : {}),
     ...(cards.length ? { cards } : {}),
     ...(totalHome.length ? { totalHome } : {}),

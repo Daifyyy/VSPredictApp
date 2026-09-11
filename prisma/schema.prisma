@@ -1173,6 +1173,7 @@ model IntuitionTicket {
   policyVersion Int                  @default(1)
   status        String               @default("LOCKED")
   combinedOdds  Float?
+  priceKind     String               @default("NONE")
   generatedAt   DateTime
   lockedAt      DateTime
   settledAt     DateTime?
@@ -1203,6 +1204,7 @@ model IntuitionTicketLeg {
   winnerOdds              Float?
   decimalOdds             Float?
   bookmaker               String?
+  priceKind               String          @default("NONE")
   reason                  String
   risk                    String
   homeGoals               Int?
