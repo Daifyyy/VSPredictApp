@@ -63,4 +63,11 @@ describe("intuition tickets", () => {
     expect(rankEloCandidates([source]).some((item) => item.winner === "HOME")).toBe(false);
     expect(rankEloDivergences([source])).toMatchObject([{ fixtureId: 1550121, winner: "HOME", reason: "MARKET_AND_MODEL_OPPOSE_EXTREME_ELO" }]);
   });
+  it("keeps Championship ELO signals in shadow tracking and out of tickets", () => {
+    const source = row(40, "2026-09-12", .42, 3.4);
+    source.leagueId = 40;
+    source.elo = { homeLongRating: 1600, awayLongRating: 1500, homeFastRating: 1590, awayFastRating: 1500, homeLongSample: 20, awayLongSample: 20, homeFastSample: 10, awayFastSample: 10, homeProbability: .46, awayProbability: .28, longHomeProb: .47, longAwayProb: .27, fastHomeProb: .45, fastAwayProb: .29 };
+    expect(rankEloCandidates([source])).toEqual([]);
+    expect(rankEloDivergences([source])).toMatchObject([{ fixtureId: 40, leagueId: 40, reason: "LEAGUE_SHADOW_ONLY" }]);
+  });
 });

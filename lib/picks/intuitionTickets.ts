@@ -2,7 +2,7 @@ import { localDateKey } from "@/lib/competitionGrouping";
 import { drawTau, poissonVector } from "@/lib/stats/predict";
 import { bestLinePrice, bestPrice, bestResultTotalPrice, parseBooks, sharpFair, sharpLineFair } from "./books";
 
-export const INTUITION_POLICY_VERSION = 3;
+export const INTUITION_POLICY_VERSION = 4;
 
 const MIN_READINESS_SAMPLE = 6;
 const EXTREME_EDGE_SAMPLE = 8;
@@ -20,6 +20,7 @@ const TICKET_MAX_ODDS = 30;
 const TICKET_MIN_EV = .10;
 const ELO_MARKET_WEIGHT = .30;
 const EXTREME_ELO_EDGE = .12;
+export const ELO_SHADOW_ONLY_LEAGUE_IDS = new Set([40]); // English Championship
 
 export type IntuitionSource = {
   fixtureId: number; leagueId: number; kickoff: Date; homeName: string; awayName: string;
@@ -47,7 +48,7 @@ export type IntuitionCandidate = {
 export type IntuitionTicket = { slot: number; dateKeys: string[]; odds: number | null; legs: IntuitionCandidate[] };
 export type EloDivergence = {
   fixtureId: number; leagueId: number; kickoff: Date; homeName: string; awayName: string;
-  winner: "HOME" | "AWAY"; winnerName: string; reason: "MARKET_AND_MODEL_OPPOSE_EXTREME_ELO";
+  winner: "HOME" | "AWAY"; winnerName: string; reason: "MARKET_AND_MODEL_OPPOSE_EXTREME_ELO" | "LEAGUE_SHADOW_ONLY";
   modelProbability: number; marketProbability: number; eloRawProbability: number; eloCalibratedProbability: number;
   longProbability: number; fastProbability: number; rawEdge: number;
 };
@@ -209,6 +210,9 @@ function evaluateElo(row: IntuitionSource, winner: "HOME" | "AWAY"): { candidate
   const modelOpposite = winner === "HOME" ? row.awayWin : row.homeWin;
   const rawEdge = blended - market;
   const calibrated = blended * (1 - ELO_MARKET_WEIGHT) + market * ELO_MARKET_WEIGHT;
+  if (ELO_SHADOW_ONLY_LEAGUE_IDS.has(row.leagueId)) {
+    return { candidate: null, divergence: { fixtureId: row.fixtureId, leagueId: row.leagueId, kickoff: row.kickoff, homeName: row.homeName, awayName: row.awayName, winner, winnerName: winner === "HOME" ? row.homeName : row.awayName, reason: "LEAGUE_SHADOW_ONLY", modelProbability: modelWin, marketProbability: market, eloRawProbability: blended, eloCalibratedProbability: calibrated, longProbability, fastProbability, rawEdge } };
+  }
   const marketOpposes = fair?.[opposite] != null && market < fair[opposite]!;
   if (marketOpposes && modelWin < modelOpposite && (rawEdge > EXTREME_ELO_EDGE || modelWin < market - .05)) {
     return { candidate: null, divergence: { fixtureId: row.fixtureId, leagueId: row.leagueId, kickoff: row.kickoff, homeName: row.homeName, awayName: row.awayName, winner, winnerName: winner === "HOME" ? row.homeName : row.awayName, reason: "MARKET_AND_MODEL_OPPOSE_EXTREME_ELO", modelProbability: modelWin, marketProbability: market, eloRawProbability: blended, eloCalibratedProbability: calibrated, longProbability, fastProbability, rawEdge } };
