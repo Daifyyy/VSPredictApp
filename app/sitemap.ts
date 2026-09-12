@@ -11,6 +11,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { path: "/porovnani", priority: 0.9, changeFrequency: "daily" },
     { path: "/tabulky", priority: 0.8, changeFrequency: "daily" },
     { path: "/predikce", priority: 0.8, changeFrequency: "daily" },
+    { path: "/strategie", priority: 0.8, changeFrequency: "daily" },
     // Obsah je za PRO, ale stránka má veřejný úvod i vlastní metadata – bez ní byla
     // sekce dosažitelná z jediné jiné stránky a pro vyhledávač neexistovala.
     { path: "/digest", priority: 0.5, changeFrequency: "daily" },
