@@ -69,7 +69,12 @@ function probabilityFor(p: LiveProbabilities, price: Price): number | null {
 }
 
 export async function captureLiveFixture(fixture: ApiFixture, now = new Date()) {
-  const prediction = await prisma.fixturePrediction.findUnique({ where: { fixtureId: fixture.fixture.id } });
+  // Live sběr běží velmi často. Celý FixturePrediction obsahuje několik velkých JSON
+  // sloupců s kurzovými knihami a časovou řadou, které live model vůbec nepoužívá.
+  const prediction = await prisma.fixturePrediction.findUnique({
+    where: { fixtureId: fixture.fixture.id },
+    select: { lambdaHome: true, lambdaAway: true, readinessSample: true, lowConfidence: true },
+  });
   const minute = fixture.fixture.status.elapsed ?? 0;
   const [rawStats, rawEvents, rawOdds] = await Promise.all([fetchFixtureStatistics(fixture.fixture.id), fetchFixtureEvents(fixture.fixture.id), fetchLiveOdds(fixture.fixture.id)]);
   const home = statsToMetrics(rawStats.find((row) => row.team.id === fixture.teams.home.id) ?? null);
@@ -95,11 +100,14 @@ export async function captureLiveFixture(fixture: ApiFixture, now = new Date()) 
   }
   const prices = chooseBook(parseLivePrices(rawOdds));
   await prisma.liveOddsSnapshot.createMany({ data: prices.map((p) => ({ fixtureId: fixture.fixture.id, observedAt, bookmakerId: p.bookmakerId, bookmaker: p.bookmaker, marketId: p.marketId, market: p.market, side: p.side, line: p.line, lineKey: lineKey(p.line), decimalOdds: p.odds, main: p.main, blocked: p.blocked, stopped: p.stopped, sourceAt: p.sourceAt })), skipDuplicates: true });
-  const oddsRows = await prisma.liveOddsSnapshot.findMany({ where: { fixtureId: fixture.fixture.id, observedAt } });
+  const oddsRows = await prisma.liveOddsSnapshot.findMany({
+    where: { fixtureId: fixture.fixture.id, observedAt },
+    select: { id: true, market: true, side: true, line: true },
+  });
   if (!prediction || prediction.lowConfidence || minute <= 0 || fixture.goals.home == null || fixture.goals.away == null) return { match, model: null, candidates: [] };
   const modelValue = calculateLiveModel({ minute, scoreHome: fixture.goals.home, scoreAway: fixture.goals.away, preMatchLambdaHome: prediction.lambdaHome, preMatchLambdaAway: prediction.lambdaAway, readinessSample: prediction.readinessSample, lowConfidence: prediction.lowConfidence, home, away });
   const model = await prisma.liveModelSnapshot.upsert({ where: { matchSnapshotId_modelVersion: { matchSnapshotId: match.id, modelVersion: LIVE_MODEL_VERSION } }, update: {}, create: { fixtureId: fixture.fixture.id, matchSnapshotId: match.id, calculatedAt: observedAt, minute, modelVersion: LIVE_MODEL_VERSION, probabilities: json(modelValue.probabilities), remainingLambdaHome: modelValue.remainingLambdaHome, remainingLambdaAway: modelValue.remainingLambdaAway, inputs: json(modelValue.inputs), lowConfidence: modelValue.lowConfidence } });
-  const previous = await prisma.liveModelSnapshot.findFirst({ where: { fixtureId: fixture.fixture.id, calculatedAt: { lt: observedAt } }, orderBy: { calculatedAt: "desc" } });
+  const previous = await prisma.liveModelSnapshot.findFirst({ where: { fixtureId: fixture.fixture.id, calculatedAt: { lt: observedAt } }, orderBy: { calculatedAt: "desc" }, select: { calculatedAt: true, probabilities: true } });
   const previousOdds = previous ? await prisma.liveOddsSnapshot.findMany({ where: { fixtureId: fixture.fixture.id, observedAt: { lte: previous.calculatedAt } }, orderBy: { observedAt: "desc" }, take: 30 }) : [];
   const previousProbs = previous?.probabilities as unknown as LiveProbabilities | undefined;
   const candidates: LiveCandidateSnapshot[] = [];

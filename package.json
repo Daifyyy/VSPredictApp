@@ -26,6 +26,7 @@
     "calibrate:goals": "node --env-file=.env --import tsx scripts/calibrateGoalMarkets.ts",
     "calibrate:safe": "node --env-file=.env --import tsx scripts/calibrateSafe.ts",
     "audit:model-contexts": "node --env-file=.env --import tsx scripts/auditModelContexts.ts",
+    "audit:neon": "node --env-file=.env --import tsx scripts/auditNeonUsage.ts",
     "audit:corners-live": "node --env-file=.env --import tsx scripts/auditCornersLive.ts",
     "audit:cards-research": "node --env-file=.env --import tsx scripts/auditCardsResearch.ts",
     "audit:fouls-research": "node --env-file=.env --import tsx scripts/auditFoulsResearch.ts",

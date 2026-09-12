@@ -17,7 +17,9 @@ export async function GET(request: Request) {
   const cursor = Math.max(0, Number(params.get("cursor")) || 0);
   try {
     const result = await withCronRun("personnel-shadow", async () => {
-      const coverage = await refreshCoverage();
+      // Pokračovací dávky jednoho workflow dříve opakovaly stejný ligový coverage
+      // refresh až 12×. Stačí jednou na začátku plánovaného běhu.
+      const coverage = cursor === 0 ? await refreshCoverage() : null;
       const collection = await collectPersonnelShadow({ limit, cursor });
       return { ...collection, coverage, apiCalls: 0 };
     });

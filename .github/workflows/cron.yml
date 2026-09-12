@@ -20,14 +20,14 @@ name: Cron
 
 on:
   schedule:
-    - cron: "*/5 * * * *" # nezaujatý live výzkumný sběr; endpoint zpracovává krátké dávky
-    - cron: "13,33,53 * * * *" # prospektivní absence, sestavy a lineup shadow
+    - cron: "2,12,22,32,42,52 * * * *" # live výzkum po 10 min; kratší interval nepřinášel úměrnou hodnotu
+    - cron: "13,43 * * * *" # prospektivní absence a sestavy; pokračovací dávky obsáhnou celé okno
     # Snímky kurzů – nejčastější úloha, kvůli zavírací linii u večerních zápasů.
     # HODINOVĚ (od 28. 7. 2026): `fixturesNeedingOdds` v posledních 3 h průběžně přepisuje
     # kandidáta na closing. Hodinová kadence dává typicky poslední bod 0–60 min před výkopem.
     # Minuta 20 schválně: denní úlohy jedou na :00, :15 a :30, takže nikdy nenastane
     # okamžik, kdy by seděly dva rozvrhy naráz.
-    - cron: "20,45 * * * *"
+    - cron: "20 * * * *"
     - cron: "7,22,37,52 * * * *" # Web Push připomínky oblíbených zápasů
     - cron: "50 */3 * * *" # refresh-referees
     - cron: "30 2 * * *" # refresh-tactics (uložené sestavy, max. 30 zápasů)
@@ -36,7 +36,6 @@ on:
     - cron: "0 4 * * *" # warm
     - cron: "15 4 * * *" # deterministický Elo replay před predikcemi
     - cron: "30 4 * * *" # predict-upcoming
-    - cron: "30 12 * * *" # predict-upcoming (průběžné doplnění)
     - cron: "30 16 * * *" # predict-upcoming (večerní opravný průchod)
     - cron: "0 5 * * *" # refresh-transfers
     # Plošný player-profiles refresh není plánovaný: zatím nemění veřejné
@@ -105,9 +104,9 @@ jobs:
             exit 0
           fi
           case "$SCHEDULE" in
-            "*/5 * * * *") path="collect-live" ;;
-            "13,33,53 * * * *") path="personnel-shadow" ;;
-            "20,45 * * * *") path="snapshot-odds" ;;
+            "2,12,22,32,42,52 * * * *") path="collect-live" ;;
+            "13,43 * * * *") path="personnel-shadow" ;;
+            "20 * * * *") path="snapshot-odds" ;;
             "7,22,37,52 * * * *") path="send-notifications" ;;
             "50 */3 * * *") path="refresh-referees" ;;
             "30 2 * * *")   path="refresh-tactics" ;;
@@ -115,7 +114,6 @@ jobs:
             "0 4 * * *")    path="warm" ;;
             "15 4 * * *")   path="refresh-elo" ;;
             "30 4 * * *")   path="predict-upcoming" ;;
-            "30 12 * * *")  path="predict-upcoming" ;;
             "30 16 * * *")  path="predict-upcoming" ;;
             "0 5 * * *")    path="refresh-transfers" ;;
             "0 6 * * *")    path="settle-results" ;;
