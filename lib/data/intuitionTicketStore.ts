@@ -76,7 +76,7 @@ async function sources(windowKey: string, persistPedigree = false): Promise<Intu
   });
 }
 
-export type TicketEmptyReason = "WAITING_FOR_ODDS" | "INSUFFICIENT_ELO_HISTORY" | "NOT_ENOUGH_VALUE_LEGS" | "NOT_ENOUGH_CONTEXTUAL_LEGS" | "CONTEXT_VETO";
+export type TicketEmptyReason = "WAITING_FOR_ODDS" | "INSUFFICIENT_ELO_HISTORY" | "NOT_ENOUGH_VALUE_LEGS" | "NOT_ENOUGH_CONTEXTUAL_LEGS" | "NOT_ENOUGH_BALANCED_LEGS" | "CONTEXT_VETO";
 
 function emptyReason(strategy: "VALUE" | "ELO_INTUITION", rows: IntuitionSource[], tickets: IntuitionTicket[]): TicketEmptyReason | null {
   if (tickets.length) return null;
@@ -84,6 +84,7 @@ function emptyReason(strategy: "VALUE" | "ELO_INTUITION", rows: IntuitionSource[
   if (withOdds.length < 3) return "WAITING_FOR_ODDS";
   if (strategy === "ELO_INTUITION" && rows.filter((row) => row.elo && Math.min(row.elo.homeLongSample, row.elo.awayLongSample) >= 10 && Math.min(row.elo.homeFastSample, row.elo.awayFastSample) >= 5).length < 3) return "INSUFFICIENT_ELO_HISTORY";
   const candidates = strategy === "VALUE" ? rankIntuitionCandidates(rows) : rankEloCandidates(rows);
+  if (candidates.length >= 3) return "NOT_ENOUGH_BALANCED_LEGS";
   if (strategy === "VALUE") return candidates.length < 3 ? "NOT_ENOUGH_VALUE_LEGS" : null;
   if (rankEloDivergences(rows).some((item) => item.reason === "CONTEXT_VETO")) return "CONTEXT_VETO";
   return candidates.length < 3 ? "NOT_ENOUGH_CONTEXTUAL_LEGS" : null;

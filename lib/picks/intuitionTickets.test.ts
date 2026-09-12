@@ -24,6 +24,14 @@ describe("intuition tickets", () => {
     expect(candidate.modelExpectedValue).toBeGreaterThanOrEqual(.08);
   });
 
+  it("ranks a more probable quality-team combination above a larger-EV outsider", () => {
+    const outsider = contextual(row(81, "2026-09-12", .43, 3.4), .3);
+    const qualityFavourite = contextual(row(82, "2026-09-12", .67, 1.8), .85);
+    const ranked = rankIntuitionCandidates([outsider, qualityFavourite]);
+    expect(ranked[0]?.fixtureId).toBe(82);
+    expect(ranked.find((item) => item.fixtureId === 81)?.modelExpectedValue).toBeGreaterThan(ranked[0].modelExpectedValue!);
+  });
+
   it("estimates a correlated synthetic quote from separate winner and total prices", () => {
     const source = row(7, "2026-09-12", .62, 1.9);
     source.oddsBooks = [{ id: 4, name: "Test", home: 1.9, draw: 3.5, away: 4.5, over25: 1.9, under25: 1.9, btts: 1.9, bttsNo: 1.9, matchTotals: [{ line: 1.5, over: 1.5, under: 4.2 }, { line: 4.5, over: 5, under: 1.18 }] }];
@@ -38,10 +46,20 @@ describe("intuition tickets", () => {
   });
 
   it("builds two disjoint tickets only from at least six fixtures", () => {
-    const rows = [row(1, "2026-09-12", .43, 3.4), row(2, "2026-09-12", .42, 3.5), ...[3,4,5,6].map((id) => row(id, "2026-09-12", .62, 1.8))];
+    const rows = [row(1, "2026-09-12", .62, 1.8), row(2, "2026-09-12", .61, 1.85), ...[3,4,5,6].map((id) => row(id, "2026-09-12", .62, 1.8))];
     const tickets = buildIntuitionTickets(rows, "2026-09-12");
     expect(tickets).toHaveLength(2);
     expect(new Set(tickets.flatMap((ticket) => ticket.legs.map((leg) => leg.fixtureId))).size).toBe(6);
+  });
+
+  it("allows one expensive value exception but never builds a ticket from several speculative legs", () => {
+    const expensive = [1, 2, 3].map((id) => row(id, "2026-09-12", .43, 3.4));
+    const weakerCheap = [4, 5, 6].map((id) => row(id, "2026-09-12", .62, 1.8));
+    for (const item of expensive) item.lambdaHome = 3;
+    const tickets = buildIntuitionTickets([...expensive, ...weakerCheap], "2026-09-12");
+    expect(tickets).toHaveLength(1);
+    expect(tickets[0].legs.filter((leg) => leg.decimalOdds! > 3.25 || leg.marketWinnerProbability! < .38)).toHaveLength(1);
+    expect(buildIntuitionTickets(expensive, "2026-09-12")).toEqual([]);
   });
 
   it("does not create a ticket from only two qualified legs", () => {
@@ -64,11 +82,12 @@ describe("intuition tickets", () => {
   });
 
   it("ELO odmítá syntetickou cenu a drží unikátní fixtures mezi A/B", () => {
-    const rows = Array.from({ length: 7 }, (_, index) => { const source = row(30 + index, "2026-09-12", .2, 3.4); source.elo = { homeLongRating: 1600, awayLongRating: 1500, homeFastRating: 1590, awayFastRating: 1500, homeLongSample: 20, awayLongSample: 20, homeFastSample: 10, awayFastSample: 10, homeProbability: .46, awayProbability: .28, longHomeProb: .47, longAwayProb: .27, fastHomeProb: .45, fastAwayProb: .29 }; return contextual(source); });
+    const rows = Array.from({ length: 7 }, (_, index) => { const source = row(30 + index, "2026-09-12", .2, 2.2); source.oddsBooks = books(2.2, 4.5); source.elo = { homeLongRating: 1660, awayLongRating: 1500, homeFastRating: 1640, awayFastRating: 1500, homeLongSample: 20, awayLongSample: 20, homeFastSample: 10, awayFastSample: 10, homeProbability: .56, awayProbability: .20, longHomeProb: .57, longAwayProb: .19, fastHomeProb: .55, fastAwayProb: .21 }; return contextual(source); });
     rows[0].oddsBooks = [{ id: 4, name: "Test", home: 3.4, draw: 3.5, away: 4.5, matchTotals: [{ line: 1.5, over: 1.5, under: 4.2 }] }];
     expect(rankEloCandidates([rows[0]])).toEqual([]);
     const tickets = buildEloIntuitionTickets(rows.slice(1), "2026-09-12");
     expect(tickets.every((ticket) => ticket.legs.length >= 3 && ticket.legs.length <= 4 && ticket.odds! > 0)).toBe(true);
+    expect(tickets.every((ticket) => ticket.legs.filter((leg) => leg.decimalOdds! > 3.25 || leg.marketWinnerProbability! < .38).length <= 1)).toBe(true);
     expect(new Set(tickets.flatMap((ticket) => ticket.legs.map((leg) => leg.fixtureId))).size).toBe(tickets.flatMap((ticket) => ticket.legs).length);
   });
 

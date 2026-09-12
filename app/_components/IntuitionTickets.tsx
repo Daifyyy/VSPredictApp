@@ -25,6 +25,7 @@ const emptyText: Record<string, string> = {
   INSUFFICIENT_ELO_HISTORY: "Týmy zatím nemají požadovaných 10 LONG a 5 FAST zápasů.",
   NOT_ENOUGH_VALUE_LEGS: "Dnes nejsou alespoň tři samostatně kvalitní VALUE nohy.",
   NOT_ENOUGH_CONTEXTUAL_LEGS: "Dnes nejsou alespoň tři lidsky obhajitelné ELO příležitosti.",
+  NOT_ENOUGH_BALANCED_LEGS: "Kandidáti existují, ale chybí alespoň dvě nosné nohy typu favorit + góly. Tiket z více drahých outsiderů neskládáme.",
   CONTEXT_VETO: "Elo signály existují, ale dostupný lidský kontext je vetoval.",
 };
 const selection = (leg: Leg) => `${leg.winnerName} + ${leg.totalSide === "OVER" ? "více" : "méně"} než ${String(leg.totalLine).replace(".", ",")} gólu`;

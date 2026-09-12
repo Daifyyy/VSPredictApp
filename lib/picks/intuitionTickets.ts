@@ -2,12 +2,14 @@ import { localDateKey } from "@/lib/competitionGrouping";
 import { drawTau, poissonVector } from "@/lib/stats/predict";
 import { bestLinePrice, bestPrice, bestResultTotalPrice, parseBooks, sharpFair, sharpLineFair } from "./books";
 
-export const INTUITION_POLICY_VERSION = 6;
+export const INTUITION_POLICY_VERSION = 7;
 
 const MIN_READINESS_SAMPLE = 6;
 const MIN_DIRECT_ODDS = 1.6;
 const MIN_SYNTHETIC_ODDS = 1.7;
 const MAX_LEG_ODDS = 6;
+const SPECULATIVE_LEG_ODDS = 3.25;
+const SPECULATIVE_WIN_PROBABILITY = .38;
 const VALUE_MIN_EV = .08;
 const SYNTHETIC_VALUE_MIN_EV = .12;
 const ELO_MARKET_WEIGHT = .30;
@@ -115,19 +117,23 @@ function candidateFor(row: IntuitionSource, winner: "HOME" | "AWAY"): IntuitionC
     const minEv = option.priceKind === "DIRECT" ? VALUE_MIN_EV : SYNTHETIC_VALUE_MIN_EV;
     if (option.price.odds < minOdds || option.price.odds > MAX_LEG_ODDS || option.ev < minEv) return [];
     return [{ ...option, role: "VALUE" as const }];
-  }).sort((a, b) => (b.ev ?? 0) - (a.ev ?? 0));
+  }).sort((a, b) => b.probability - a.probability || Number(b.priceKind === "DIRECT") - Number(a.priceKind === "DIRECT"));
   const chosen = eligible[0];
   if (!chosen) return null;
   const winnerName = winner === "HOME" ? row.homeName : row.awayName;
-  const score = chosen.probability * 60 + Math.min(chosen.ev ?? 0, .30) * 80 + (chosen.priceKind === "DIRECT" ? 5 : 0);
+  const modelWin = winner === "HOME" ? row.homeWin : row.awayWin;
+  const context = contextualAssessment(row, winner, marketProbability ?? modelWin, modelWin - (marketProbability ?? modelWin));
+  const score = opportunityQuality(chosen.probability, marketProbability, context.pedigree, context.score, chosen.priceKind === "DIRECT", row.readinessSample);
   return {
     fixtureId: row.fixtureId, leagueId: row.leagueId, kickoff: row.kickoff, homeName: row.homeName, awayName: row.awayName,
     winner, winnerName, total: chosen.total, line: chosen.line, role: "VALUE", score, modelProbability: chosen.probability,
     marketWinnerProbability: marketProbability, winnerOdds: winPrice.odds, decimalOdds: chosen.price?.odds ?? null,
     bookmaker: chosen.price?.bookmaker ?? null, priceKind: chosen.priceKind,
     modelExpectedValue: chosen.ev,
-    reason: `${winnerName} + gólová hranice mají jako celek modelové EV ${Math.round((chosen.ev ?? 0) * 100)} %.`,
-    risk: chosen.priceKind === "SYNTHETIC" ? "Kombinovaný kurz je odhad ze samostatných trhů, nikoli doložená nabídka." : "Kombinovaná podmínka může selhat i při správně odhadnutém vítězi.",
+    pedigreeScore: context.pedigree, pedigreeSnapshotId: (winner === "HOME" ? row.pedigree?.home.id : row.pedigree?.away.id) ?? null,
+    contextScore: context.score, contextSupports: context.supports, contextVetoes: context.vetoes,
+    reason: `${winnerName} + gólová hranice mají modelovou pravděpodobnost ${Math.round(chosen.probability * 100)} % a cenu s EV ${Math.round((chosen.ev ?? 0) * 100)} %.${context.supports.length ? ` Kvalitu podporuje: ${context.supports.join(", ")}.` : ""}`,
+    risk: context.vetoes.length ? `Kontextové riziko: ${context.vetoes.join(", ")}.` : chosen.priceKind === "SYNTHETIC" ? "Kombinovaný kurz je odhad ze samostatných trhů, nikoli doložená nabídka." : "Kombinovaná podmínka může selhat i při správně odhadnutém vítězi.",
   };
 }
 
@@ -163,21 +169,54 @@ function contextualAssessment(row: IntuitionSource, winner: "HOME" | "AWAY", mar
   if (selected?.coachChangedRecently) score -= 1;
   if (selected?.lineupAvailable && !selected.missingGoalkeeper && !selected.missingKeyScorer) { score += 1; supports.push("bez zásadního problému v dostupné sestavě"); }
   if (selectedPedigree?.established && opponentPedigree?.established && row.context && Math.abs((row.homeWin ?? 0) - (row.awayWin ?? 0)) <= .08 && score <= 0) vetoes.push("vyrovnaný duel dvou silných značek bez kontextové převahy");
-  return { score, supports, vetoes, pedigree: selectedPedigree?.score ?? 0 };
+  return { score, supports, vetoes, pedigree: selectedPedigree?.score ?? .5 };
+}
+
+function opportunityQuality(jointProbability: number, marketWinnerProbability: number | null, pedigree: number, contextScore: number, directPrice: boolean, readinessSample: number) {
+  const probability = Math.max(0, Math.min(1, jointProbability)) * 70;
+  const teamQuality = Math.max(0, Math.min(1, pedigree)) * 12;
+  const context = Math.max(-4, Math.min(6, contextScore)) * 2;
+  const marketConfidence = Math.max(0, Math.min(1, marketWinnerProbability ?? .33)) * 8;
+  const dataConfidence = Math.min(1, readinessSample / 12) * 3;
+  return probability + teamQuality + context + marketConfidence + dataConfidence + (directPrice ? 3 : 0);
+}
+
+function isSpeculativeLeg(leg: IntuitionCandidate) {
+  return (leg.decimalOdds ?? Infinity) > SPECULATIVE_LEG_ODDS || (leg.marketWinnerProbability ?? 0) < SPECULATIVE_WIN_PROBABILITY;
+}
+
+/** Vybere tři nejlepší nohy při zachování charakteru „favorit + góly“.
+ * Dražší nebo trhem méně pravděpodobný výběr je dovolen jako jediná výjimka,
+ * nikdy jako základ celé akumulace. Celkový kurz do výběru nevstupuje. */
+function balancedBase(pool: IntuitionCandidate[]) {
+  const selected: IntuitionCandidate[] = [];
+  let speculative = 0;
+  for (const leg of pool) {
+    const risky = isSpeculativeLeg(leg);
+    if (risky && speculative >= 1) continue;
+    selected.push(leg);
+    if (risky) speculative++;
+    if (selected.length === 3) return selected;
+  }
+  return null;
 }
 
 function assembleTickets(pool: IntuitionCandidate[]): IntuitionTicket[] {
   const unique = [...new Map(pool.map((item) => [item.fixtureId, item])).values()];
   const tickets: IntuitionTicket[] = [];
+  const used = new Set<number>();
   for (let slot = 1; slot <= 2; slot++) {
-    const offset = tickets.reduce((sum, ticket) => sum + ticket.legs.length, 0);
-    const available = unique.slice(offset);
-    if (available.length < 3) break;
-    const legs = available.slice(0, 3);
-    const fourth = available[3];
-    if (fourth && (slot === 2 || available.length >= 7) && fourth.score >= legs[2].score * .90) legs.push(fourth);
+    const available = unique.filter((leg) => !used.has(leg.fixtureId));
+    const base = balancedBase(available);
+    if (!base) break;
+    const legs = [...base];
+    const remaining = available.filter((leg) => !legs.some((picked) => picked.fixtureId === leg.fixtureId));
+    const fourth = remaining.find((leg) => !isSpeculativeLeg(leg));
+    const leavesSecondTicket = slot === 2 || balancedBase(remaining.filter((leg) => leg.fixtureId !== fourth?.fixtureId)) != null;
+    if (fourth && leavesSecondTicket && fourth.score >= legs[2].score * .90) legs.push(fourth);
     const odds = legs.reduce((value, leg) => value * leg.decimalOdds!, 1);
     tickets.push({ slot, dateKeys: [...new Set(legs.map((item) => localDateKey(item.kickoff)))], odds, legs });
+    legs.forEach((leg) => used.add(leg.fixtureId));
   }
   return tickets;
 }
@@ -224,7 +263,7 @@ function evaluateElo(row: IntuitionSource, winner: "HOME" | "AWAY"): { candidate
   const winnerName = winner === "HOME" ? row.homeName : row.awayName;
   return { divergence: null, candidate: {
     fixtureId: row.fixtureId, leagueId: row.leagueId, kickoff: row.kickoff, homeName: row.homeName, awayName: row.awayName,
-    winner, winnerName, total: chosen.total, line: chosen.line, role: "ELO", score: chosen.eloJoint * 100 + rawEdge * 40 + context.score * 4 + context.pedigree * 8,
+    winner, winnerName, total: chosen.total, line: chosen.line, role: "ELO", score: opportunityQuality(chosen.eloJoint, market, context.pedigree, context.score, true, Math.min(longSample, fastSample)),
     modelProbability: chosen.modelJoint, marketWinnerProbability: market, winnerOdds: winPrice.odds, decimalOdds: chosen.direct.odds, bookmaker: chosen.direct.bookmaker, priceKind: "DIRECT",
     eloLongProbability: longProbability, eloFastProbability: fastProbability, eloWinnerProbability: calibrated, eloJointProbability: chosen.eloJoint,
     eloLongHomeRating: elo.homeLongRating, eloLongAwayRating: elo.awayLongRating, eloFastHomeRating: elo.homeFastRating, eloFastAwayRating: elo.awayFastRating,
@@ -246,15 +285,19 @@ export function rankEloDivergences(rows: IntuitionSource[]) {
 function assembleEloTickets(pool: IntuitionCandidate[]) {
   const unique = [...new Map(pool.map((item) => [item.fixtureId, item])).values()];
   const tickets: IntuitionTicket[] = [];
+  const used = new Set<number>();
   for (let slot = 1; slot <= 2; slot++) {
-    const offset = tickets.reduce((sum, ticket) => sum + ticket.legs.length, 0);
-    const available = unique.slice(offset);
-    if (available.length < 3) break;
-    const legs = available.slice(0, 3);
-    const fourth = available[3];
-    if (fourth && (slot === 2 || available.length >= 7) && (fourth.pedigreeScore ?? 0) >= .60 && (fourth.contextScore ?? 0) > 0 && fourth.score >= legs[2].score * .90) legs.push(fourth);
+    const available = unique.filter((leg) => !used.has(leg.fixtureId));
+    const base = balancedBase(available);
+    if (!base) break;
+    const legs = [...base];
+    const remaining = available.filter((leg) => !legs.some((picked) => picked.fixtureId === leg.fixtureId));
+    const fourth = remaining.find((leg) => !isSpeculativeLeg(leg) && (leg.pedigreeScore ?? 0) >= .60 && (leg.contextScore ?? 0) > 0);
+    const leavesSecondTicket = slot === 2 || balancedBase(remaining.filter((leg) => leg.fixtureId !== fourth?.fixtureId)) != null;
+    if (fourth && leavesSecondTicket && fourth.score >= legs[2].score * .90) legs.push(fourth);
     const odds = legs.reduce((value, leg) => value * leg.decimalOdds!, 1);
     tickets.push({ slot, dateKeys: [...new Set(legs.map((x) => localDateKey(x.kickoff)))], odds, legs });
+    legs.forEach((leg) => used.add(leg.fixtureId));
   }
   return tickets;
 }

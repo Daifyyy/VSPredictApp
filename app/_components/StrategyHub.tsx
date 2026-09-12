@@ -14,6 +14,7 @@ type Payload = { date: string; strategy: StrategyHubId; catalog: CatalogItem[]; 
 const emptyLabels: Record<string, string> = {
   NOT_ENOUGH_VALUE_LEGS: "Pro tento den nevznikly alespoň tři samostatně kvalitní VALUE nohy.",
   NOT_ENOUGH_CONTEXTUAL_LEGS: "Pro tento den nevznikly alespoň tři kontextově obhajitelné ELO příležitosti.",
+  NOT_ENOUGH_BALANCED_LEGS: "Kandidáti existují, ale netvoří vyvážený tiket s alespoň dvěma nosnými nohami. Více drahých outsiderů do jedné akumulace neskládáme.",
   NOT_ENOUGH_CANDIDATES: "Žádný výběr nesplnil pravidla této strategie.",
   WAITING_FOR_ODDS: "Čekáme na dostupné realizovatelné kurzy.",
   INSUFFICIENT_ELO_HISTORY: "Týmy zatím nemají dostatečnou Elo historii.",
