@@ -1180,6 +1180,8 @@ model IntuitionTicket {
   strategy      String               @default("VALUE")
   status        String               @default("LOCKED")
   combinedOdds  Float?
+  naturalCombinedOdds Float?
+  estimatedPriceCount Int                  @default(0)
   priceKind     String               @default("NONE")
   generatedAt   DateTime
   lockedAt      DateTime
@@ -1227,6 +1229,11 @@ model IntuitionTicketLeg {
   priceKind               String          @default("NONE")
   reason                  String
   risk                    String
+  pedigreeScore           Float?
+  contextScore            Float?
+  contextSupports         Json?
+  contextVetoes           Json?
+  pedigreeSnapshotId      String?
   homeGoals               Int?
   awayGoals               Int?
   hit                     Boolean?
@@ -1235,6 +1242,30 @@ model IntuitionTicketLeg {
 
   @@unique([ticketId, fixtureId])
   @@index([fixtureId])
+}
+
+/// Denní point-in-time profil dlouhodobého výkonnostního standardu klubu.
+model ClubPedigreeSnapshot {
+  id                 String   @id @default(cuid())
+  teamId             Int
+  leagueId           Int
+  asOfDate           DateTime
+  modelVersion       Int
+  longRating         Float
+  longSample         Float
+  eloPercentile      Float
+  continuity         Float
+  europeanExperience Float
+  score              Float
+  seasons            Int
+  leagueMatches      Int
+  europeanMatches    Int
+  established        Boolean
+  calculatedAt       DateTime
+  createdAt          DateTime @default(now())
+
+  @@unique([teamId, asOfDate, modelVersion])
+  @@index([leagueId, asOfDate])
 }
 
 /// Neměnný vstup deterministického Elo replaye. Jeden fixture se zapisuje idempotentně.
@@ -1322,6 +1353,7 @@ model ClubEloDivergence {
   winner                   String
   winnerName               String
   reason                   String
+  details                  Json?
   modelProbability         Float
   marketProbability        Float
   eloRawProbability        Float
