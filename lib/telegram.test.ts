@@ -24,9 +24,9 @@ describe("telegram formatting", () => {
     expect(pragueClock(new Date("2026-07-10T07:00:00Z"))).toEqual({ date: "2026-07-10", hour: 9 });
     expect(pragueClock(new Date("2026-12-10T08:00:00Z"))).toEqual({ date: "2026-12-10", hour: 9 });
   });
-  it("shows top three, marks estimates and escapes HTML", () => {
+  it("shows a compact top three, marks estimates and escapes HTML", () => {
     const text = formatTips(day()).join("\n");
-    expect(text).toContain("odhad 1.82"); expect(text).toContain("A &lt; B"); expect(text).toContain("Důvod &amp; kontext"); expect(text).not.toContain("Domácí 3");
+    expect(text).toContain("1.82 <i>(odhad)</i>"); expect(text).toContain("A &lt; B"); expect(text).toContain("⏳"); expect(text).not.toContain("EV"); expect(text).not.toContain("Model"); expect(text).not.toContain("Domácí 3");
   });
   it("splits messages under the Telegram safety limit", () => {
     const chunks = splitTelegramBlocks(["a".repeat(2000), "b".repeat(2000)], 3000);

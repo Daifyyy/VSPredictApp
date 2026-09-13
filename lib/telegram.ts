@@ -14,7 +14,6 @@ type HubData = { opportunities: StrategyHubOpportunity[]; tickets: StrategyHubTi
 export type TelegramDay = { date: string; generatedAt: string; strategies: Array<{ strategy: StrategyHubId; data: HubData }> };
 const asJson = (value: unknown) => value as Prisma.InputJsonValue;
 const esc = (value: unknown) => String(value ?? "").slice(0, 900).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-const pct = (value: number | null) => value == null ? "—" : `${(value * 100).toFixed(1)} %`;
 const odd = (value: number | null) => value == null ? "—" : value.toFixed(2);
 
 export function telegramConfig() {
@@ -31,15 +30,15 @@ export function shiftDateKey(date: string, days: number) { const value = new Dat
 export function isTelegramDateAllowed(date: string, today = localDateKey(new Date())) { if (!isDateKey(date)) return false; const delta = (Date.parse(`${date}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / 86400_000; return delta >= -30 && delta <= 7; }
 export async function loadTelegramDay(date: string): Promise<TelegramDay> { return { date, generatedAt: new Date().toISOString(), strategies: await Promise.all(STRATEGY_HUB_IDS.map(async (strategy) => ({ strategy, data: await strategyHubData(strategy, date) as HubData }))) }; }
 const title = (id: StrategyHubId) => STRATEGY_HUB_CATALOG.find((item) => item.id === id)?.title ?? id;
-const status = (id: StrategyHubId) => STRATEGY_HUB_CATALOG.find((item) => item.id === id)?.status === "LIVE_TEST" ? "ostrý test" : STRATEGY_HUB_CATALOG.find((item) => item.id === id)?.status === "NO_MARKET" ? "prognóza bez trhu" : "výzkum";
-const generated = (payload: TelegramDay) => new Intl.DateTimeFormat("cs-CZ", { timeZone: "Europe/Prague", hour: "2-digit", minute: "2-digit" }).format(new Date(payload.generatedAt));
+const strategyIcon = (id: StrategyHubId) => ({ VALUE: "💎", ELO_INTUITION: "🧠", ONE_X_TWO: "🏆", OVER_25: "⚽", BTTS_YES: "🥅", TEAM_GOALS: "🎯", CORNERS: "🚩", CARDS_REF: "🟨", FOULS: "📋" })[id];
+const outcomeIcon = (value: StrategyHubOpportunity["outcome"]) => value === "PENDING" ? "⏳" : value === "WON" ? "✅" : value === "LOST" ? "❌" : "↩️";
+const ticketOutcomeIcon = (value: StrategyHubTicket["outcome"]) => value === "PENDING" ? "⏳" : value === "WON" ? "✅" : value === "LOST" ? "❌" : "↩️";
 
 function opportunity(item: StrategyHubOpportunity) {
-  const price = item.priceKind === "SYNTHETIC" ? `odhad ${odd(item.odds)}` : item.priceKind === "NONE" ? "bez kurzu" : odd(item.odds);
-  const state = item.outcome === "PENDING" ? "čeká" : item.outcome === "WON" ? "✅ vyhráno" : item.outcome === "LOST" ? "❌ prohráno" : "↩️ vráceno";
-  return `<b>${esc(item.homeName)} – ${esc(item.awayName)}</b>\n${esc(item.selection)} · kurz ${price}\nModel ${pct(item.probability)} · EV ${pct(item.expectedValue)} · ${state}\n<i>${esc(item.reason)}</i>`;
+  const price = item.priceKind === "SYNTHETIC" ? `${odd(item.odds)} <i>(odhad)</i>` : item.priceKind === "NONE" ? "bez kurzu" : odd(item.odds);
+  return `${outcomeIcon(item.outcome)} <b>${esc(item.homeName)} – ${esc(item.awayName)}</b>\n   🎯 ${esc(item.selection)}\n   💰 ${price}`;
 }
-function empty(id: StrategyHubId, data: HubData) { return `<b>${esc(title(id))}</b>\nBez výběru: ${esc(data.emptyReason ?? "žádná kvalifikovaná příležitost")} · kandidáti ${data.coverage.candidates}, oceněno ${data.coverage.priced}`; }
+function empty(id: StrategyHubId) { return `${strategyIcon(id)} <b>${esc(title(id))}</b>\n   Dnes bez výběru.`; }
 
 export function splitTelegramBlocks(blocks: string[], limit = TEXT_LIMIT) {
   const chunks: string[] = []; let current = "";
@@ -53,28 +52,28 @@ export function splitTelegramBlocks(blocks: string[], limit = TEXT_LIMIT) {
 }
 
 export function formatTips(payload: TelegramDay, requested?: StrategyHubId, limit = TELEGRAM_TOP_LIMIT, skip = 0) {
-  const blocks = [`<b>Tipy · ${payload.date}</b>\nData ${generated(payload)} · ${esc(process.env.AUTH_URL ?? "")}/strategie`];
+  const blocks = [`📅 <b>Výběry na ${payload.date}</b>`];
   for (const { strategy, data } of payload.strategies.filter((row) => !requested || row.strategy === requested)) {
-    const picks = data.opportunities.slice(skip, skip + limit); blocks.push(picks.length ? `<b>${esc(title(strategy))}</b> · ${status(strategy)}` : empty(strategy, data), ...picks.map(opportunity));
+    const picks = data.opportunities.slice(skip, skip + limit); blocks.push(picks.length ? `${strategyIcon(strategy)} <b>${esc(title(strategy))}</b>` : empty(strategy), ...picks.map(opportunity));
   }
   return splitTelegramBlocks(blocks);
 }
 export function formatTickets(payload: TelegramDay, requested?: "VALUE" | "ELO_INTUITION", includeReserves = false) {
-  const blocks = [`<b>Tikety · ${payload.date}</b>`];
+  const blocks = [`🎟️ <b>Tikety na ${payload.date}</b>`];
   for (const id of (requested ? [requested] : ["VALUE", "ELO_INTUITION"]) as Array<"VALUE" | "ELO_INTUITION">) {
     const data = payload.strategies.find((row) => row.strategy === id)?.data;
-    if (!data?.tickets.length) { blocks.push(data ? empty(id, data) : `<b>${title(id)}</b>\nData nejsou dostupná.`); continue; }
-    blocks.push(`<b>${esc(title(id))}</b>\n${data.tickets.map((ticket) => `Tiket ${ticket.slot === 0 ? "A" : "B"} · kurz ${odd(ticket.odds)} · ${ticket.fixtureIds.length} zápasy · ${ticket.outcome}`).join("\n")}`);
+    if (!data?.tickets.length) { blocks.push(data ? empty(id) : `${strategyIcon(id)} <b>${title(id)}</b>\n   Data nejsou dostupná.`); continue; }
+    blocks.push(`${strategyIcon(id)} <b>${esc(title(id))}</b>`, ...data.tickets.map((ticket) => `${ticketOutcomeIcon(ticket.outcome)} <b>Tiket ${ticket.slot === 0 ? "A" : "B"}</b>\n   🎯 ${ticket.fixtureIds.length} výběry\n   💰 kurz ${odd(ticket.odds)}`));
     const reserves = includeReserves ? data.opportunities.filter((item) => !item.ticketSlots.length).slice(0, 5) : [];
-    if (reserves.length) blocks.push("<b>Kvalifikované náhradní nohy</b>", ...reserves.map(opportunity));
+    if (reserves.length) blocks.push("➕ <b>Další vybrané příležitosti</b>", ...reserves.map(opportunity));
   }
   return splitTelegramBlocks(blocks);
 }
 export function formatResults(payload: TelegramDay) {
-  const blocks = [`<b>Výsledky · ${payload.date}</b>`];
+  const blocks = [`📊 <b>Výsledky za ${payload.date}</b>`];
   for (const { strategy, data } of payload.strategies) {
     const settled = data.opportunities.filter((item) => item.outcome !== "PENDING"); const tickets = data.tickets.filter((item) => item.outcome !== "PENDING");
-    if (settled.length || tickets.length) blocks.push(`<b>${esc(title(strategy))}</b> · výběry ${settled.filter((item) => item.outcome === "WON").length}/${settled.length}`, ...settled.map(opportunity), ...tickets.map((ticket) => `Tiket ${ticket.slot === 0 ? "A" : "B"} · ${ticket.outcome} · profit ${ticket.profit == null ? "—" : `${ticket.profit >= 0 ? "+" : ""}${ticket.profit.toFixed(2)} j`}`));
+    if (settled.length || tickets.length) blocks.push(`${strategyIcon(strategy)} <b>${esc(title(strategy))}</b>`, ...settled.map(opportunity), ...tickets.map((ticket) => `${ticketOutcomeIcon(ticket.outcome)} <b>Tiket ${ticket.slot === 0 ? "A" : "B"}</b> · kurz ${odd(ticket.odds)}`));
   }
   if (blocks.length === 1) blocks.push("Zatím není uzavřen žádný publikovaný výběr."); return splitTelegramBlocks(blocks);
 }
