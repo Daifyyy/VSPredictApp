@@ -140,6 +140,7 @@ jobs:
           APP_URL: ${{ vars.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           JOB: ${{ steps.pick.outputs.path }}
+          EVENT: ${{ github.event_name }}
         run: |
           if [ -z "$APP_URL" ]; then
             echo "Chybí proměnná APP_URL (Settings → Variables)." >&2
@@ -147,6 +148,9 @@ jobs:
           fi
           # `warm` má jinou cestu než ostatní (není pod /cron/).
           if [ "$JOB" = "warm" ]; then url="$APP_URL/api/warm"; else url="$APP_URL/api/cron/$JOB"; fi
+          # Ruční Telegram test musí fungovat i mimo lokální 09:00. Idempotence publikace
+          # stále zabrání opakovanému odeslání stejného dne.
+          if [ "$JOB" = "telegram-digest" ] && [ "$EVENT" = "workflow_dispatch" ]; then url="$url?force=1"; fi
           if [ "$JOB" = "refresh-league-styles" ]; then
             failed=0
             index=0
