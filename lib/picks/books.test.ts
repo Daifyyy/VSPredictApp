@@ -5,6 +5,7 @@ import {
   bestLinePrice,
   bestOverround,
   bestPrice,
+  bestResultTotalPrice,
   cornerLines,
   mainCornerLine,
   mainLine,
@@ -65,6 +66,22 @@ describe("bestPrice", () => {
 
   it("prázdný seznam nespadne", () => {
     expect(bestPrice([], "home")).toBeNull();
+  });
+});
+
+describe("bestResultTotalPrice", () => {
+  it("returns the winner-only price from the same bookmaker as the combined quote", () => {
+    const quote = bestResultTotalPrice([
+      book("Best combo", { home: 2.1, resultTotals: [{ winner: "home", total: "under", line: 5.5, odds: 2.5 }] }),
+      book("Best winner", { home: 2.4, resultTotals: [{ winner: "home", total: "under", line: 5.5, odds: 2.45 }] }),
+    ], "home", "under", 5.5);
+    expect(quote).toMatchObject({ bookmaker: "Best combo", odds: 2.5, winnerOdds: 2.1, books: 2 });
+  });
+
+  it("ignores a combined quote when that bookmaker has no comparable winner price", () => {
+    expect(bestResultTotalPrice([
+      book("Incomplete", { resultTotals: [{ winner: "home", total: "under", line: 5.5, odds: 3 }] }),
+    ], "home", "under", 5.5)).toBeNull();
   });
 });
 

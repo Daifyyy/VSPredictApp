@@ -32,6 +32,11 @@ export interface BestPrice {
   books: number;
 }
 
+/** Combined quote plus the same bookmaker's winner-only quote. */
+export interface ResultTotalPrice extends BestPrice {
+  winnerOdds: number;
+}
+
 /**
  * JSON z DB na typované knihy. Sloupec je `Json?`, takže sem může přijít cokoli –
  * proto se validuje tvar, ne jen typ. Neplatný/prázdný vstup → `[]` (volající pak
@@ -84,14 +89,15 @@ function parseResultTotals(value: unknown): NonNullable<BookOdds["resultTotals"]
 
 export function bestResultTotalPrice(
   books: BookOdds[], winner: "home" | "away", total: "over" | "under", line: number
-): BestPrice | null {
-  let best: BestPrice | null = null;
+): ResultTotalPrice | null {
+  let best: ResultTotalPrice | null = null;
   let count = 0;
   for (const book of books) {
     const quote = book.resultTotals?.find((item) => item.winner === winner && item.total === total && item.line === line);
-    if (!quote) continue;
+    const winnerOdds = book[winner];
+    if (!quote || winnerOdds == null) continue;
     count++;
-    if (!best || quote.odds > best.odds) best = { odds: quote.odds, bookmaker: book.name, books: 0 };
+    if (!best || quote.odds > best.odds) best = { odds: quote.odds, winnerOdds, bookmaker: book.name, books: 0 };
   }
   return best ? { ...best, books: count } : null;
 }

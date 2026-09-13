@@ -2,7 +2,7 @@ import { localDateKey } from "@/lib/competitionGrouping";
 import { drawTau, poissonVector } from "@/lib/stats/predict";
 import { bestLinePrice, bestPrice, bestResultTotalPrice, parseBooks, sharpFair, sharpLineFair } from "./books";
 
-export const INTUITION_POLICY_VERSION = 8;
+export const INTUITION_POLICY_VERSION = 9;
 
 const MIN_READINESS_SAMPLE = 6;
 const MIN_DIRECT_ODDS = 1.6;
@@ -12,6 +12,8 @@ const SPECULATIVE_LEG_ODDS = 3.25;
 const SPECULATIVE_WIN_PROBABILITY = .38;
 const VALUE_MIN_EV = .08;
 const SYNTHETIC_VALUE_MIN_EV = .12;
+const MIN_DIRECT_CONDITION_EFFICIENCY = 1.03;
+const MIN_SYNTHETIC_CONDITION_EFFICIENCY = 1.08;
 const ELO_MARKET_WEIGHT = .30;
 const EXTREME_ELO_EDGE = .12;
 export const ELO_SHADOW_ONLY_LEAGUE_IDS = new Set([40]); // English Championship
@@ -98,7 +100,19 @@ function syntheticPrice(row: IntuitionSource, books: ReturnType<typeof parseBook
   const totalMargin = Math.max(1, (1 / goals.odds) / totalFair);
   const quotedProbability = Math.min(.99, fairJoint * winnerMargin * totalMargin * 1.05);
   const odds = 1 / quotedProbability;
-  return odds > 1 ? { odds, bookmaker: `${win.bookmaker} + ${goals.bookmaker}` } : null;
+  return odds > 1 ? { odds, winnerOdds: win.odds, bookmaker: `${win.bookmaker} + ${goals.bookmaker}` } : null;
+}
+
+function conditionQuality(joint: number, win: number, combinedOdds: number, winnerOdds: number) {
+  if (win <= 0 || winnerOdds <= 1) return null;
+  const retention = joint / win;
+  const uplift = combinedOdds / winnerOdds;
+  const efficiency = retention * uplift;
+  return Number.isFinite(efficiency) ? { retention, uplift, efficiency } : null;
+}
+
+function conditionReason(retention: number, uplift: number) {
+  return ` Gólová podmínka zvyšuje kurz o ${Math.round((uplift - 1) * 100)} % a zachovává ${Math.round(retention * 100)} % modelových scénářů výhry.`;
 }
 
 function candidateFor(row: IntuitionSource, winner: "HOME" | "AWAY"): IntuitionCandidate | null {
@@ -110,21 +124,24 @@ function candidateFor(row: IntuitionSource, winner: "HOME" | "AWAY"): IntuitionC
   const fair = sharpFair(books);
   const marketProbability = fair?.[side] ?? null;
   const options = ([{ total: "OVER", line: 1.5 }, { total: "UNDER", line: 4.5 }, { total: "UNDER", line: 5.5 }] as const).map((option) => {
-    const probability = scoreProbabilities(row, winner, option.total, option.line).joint;
+    const probabilities = scoreProbabilities(row, winner, option.total, option.line);
+    const probability = probabilities.joint;
     const direct = bestResultTotalPrice(books, side, option.total.toLowerCase() as "over" | "under", option.line);
     const synthetic = direct ? null : syntheticPrice(row, books, winner, option.total, option.line);
     const price = direct ?? synthetic;
-    return { ...option, probability, price, priceKind: direct ? "DIRECT" as const : synthetic ? "SYNTHETIC" as const : "NONE" as const, ev: price ? probability * price.odds - 1 : null };
+    const quality = price ? conditionQuality(probability, probabilities.win, price.odds, price.winnerOdds) : null;
+    return { ...option, probability, price, quality, priceKind: direct ? "DIRECT" as const : synthetic ? "SYNTHETIC" as const : "NONE" as const, ev: price ? probability * price.odds - 1 : null };
   });
   const eligible = options.flatMap((option) => {
-    if (!option.price || option.ev == null) return [];
+    if (!option.price || option.ev == null || !option.quality) return [];
     const minOdds = option.priceKind === "DIRECT" ? MIN_DIRECT_ODDS : MIN_SYNTHETIC_ODDS;
     const minEv = option.priceKind === "DIRECT" ? VALUE_MIN_EV : SYNTHETIC_VALUE_MIN_EV;
-    if (option.price.odds < minOdds || option.price.odds > MAX_LEG_ODDS || option.ev < minEv) return [];
+    const minEfficiency = option.priceKind === "DIRECT" ? MIN_DIRECT_CONDITION_EFFICIENCY : MIN_SYNTHETIC_CONDITION_EFFICIENCY;
+    if (option.price.odds < minOdds || option.price.odds > MAX_LEG_ODDS || option.ev < minEv || option.quality.efficiency < minEfficiency) return [];
     return [{ ...option, role: "VALUE" as const }];
   }).sort((a, b) => b.probability - a.probability || Number(b.priceKind === "DIRECT") - Number(a.priceKind === "DIRECT"));
   const chosen = eligible[0];
-  if (!chosen) return null;
+  if (!chosen || !chosen.quality) return null;
   const winnerName = winner === "HOME" ? row.homeName : row.awayName;
   const modelWin = winner === "HOME" ? row.homeWin : row.awayWin;
   const context = contextualAssessment(row, winner, marketProbability ?? modelWin, modelWin - (marketProbability ?? modelWin));
@@ -139,7 +156,7 @@ function candidateFor(row: IntuitionSource, winner: "HOME" | "AWAY"): IntuitionC
     modelExpectedValue: chosen.ev,
     pedigreeScore: context.pedigree, pedigreeSnapshotId: (winner === "HOME" ? row.pedigree?.home.id : row.pedigree?.away.id) ?? null,
     contextScore: context.score, contextSupports: context.supports, contextVetoes: [],
-    reason: `${winnerName} + gólová hranice mají modelovou pravděpodobnost ${Math.round(chosen.probability * 100)} % a cenu s EV ${Math.round((chosen.ev ?? 0) * 100)} %.${context.supports.length ? ` Kvalitu podporuje: ${context.supports.join(", ")}.` : ""}`,
+    reason: `${winnerName} + gólová hranice mají modelovou pravděpodobnost ${Math.round(chosen.probability * 100)} % a cenu s EV ${Math.round((chosen.ev ?? 0) * 100)} %.${conditionReason(chosen.quality.retention, chosen.quality.uplift)}${context.supports.length ? ` Kvalitu podporuje: ${context.supports.join(", ")}.` : ""}`,
     risk: chosen.priceKind === "SYNTHETIC" ? "Kombinovaný kurz je odhad ze samostatných trhů, nikoli doložená nabídka." : "Kombinovaná podmínka může selhat i při správně odhadnutém vítězi.",
   };
 }
@@ -258,8 +275,10 @@ function evaluateElo(row: IntuitionSource, winner: "HOME" | "AWAY"): { candidate
     if (!direct || direct.odds < 1.6 || direct.odds > 6) return [];
     const model = scoreProbabilities(row, winner, option.total, option.line);
     if (model.win <= 0) return [];
+    const quality = conditionQuality(model.joint, model.win, direct.odds, direct.winnerOdds);
+    if (!quality || quality.efficiency < MIN_DIRECT_CONDITION_EFFICIENCY) return [];
     const eloJoint = calibrated * model.joint / model.win;
-    return [{ ...option, direct, modelJoint: model.joint, eloJoint, eloEv: eloJoint * direct.odds - 1, modelEv: model.joint * direct.odds - 1 }];
+    return [{ ...option, direct, quality, modelJoint: model.joint, eloJoint, eloEv: eloJoint * direct.odds - 1, modelEv: model.joint * direct.odds - 1 }];
   }).sort((a, b) => b.eloJoint - a.eloJoint);
   const chosen = options[0];
   if (!chosen) return none;
@@ -272,7 +291,7 @@ function evaluateElo(row: IntuitionSource, winner: "HOME" | "AWAY"): { candidate
     eloLongHomeRating: elo.homeLongRating, eloLongAwayRating: elo.awayLongRating, eloFastHomeRating: elo.homeFastRating, eloFastAwayRating: elo.awayFastRating,
     eloLongSample: longSample, eloFastSample: fastSample, modelExpectedValue: chosen.modelEv, eloExpectedValue: chosen.eloEv,
     pedigreeScore: context.pedigree, pedigreeSnapshotId: (winner === "HOME" ? row.pedigree?.home.id : row.pedigree?.away.id) ?? null, contextScore: context.score, contextSupports: context.supports, contextVetoes: [],
-    reason: `LONG a FAST Elo podporují ${winnerName}; edge je ${Math.round((calibrated - market) * 100)} p. b.${context.supports.length ? ` Kontext: ${context.supports.join(", ")}.` : ""}`,
+    reason: `LONG a FAST Elo podporují ${winnerName}; edge je ${Math.round((calibrated - market) * 100)} p. b.${conditionReason(chosen.quality.retention, chosen.quality.uplift)}${context.supports.length ? ` Kontext: ${context.supports.join(", ")}.` : ""}`,
     risk: chosen.modelEv < 0 ? "Hlavní gólový model má záporné EV; v experimentu je to viditelný rozpor, nikoli filtr." : "Elo měří výsledkovou sílu, nikoli sestavy ani aktuální kontext.",
   } };
 }

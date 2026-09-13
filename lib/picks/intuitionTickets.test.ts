@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildEloIntuitionTickets, buildIntuitionTickets, isTicketLockable, rankEloCandidates, rankEloDivergences, rankIntuitionCandidates, type IntuitionSource } from "./intuitionTickets";
 
 const books = (home: number, away: number) => [{ id: 4, name: "Test", home, draw: 3.5, away, over25: 1.9, under25: 1.9, btts: 1.9, bttsNo: 1.9,
-  resultTotals: [{ winner: "home", total: "over", line: 1.5, odds: home * 1.18 }, { winner: "away", total: "over", line: 1.5, odds: away * 1.18 }] }];
+  resultTotals: [{ winner: "home", total: "over", line: 1.5, odds: home * 1.3 }, { winner: "away", total: "over", line: 1.5, odds: away * 1.3 }] }];
 function row(id: number, date: string, homeWin: number, homeOdds: number): IntuitionSource {
   return { fixtureId: id, leagueId: 39, kickoff: new Date(`${date}T14:00:00Z`), homeName: `H${id}`, awayName: `A${id}`, homeWin, awayWin: .2, lambdaHome: 2.4, lambdaAway: .6, lowConfidence: false, readinessSample: 8, oddsBooks: books(homeOdds, 4.5) };
 }
@@ -34,7 +34,7 @@ describe("intuition tickets", () => {
 
   it("estimates a correlated synthetic quote from separate winner and total prices", () => {
     const source = row(7, "2026-09-12", .62, 1.9);
-    source.oddsBooks = [{ id: 4, name: "Test", home: 1.9, draw: 3.5, away: 4.5, over25: 1.9, under25: 1.9, btts: 1.9, bttsNo: 1.9, matchTotals: [{ line: 1.5, over: 1.5, under: 4.2 }, { line: 4.5, over: 5, under: 1.18 }] }];
+    source.oddsBooks = [{ id: 4, name: "Test", home: 1.9, draw: 3.5, away: 4.5, over25: 1.9, under25: 1.9, btts: 1.9, bttsNo: 1.9, matchTotals: [{ line: 1.5, over: 2.5, under: 1.5 }, { line: 4.5, over: 5, under: 1.18 }] }];
     expect(rankIntuitionCandidates([source])[0]).toMatchObject({ fixtureId: 7, priceKind: "SYNTHETIC" });
   });
 
@@ -91,11 +91,22 @@ describe("intuition tickets", () => {
   it("accepts a Monaco-type direct candidate in ELO even when the main-model EV is negative", () => {
     const source = row(20, "2026-09-12", .18, 3.4);
     source.lambdaHome = .45; source.lambdaAway = 1.5;
+    source.oddsBooks = [{ id: 4, name: "Test", home: 3.4, draw: 3.5, away: 4.5, over25: 1.9, under25: 1.9, btts: 1.9, bttsNo: 1.9,
+      resultTotals: [{ winner: "home", total: "under", line: 5.5, odds: 4.42 }] }];
     source.elo = { homeLongRating: 1580, awayLongRating: 1510, homeFastRating: 1570, awayFastRating: 1515, homeLongSample: 20, awayLongSample: 20, homeFastSample: 12, awayFastSample: 12, homeProbability: .43, awayProbability: .20, longHomeProb: .44, longAwayProb: .20, fastHomeProb: .42, fastAwayProb: .20 };
     contextual(source);
     const candidate = rankEloCandidates([source])[0];
     expect(candidate).toMatchObject({ fixtureId: 20, winner: "HOME", role: "ELO", priceKind: "DIRECT" });
     expect(candidate.modelExpectedValue).toBeLessThan(0);
+  });
+
+  it("rejects a cosmetic goal condition that does not improve the winner bet", () => {
+    const source = contextual(row(21, "2026-09-12", .44, 3.5));
+    source.oddsBooks = [{ id: 4, name: "Test", home: 3.5, draw: 3.5, away: 2.2, over25: 1.9, under25: 1.9, btts: 1.9, bttsNo: 1.9,
+      resultTotals: [{ winner: "home", total: "under", line: 5.5, odds: 3.48 }] }];
+    expect(rankIntuitionCandidates([source])).toEqual([]);
+    source.elo = { homeLongRating: 1580, awayLongRating: 1510, homeFastRating: 1570, awayFastRating: 1515, homeLongSample: 20, awayLongSample: 20, homeFastSample: 12, awayFastSample: 12, homeProbability: .43, awayProbability: .2, longHomeProb: .44, longAwayProb: .2, fastHomeProb: .42, fastAwayProb: .2 };
+    expect(rankEloCandidates([source])).toEqual([]);
   });
 
   it("ELO odmítá syntetickou cenu a drží unikátní fixtures mezi A/B", () => {
