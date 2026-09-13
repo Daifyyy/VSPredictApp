@@ -37,13 +37,22 @@ function Metric({ label, value, note }: { label: string; value: string; note?: s
 function Stats({ metrics, definition }: { metrics: StrategyHubMetrics; definition: CatalogItem }) {
   const all = metrics.all;
   const recent = metrics.recent;
-  const noun = metrics.unit === "TICKETS" ? "tiketů" : metrics.unit === "FORECASTS" ? "prognóz" : "výběrů";
+  const noun = metrics.unit === "TICKETS" ? "tiketů" : "výběrů";
+  if (metrics.unit === "FORECASTS") return <>
+    <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
+      <Metric label="Vyhodnoceno" value={String(all.settled)} note={`${all.pending} čeká · prognóz`} />
+      <Metric label="Průměrná chyba" value={metrics.forecastMae == null ? "—" : metrics.forecastMae.toFixed(2)} note="MAE · nižší je lepší" />
+      <Metric label="Systematická odchylka" value={metrics.forecastBias == null ? "—" : `${metrics.forecastBias >= 0 ? "+" : ""}${metrics.forecastBias.toFixed(2)}`} note="plus = model nadhodnocuje" />
+      <Metric label="Pokrytí výsledkem" value={pct(metrics.actualCoverage ?? null)} note="kompletní statistiky obou týmů" />
+    </div>
+    {all.settled < definition.minimumSample ? <p className="mt-3 rounded-lg bg-warning/10 px-3 py-2 text-xs text-warning">Vzorek {all.settled}/{definition.minimumSample} zatím nestačí k potvrzení modelu.</p> : null}
+  </>;
   return <>
     <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-6">
       <Metric label="Uzavřeno" value={String(all.settled)} note={`${all.pending} čeká · ${noun}`} />
       <Metric label="Úspěšnost" value={pct(all.accuracy)} note={metrics.selectionAccuracy != null && metrics.unit === "TICKETS" ? `nohy ${pct(metrics.selectionAccuracy)}` : undefined} />
-      <Metric label="Profit" value={metrics.unit === "FORECASTS" ? "—" : units(all.profit)} note="vklad 1 jednotka" />
-      <Metric label="ROI" value={metrics.unit === "FORECASTS" ? "—" : pct(all.roi)} note="aktuální verze" />
+      <Metric label="Profit" value={units(all.profit)} note="vklad 1 jednotka" />
+      <Metric label="ROI" value={pct(all.roi)} note="aktuální verze" />
       <Metric label="Průměrný kurz" value={all.averageOdds?.toFixed(2) ?? "—"} note="jen zmrazené ceny" />
       <Metric label="Posledních 30 dní" value={recent.roi == null ? "—" : pct(recent.roi)} note={`${recent.settled} uzavřeno`} />
     </div>
@@ -54,8 +63,9 @@ function Stats({ metrics, definition }: { metrics: StrategyHubMetrics; definitio
 
 function OpportunityCard({ item }: { item: StrategyHubOpportunity }) {
   const color = item.outcome === "WON" ? "text-positive bg-positive/10" : item.outcome === "LOST" ? "text-negative bg-negative/10" : "text-muted bg-border/50";
+  const status = item.priceKind === "NONE" && item.score ? "Vyhodnoceno" : resultLabel(item.outcome);
   return <article className="rounded-xl border border-border bg-surface p-4 shadow-sm">
-    <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-[10px] font-bold uppercase tracking-wide text-muted">{item.leagueName} · {new Date(item.kickoff).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}</p><h3 className="mt-1 text-sm font-bold">{item.homeName} – {item.awayName}</h3></div><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${color}`}>{resultLabel(item.outcome)}{item.score ? ` · ${item.score}` : ""}</span></div>
+    <div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-[10px] font-bold uppercase tracking-wide text-muted">{item.leagueName} · {new Date(item.kickoff).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}</p><h3 className="mt-1 text-sm font-bold">{item.homeName} – {item.awayName}</h3></div><span className={`rounded-full px-2 py-1 text-[10px] font-bold ${color}`}>{status}{item.score ? ` · ${item.score}` : ""}</span></div>
     <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-y border-border py-3"><strong className="text-base text-foreground">{item.selection}</strong><div className="text-right"><strong className="block text-base tabular-nums">{item.odds?.toFixed(2) ?? "Bez kurzu"}</strong><span className="text-[9px] font-bold uppercase text-muted">{item.priceKind === "SYNTHETIC" ? "odhad ceny" : item.priceKind === "DIRECT" ? item.bookmaker ?? "přímý kurz" : "prognóza"}</span></div></div>
     {item.strategyConflict && <p className="mt-3 rounded-lg bg-warning/10 px-3 py-2 text-xs font-bold text-warning">Rozpor strategií: {item.strategyConflict}</p>}
     <p className="mt-3 text-xs leading-5"><strong>Proč prošla:</strong> {item.reason}</p><p className="mt-1 text-xs leading-5 text-muted"><strong>Hlavní riziko:</strong> {item.risk}</p>

@@ -10,6 +10,8 @@ import { MODEL_VERSION } from "@/lib/data/modelVersion";
 import { STRATEGY_CATALOG, modelLabSegments, modelLabSummary, type ModelLabContext, type ModelLabLedgerRow, type ModelLabStatus } from "@/lib/picks/modelLab";
 import { binaryOutcome, FINAL_STATUSES } from "@/lib/picks/evaluation";
 import { requestDiagnostics } from "@/lib/httpDiagnostics";
+import { teamGoalOpportunityDecision } from "@/lib/picks/marketSignals";
+import { FOUL_MODEL_VERSION } from "@/lib/picks/fouls";
 
 const querySchema = z.object({
   context: z.enum(["LEAGUE", "EURO_CUP", "NATIONAL"]).default("LEAGUE"),
@@ -43,7 +45,7 @@ async function cachedSummary(context: ModelLabContext) {
   return STRATEGY_CATALOG.map((item) => {
     const stored = byKey.get(`${item.strategy}:${item.policyVersion}`)!;
     const card = stored.metrics as Record<string, unknown>;
-    return { ...card, currentCount: ["ONE_X_TWO", "OVER_25", "BTTS_YES", "CORNERS"].includes(item.strategy) ? currentByKey.get(`${item.strategy}:${item.policyVersion}`) ?? 0 : null };
+    return { ...card, currentCount: ["ONE_X_TWO", "OVER_25", "BTTS_YES", "CORNERS", "CARDS_REF"].includes(item.strategy) ? currentByKey.get(`${item.strategy}:${item.policyVersion}`) ?? 0 : null };
   });
 }
 
@@ -72,7 +74,7 @@ export async function GET(request: Request) {
       }),
       parsed.data.strategy && parsed.data.strategy !== "TEAM_GOALS" ? Promise.resolve([]) : prisma.marketSignalSnapshot.findMany({ where: { modelContext: context, market: { in: teamMarkets } }, orderBy: { openedAt: "asc" } }),
       prisma.modelStrategyDefinition.findMany({ where: { modelContext: context } }),
-      context !== "LEAGUE" || (parsed.data.strategy && parsed.data.strategy !== "FOULS") ? Promise.resolve([]) : prisma.fixturePrediction.findMany({ where: { modelContext: context, homeGoals: { not: null }, awayGoals: { not: null }, lambdaFoulsHome: { not: null }, lambdaFoulsAway: { not: null } }, select: { fixtureId: true, homeTeamId: true, awayTeamId: true, lambdaFoulsHome: true, lambdaFoulsAway: true, foulModelVersion: true } }),
+      context !== "LEAGUE" || (parsed.data.strategy && parsed.data.strategy !== "FOULS") ? Promise.resolve([]) : prisma.fixturePrediction.findMany({ where: { modelContext: context, foulModelVersion: FOUL_MODEL_VERSION, homeGoals: { not: null }, awayGoals: { not: null }, lambdaFoulsHome: { not: null }, lambdaFoulsAway: { not: null } }, select: { fixtureId: true, homeTeamId: true, awayTeamId: true, lambdaFoulsHome: true, lambdaFoulsAway: true, foulModelVersion: true } }),
     ]);
     const fixtureIds = [...new Set([...tips.map((row) => row.fixtureId), ...teamSignals.map((row) => row.fixtureId)])];
     const results = fixtureIds.length ? await prisma.fixturePrediction.findMany({
@@ -80,28 +82,40 @@ export async function GET(request: Request) {
       select: { fixtureId: true, homeGoals: true, awayGoals: true, status: true },
     }) : [];
     const byFixture = new Map(results.map((row) => [row.fixtureId, row]));
-    const cornerTips = tips.filter((row) => row.market === "CORNERS");
-    const cornerStats = cornerTips.length ? await prisma.matchStatCache.findMany({
-      where: { fixtureId: { in: cornerTips.map((row) => row.fixtureId) } },
-      select: { fixtureId: true, teamId: true, corners: true },
+    const countTips = tips.filter((row) => row.market === "CORNERS" || row.market === "CARDS");
+    const cornerStats = countTips.length ? await prisma.matchStatCache.findMany({
+      where: { fixtureId: { in: countTips.map((row) => row.fixtureId) } },
+      select: { fixtureId: true, teamId: true, corners: true, yellowCards: true, redCards: true },
     }) : [];
-    const actualCorners = new Map<number, number>();
-    for (const tip of cornerTips) {
-      const home = cornerStats.find((row) => row.fixtureId === tip.fixtureId && row.teamId === tip.homeTeamId)?.corners;
-      const away = cornerStats.find((row) => row.fixtureId === tip.fixtureId && row.teamId === tip.awayTeamId)?.corners;
-      if (home != null && away != null) actualCorners.set(tip.fixtureId, home + away);
+    const actualCounts = new Map<string, number>();
+    for (const tip of countTips) {
+      const home = cornerStats.find((row) => row.fixtureId === tip.fixtureId && row.teamId === tip.homeTeamId);
+      const away = cornerStats.find((row) => row.fixtureId === tip.fixtureId && row.teamId === tip.awayTeamId);
+      const homeValue = tip.market === "CARDS" ? home?.yellowCards == null && home?.redCards == null ? null : (home?.yellowCards ?? 0) + (home?.redCards ?? 0) : home?.corners;
+      const awayValue = tip.market === "CARDS" ? away?.yellowCards == null && away?.redCards == null ? null : (away?.yellowCards ?? 0) + (away?.redCards ?? 0) : away?.corners;
+      if (homeValue != null && awayValue != null) actualCounts.set(`${tip.fixtureId}:${tip.market}`, homeValue + awayValue);
     }
     const ledger: ModelLabLedgerRow[] = tips.map((row) => ({
       ...row,
       homeGoals: byFixture.get(row.fixtureId)?.homeGoals ?? null,
       awayGoals: byFixture.get(row.fixtureId)?.awayGoals ?? null,
-      actualCount: row.actualCount ?? actualCorners.get(row.fixtureId) ?? null,
+      actualCount: row.actualCount ?? actualCounts.get(`${row.fixtureId}:${row.market}`) ?? null,
     }));
-    for (const signal of teamSignals) {
+    const teamLedgerSignals = teamSignals.filter((signal) => signal.policyVersion < 3);
+    const currentTeamSignals = new Map<number, { signal: typeof teamSignals[number]; score: number; probability: number }>();
+    for (const signal of teamSignals.filter((row) => row.policyVersion >= 3)) {
+      const decision = teamGoalOpportunityDecision({ fixtureId: signal.fixtureId, market: signal.market, line: signal.line, modelProbability: signal.modelProbability, marketProbability: signal.openMarketProbability, decimalOdds: signal.decimalOdds });
+      if (!decision.eligible) continue;
+      const current = currentTeamSignals.get(signal.fixtureId);
+      if (!current || decision.score > current.score) currentTeamSignals.set(signal.fixtureId, { signal, score: decision.score, probability: decision.decisionProbability });
+    }
+    teamLedgerSignals.push(...[...currentTeamSignals.values()].map((item) => item.signal));
+    for (const signal of teamLedgerSignals) {
       const prediction = byFixture.get(signal.fixtureId);
       // Cena musí pocházet výhradně ze zmrazeného signálu. V1 ji nemá a
       // zůstává pouze sportovní diagnostikou bez retrospektivního ROI.
-      ledger.push({ id: signal.id, fixtureId: signal.fixtureId, leagueId: signal.leagueId, kickoff: signal.kickoff, strategy: "TEAM_GOALS", policyVersion: signal.policyVersion, market: signal.market, side: signal.side, line: signal.line, modelProbability: signal.modelProbability, marketProbability: signal.openMarketProbability, decimalOdds: signal.policyVersion >= 2 ? signal.decimalOdds : null, stake: 1, modelContext: signal.modelContext, modelVersion: signal.modelVersion, qualifiedAt: signal.openedAt, closingMarketProbability: signal.closeMarketProbability, closedAt: signal.closedAt, homeGoals: prediction?.homeGoals ?? null, awayGoals: prediction?.awayGoals ?? null });
+      const probability = signal.policyVersion >= 3 ? currentTeamSignals.get(signal.fixtureId)?.probability ?? signal.modelProbability : signal.modelProbability;
+      ledger.push({ id: signal.id, fixtureId: signal.fixtureId, leagueId: signal.leagueId, kickoff: signal.kickoff, strategy: "TEAM_GOALS", policyVersion: signal.policyVersion, market: signal.market, side: signal.side, line: signal.line, modelProbability: probability, marketProbability: signal.openMarketProbability, decimalOdds: signal.policyVersion >= 2 ? signal.decimalOdds : null, stake: 1, modelContext: signal.modelContext, modelVersion: signal.modelVersion, qualifiedAt: signal.openedAt, closingMarketProbability: signal.closeMarketProbability, closedAt: signal.closedAt, homeGoals: prediction?.homeGoals ?? null, awayGoals: prediction?.awayGoals ?? null });
     }
     let foulResearch: { n: number; mae: number | null; bias: number | null; version: number | null } | null = null;
     if (foulPredictions.length) {
@@ -122,7 +136,7 @@ export async function GET(request: Request) {
         modelVersion: override?.modelVersion ?? MODEL_VERSION,
         status: (override?.status as ModelLabStatus | undefined) ?? item.status,
         definitionId: override?.id ?? null,
-        currentCount: ["ONE_X_TWO", "OVER_25", "BTTS_YES", "CORNERS"].includes(item.strategy)
+        currentCount: ["ONE_X_TWO", "OVER_25", "BTTS_YES", "CORNERS", "CARDS_REF"].includes(item.strategy)
           ? rows.filter((row) => row.kickoff >= liveFrom && !FINAL_STATUSES.has(byFixture.get(row.fixtureId)?.status ?? "") && binaryOutcome(row.market, row.side, row.homeGoals, row.awayGoals, row.line, row.actualCount ?? null) == null).length
           : null,
         summary: item.strategy === "FOULS" && foulResearch ? { ...summary, verdict: foulResearch.bias == null ? "Fauly zatím nemají skutečná data." : `MAE ${foulResearch.mae!.toFixed(2)} · bias ${foulResearch.bias >= 0 ? "+" : ""}${foulResearch.bias.toFixed(2)} faulu.` } : summary,

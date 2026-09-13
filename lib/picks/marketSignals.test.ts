@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { BookOdds } from "@/lib/data/apiFootball";
 import type { PredictionRow } from "@/lib/types";
-import { freezeMarketSignals, marketProbabilityAt, marketSignalPolicyVersion, MARKET_SIGNAL_POLICY_VERSION, TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION, teamMarketProbabilityAtBookmaker } from "./marketSignals";
+import { freezeMarketSignals, marketProbabilityAt, marketSignalPolicyVersion, MARKET_SIGNAL_POLICY_VERSION, TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION, teamGoalOpportunityDecision, teamMarketProbabilityAtBookmaker } from "./marketSignals";
 
 const books: BookOdds[] = [{
   id: 1,
@@ -52,9 +52,21 @@ describe("freezeMarketSignals", () => {
     expect(marketProbabilityAt(books, "TEAM_HOME_15", "OVER", 1.5)).toBeCloseTo(1 / 2.1 / (1 / 2.1 + 1 / 1.7));
   });
 
-  it("oddělí prospektivní týmové góly v2 od historické politiky", () => {
+  it("oddělí prospektivní týmové góly v3 od historické politiky", () => {
     expect(marketSignalPolicyVersion("OVER_25")).toBe(MARKET_SIGNAL_POLICY_VERSION);
     expect(marketSignalPolicyVersion("TEAM_HOME_15")).toBe(TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION);
+  });
+
+  it("odmítne nehratelný krátký kurz i extrémní rozpor modelu s trhem", () => {
+    expect(teamGoalOpportunityDecision({ fixtureId: 1, market: "TEAM_HOME_05", line: .5, modelProbability: .82, marketProbability: .79, decimalOdds: 1.3 }).rejection).toBe("PRICE_TOO_SHORT");
+    expect(teamGoalOpportunityDecision({ fixtureId: 2, market: "TEAM_AWAY_05", line: .5, modelProbability: .74, marketProbability: .38, decimalOdds: 2.44 }).rejection).toBe("PRICE_TOO_HIGH");
+  });
+
+  it("přijme pouze konzervativně kladnou a pravděpodobnou příležitost", () => {
+    const decision = teamGoalOpportunityDecision({ fixtureId: 3, market: "TEAM_HOME_15", line: 1.5, modelProbability: .68, marketProbability: .58, decimalOdds: 1.85 });
+    expect(decision.eligible).toBe(true);
+    expect(decision.decisionProbability).toBeCloseTo(.615);
+    expect(decision.expectedValue).toBeGreaterThan(.1);
   });
 
   it("closing týmových gólů nepřevezme z jiného bookmakera", () => {

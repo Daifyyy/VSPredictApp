@@ -8,7 +8,7 @@ import { teamTotalProb } from "./teamTotals";
 export const MARKET_SIGNAL_POLICY_VERSION = 1;
 export const COUNT_MARKET_SIGNAL_POLICY_VERSION = 2;
 /** První politika týmových gólů s neměnně uloženou skutečnou cenou. */
-export const TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION = 2;
+export const TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION = 3;
 export type SignalMarket = "1X2" | "OVER_25" | "BTTS" | "CORNERS" | "CARDS" | "TEAM_HOME_05" | "TEAM_HOME_15" | "TEAM_AWAY_05" | "TEAM_AWAY_15";
 export type SignalSide = "HOME" | "DRAW" | "AWAY" | "OVER" | "UNDER";
 
@@ -115,6 +115,46 @@ export function freezeMarketSignals(row: PredictionRow, books: BookOdds[]): Froz
     out.push({ market: definition.market, side: "OVER", line: definition.line, modelProbability: teamTotalProb(row, definition.team, definition.line), marketProbability: fair.over, publishedTip: false });
   }
   return out;
+}
+
+export type TeamGoalOpportunityInput = {
+  fixtureId: number;
+  market: string;
+  line: number | null;
+  modelProbability: number;
+  marketProbability: number;
+  decimalOdds: number | null;
+};
+
+export type TeamGoalOpportunityDecision = {
+  eligible: boolean;
+  decisionProbability: number;
+  expectedValue: number | null;
+  edge: number;
+  score: number;
+  rejection: string | null;
+};
+
+/** Konzervativní kvalifikace týmového gólu; model dostává jen 35% váhu proti trhu. */
+export function teamGoalOpportunityDecision(row: TeamGoalOpportunityInput): TeamGoalOpportunityDecision {
+  const edge = row.modelProbability - row.marketProbability;
+  const decisionProbability = row.marketProbability + .35 * edge;
+  const expectedValue = row.decimalOdds == null ? null : decisionProbability * row.decimalOdds - 1;
+  const isHalfGoal = row.line === .5;
+  const minimumOdds = isHalfGoal ? 1.55 : 1.6;
+  const maximumOdds = isHalfGoal ? 2.2 : 2.6;
+  const minimumProbability = isHalfGoal ? .72 : .58;
+  let rejection: string | null = null;
+  if (row.decimalOdds == null) rejection = "MISSING_DIRECT_PRICE";
+  else if (row.line !== .5 && row.line !== 1.5) rejection = "UNSUPPORTED_LINE";
+  else if (row.decimalOdds < minimumOdds) rejection = "PRICE_TOO_SHORT";
+  else if (row.decimalOdds > maximumOdds) rejection = "PRICE_TOO_HIGH";
+  else if (row.modelProbability < minimumProbability) rejection = "LOW_SUCCESS_PROBABILITY";
+  else if (edge < .04) rejection = "INSUFFICIENT_EDGE";
+  else if (edge > .2) rejection = "MODEL_MARKET_CONFLICT";
+  else if (expectedValue == null || expectedValue < .04) rejection = "INSUFFICIENT_CONSERVATIVE_EV";
+  const lineBonus = row.line === 1.5 ? .015 : 0;
+  return { eligible: rejection == null, decisionProbability, expectedValue, edge, score: decisionProbability + Math.min(.08, Math.max(0, expectedValue ?? 0)) * .5 + lineBonus, rejection };
 }
 
 export function marketProbabilityAt(

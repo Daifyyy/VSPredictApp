@@ -4,7 +4,7 @@ import { getEntitlement } from "@/lib/entitlements";
 import { prisma } from "@/lib/db";
 import { localDateKey } from "@/lib/competitionGrouping";
 import { pragueDateBounds } from "@/lib/recentWindow";
-import { TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION } from "@/lib/picks/marketSignals";
+import { TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION, teamGoalOpportunityDecision } from "@/lib/picks/marketSignals";
 
 export const dynamic = "force-dynamic";
 
@@ -33,11 +33,18 @@ export async function GET() {
   const fixtureIds = [...new Set(research.map((row) => row.fixtureId))];
   const fixtures = fixtureIds.length ? await prisma.fixturePrediction.findMany({ where: { fixtureId: { in: fixtureIds } }, select: { fixtureId: true, homeTeamId: true, awayTeamId: true, homeName: true, awayName: true, homeLogo: true, awayLogo: true } }) : [];
   const fixtureById = new Map(fixtures.map((row) => [row.fixtureId, row]));
+  const researchByFixture = new Map<number, { row: typeof research[number]; score: number; decisionProbability: number; expectedValue: number | null }>();
+  for (const row of research) {
+    const decision = teamGoalOpportunityDecision({ fixtureId: row.fixtureId, market: row.market, line: row.line, modelProbability: row.modelProbability, marketProbability: row.openMarketProbability, decimalOdds: row.decimalOdds });
+    if (!decision.eligible) continue;
+    const current = researchByFixture.get(row.fixtureId);
+    if (!current || decision.score > current.score) researchByFixture.set(row.fixtureId, { row, score: decision.score, decisionProbability: decision.decisionProbability, expectedValue: decision.expectedValue });
+  }
   const rows = [
     ...autonomous.map((row) => ({ ...row, kind: "AUTONOMOUS" as const, leagueName: null, label: row.strategy, probability: row.modelProbability, price: row.decimalOdds, priceTime: row.capturedAt })),
-    ...research.map((row) => {
+    ...[...researchByFixture.values()].map(({ row, decisionProbability, expectedValue }) => {
       const fixture = fixtureById.get(row.fixtureId);
-      return { ...row, kind: "RESEARCH" as const, leagueName: null, label: "Týmové góly v2", homeTeamId: fixture?.homeTeamId ?? 0, awayTeamId: fixture?.awayTeamId ?? 0, homeName: fixture?.homeName ?? "Domácí", awayName: fixture?.awayName ?? "Hosté", homeLogo: fixture?.homeLogo ?? null, awayLogo: fixture?.awayLogo ?? null, probability: row.modelProbability, marketProbability: row.openMarketProbability, edge: row.modelProbability - row.openMarketProbability, expectedValue: row.decimalOdds == null ? null : row.modelProbability * row.decimalOdds - 1, price: row.decimalOdds, priceTime: row.quotedAt };
+      return { ...row, kind: "RESEARCH" as const, leagueName: null, label: "Týmové góly v3", homeTeamId: fixture?.homeTeamId ?? 0, awayTeamId: fixture?.awayTeamId ?? 0, homeName: fixture?.homeName ?? "Domácí", awayName: fixture?.awayName ?? "Hosté", homeLogo: fixture?.homeLogo ?? null, awayLogo: fixture?.awayLogo ?? null, probability: decisionProbability, marketProbability: row.openMarketProbability, edge: decisionProbability - row.openMarketProbability, expectedValue, price: row.decimalOdds, priceTime: row.quotedAt };
     }),
     ...manual.map((row) => ({ ...row, kind: "MANUAL" as const, label: "Můj tip", side: row.selection, probability: null, marketProbability: null, edge: null, expectedValue: null, price: row.odds, bookmaker: row.oddsBook, priceTime: row.oddsAt })),
   ];

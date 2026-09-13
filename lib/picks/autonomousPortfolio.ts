@@ -1,4 +1,4 @@
-export type AutonomousStrategy = "ONE_X_TWO" | "OVER_25" | "BTTS_YES" | "CORNERS";
+export type AutonomousStrategy = "ONE_X_TWO" | "OVER_25" | "BTTS_YES" | "CORNERS" | "CARDS_REF";
 export type AutonomousStatus = "candidate" | "watch" | "unavailable";
 
 export const AUTONOMOUS_POLICY_VERSION: Record<AutonomousStrategy, number> = {
@@ -6,6 +6,7 @@ export const AUTONOMOUS_POLICY_VERSION: Record<AutonomousStrategy, number> = {
   OVER_25: 1,
   BTTS_YES: 1,
   CORNERS: 1,
+  CARDS_REF: 1,
 };
 
 /** Count model zmrazený pro rohovou politiku v1; změna modelu vyžaduje novou politiku. */
@@ -39,6 +40,7 @@ const CONFIG = {
   OVER_25: { probability: 0.6, edge: 0.04, expectedValue: 0.02 },
   BTTS_YES: { probability: 0.6, edge: 0.02, expectedValue: 0.02 },
   CORNERS: { probability: 0.6, edge: 0.05, expectedValue: 0.03 },
+  CARDS_REF: { probability: 0.6, edge: 0.05, expectedValue: 0.03 },
 } as const;
 
 /** Cista, verzovana publikacni brana. Poradi kontrol zaroven urcuje jednu vetu v UI. */

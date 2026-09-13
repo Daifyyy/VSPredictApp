@@ -24,7 +24,8 @@ export const STRATEGY_CATALOG: StrategyCatalogItem[] = [
   { strategy: "CORNERS", policyVersion: 1, market: "CORNERS", title: "Rohy Over/Under v1", status: "RESEARCH", minimumSample: 200, rules: "60 % · edge 5 p. b. · EV 3 % · skutečná půlková linie", decision: "Po pre-launch auditu prospektivní ROI, čerstvé CLV a kalibrace proti stejnému trhu" },
   { strategy: "CARDS_REF", policyVersion: 1, market: "CARDS", title: "Karty · s rozhodčím", status: "RESEARCH", minimumSample: 200, rules: "Oddělená verze s auditním faktorem rozhodčího", decision: "Kalibrace a benchmark pouze v rámci stejné verze" },
   { strategy: "FOULS", policyVersion: 1, market: "FOULS", title: "Fauly", status: "RESEARCH", minimumSample: 150, rules: "Početní prognóza bez sázkového trhu", decision: "MAE a bias podle lig; bez ROI do dostupnosti trhu" },
-  { strategy: "TEAM_GOALS", policyVersion: 2, market: "TEAM_TOTAL", title: "Týmové góly 0,5 / 1,5 v2", status: "RESEARCH", minimumSample: 200, rules: "Prospektivní kalibrace se zmrazenou cenou", decision: "ROI až z cen neměnně uložených při kvalifikaci" },
+  { strategy: "TEAM_GOALS", policyVersion: 3, market: "TEAM_TOTAL", title: "Týmové góly 0,5 / 1,5 v3", status: "RESEARCH", minimumSample: 200, rules: "Hratelná přímá cena, konzervativní EV a nejvýše jeden výběr na zápas", decision: "Vyhodnotit až na nové prospektivní kohortě" },
+  { strategy: "TEAM_GOALS", policyVersion: 2, market: "TEAM_TOTAL", title: "Týmové góly 0,5 / 1,5 v2", status: "RETIRED", minimumSample: 0, rules: "Všechny dostupné týmové trhy se zmrazenou cenou", decision: "Historie zůstává oddělená; neprezentovat jako doporučení" },
   { strategy: "TEAM_GOALS", policyVersion: 1, market: "TEAM_TOTAL", title: "Týmové góly v1", status: "RETIRED", minimumSample: 0, rules: "Historická sportovní diagnostika bez zmrazené ceny", decision: "Kalibrace ano, ROI se zpětně nepočítá" },
   { strategy: "CHECKLIST", policyVersion: 1, market: "MIXED", title: "Checklist v1", status: "RETIRED", minimumSample: 0, rules: "Historická ukončená politika", decision: "Pouze neměnný archiv" },
   { strategy: "PUBLISHED_1X2", policyVersion: 1, market: "1X2", title: "Publikované 1X2 v1", status: "RETIRED", minimumSample: 0, rules: "55 % · náskok 10 p. b.", decision: "Pouze neměnný archiv" },
@@ -151,7 +152,7 @@ export function modelLabSegments(rows: ModelLabLedgerRow[]) {
   return ["league", "model", "odds", "edge", "side"].map((kind) => {
     const groups = new Map<string, ModelLabLedgerRow[]>();
     for (const row of rows) { const key = segmentLabel(row, kind); groups.set(key, [...(groups.get(key) ?? []), row]); }
-    return { kind, groups: [...groups].map(([label, values]) => ({ label, descriptiveOnly: values.filter((row) => row.market === "CORNERS" ? row.actualCount != null : row.homeGoals != null && row.awayGoals != null).length < 20, ...modelLabSummary(values) })) };
+    return { kind, groups: [...groups].map(([label, values]) => ({ label, descriptiveOnly: values.filter((row) => row.market === "CORNERS" || row.market === "CARDS" ? row.actualCount != null : row.homeGoals != null && row.awayGoals != null).length < 20, ...modelLabSummary(values) })) };
   });
 }
 

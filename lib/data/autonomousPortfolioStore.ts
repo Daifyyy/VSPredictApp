@@ -8,16 +8,18 @@ import { COUNT_MARKET_SIGNAL_POLICY_VERSION, MARKET_SIGNAL_POLICY_VERSION, marke
 import { isPublicClubLeague } from "./catalog";
 import { binaryOutcome, portfolioProfit, RELIABLE_CLOSE_MAX_MINUTES } from "@/lib/picks/evaluation";
 
-let cornerActivationCache: { modelVersion: number; enabled: boolean; expiresAt: number } | null = null;
+const countActivationCache = new Map<string, { enabled: boolean; expiresAt: number }>();
 
-async function cornersLiveEnabled(modelVersion: number, at: Date): Promise<boolean> {
-  if (cornerActivationCache?.modelVersion === modelVersion && cornerActivationCache.expiresAt > at.getTime()) return cornerActivationCache.enabled;
+async function countResearchEnabled(strategy: "CORNERS" | "CARDS_REF", modelVersion: number, at: Date): Promise<boolean> {
+  const cacheKey = `${strategy}:${modelVersion}`;
+  const cached = countActivationCache.get(cacheKey);
+  if (cached && cached.expiresAt > at.getTime()) return cached.enabled;
   const definition = await prisma.modelStrategyDefinition.findUnique({
-    where: { strategy_policyVersion_modelContext_modelVersion: { strategy: "CORNERS", policyVersion: AUTONOMOUS_POLICY_VERSION.CORNERS, modelContext: "LEAGUE", modelVersion } },
+    where: { strategy_policyVersion_modelContext_modelVersion: { strategy, policyVersion: AUTONOMOUS_POLICY_VERSION[strategy], modelContext: "LEAGUE", modelVersion } },
     select: { status: true, startedAt: true },
   });
-  const enabled = definition?.status === "LIVE_TEST" && definition.startedAt <= at;
-  cornerActivationCache = { modelVersion, enabled, expiresAt: at.getTime() + 60_000 };
+  const enabled = definition == null || (["RESEARCH", "LIVE_TEST", "CANDIDATE"].includes(definition.status) && definition.startedAt <= at);
+  countActivationCache.set(cacheKey, { enabled, expiresAt: at.getTime() + 60_000 });
   return enabled;
 }
 
@@ -58,7 +60,7 @@ export async function captureAutonomousPortfolio(fixtureId: number, books: BookO
   const signals = await prisma.marketSignalSnapshot.findMany({
     where: { fixtureId, OR: [
       { market: { in: ["1X2", "OVER_25", "BTTS"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
-      { market: "CORNERS", policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
+      { market: { in: ["CORNERS", "CARDS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
     ] },
   });
   const byMarket = new Map(signals.map((signal) => [signal.market, signal]));
@@ -74,15 +76,21 @@ export async function captureAutonomousPortfolio(fixtureId: number, books: BookO
     if (!bttsFair || candidate.overround < bttsFair.overround) bttsFair = candidate;
   }
   const cornerSignal = byMarket.get("CORNERS");
-  const cornerEnabled = await cornersLiveEnabled(prediction.modelVersion, at);
+  const cardSignal = byMarket.get("CARDS");
+  const [cornerEnabled, cardEnabled] = await Promise.all([countResearchEnabled("CORNERS", prediction.modelVersion, at), countResearchEnabled("CARDS_REF", prediction.modelVersion, at)]);
   const cornerSide = cornerSignal?.side === "UNDER" ? "UNDER" : "OVER";
   const cornerQuote = cornerSignal?.line == null ? null : referenceLineQuote(books, "corners", cornerSignal.line, cornerSide === "OVER" ? "over" : "under", PINNACLE_FIRST_BOOKMAKERS);
+  const cardSide = cardSignal?.side === "UNDER" ? "UNDER" : "OVER";
+  const cardQuote = cardSignal?.line == null ? null : referenceLineQuote(books, "cards", cardSignal.line, cardSide === "OVER" ? "over" : "under", PINNACLE_FIRST_BOOKMAKERS);
   const inputs: Array<{ strategy: AutonomousStrategy; market: string; side: Side; line: number | null; probability: number; marketProbability: number | null; second?: number; price: { odds: number; bookmaker: string } | null; samples: number; overround?: number | null; countModelVersion?: number | null }> = [
     { strategy: "ONE_X_TWO", market: "1X2", side: oneSide, line: null, probability: oneProb, marketProbability: oneFair ? (oneSide === "HOME" ? oneFair.home : oneFair.away) : null, second: Math.max(prediction.draw, oneSide === "HOME" ? prediction.awayWin : prediction.homeWin), price: referenceOneXTwo(books, oneSide), samples: Array.isArray(byMarket.get("1X2")?.series) ? (byMarket.get("1X2")!.series as unknown[]).length : 0, overround: oneFair?.overround },
     { strategy: "OVER_25", market: "OVER_25", side: "OVER", line: 2.5, probability: prediction.over25, marketProbability: totalFair?.over25 ?? null, price: referenceBook(books, "OVER_25"), samples: Array.isArray(byMarket.get("OVER_25")?.series) ? (byMarket.get("OVER_25")!.series as unknown[]).length : 0, overround: totalFair?.overround },
     { strategy: "BTTS_YES", market: "BTTS", side: "OVER", line: null, probability: prediction.bttsYes, marketProbability: bttsFair?.yes ?? null, price: referenceBook(books, "BTTS_YES"), samples: Array.isArray(byMarket.get("BTTS")?.series) ? (byMarket.get("BTTS")!.series as unknown[]).length : 0, overround: bttsFair?.overround },
     ...(cornerEnabled && isPublicClubLeague(prediction.leagueId) && prediction.modelContext === "LEAGUE" && prediction.countModelVersion === CORNERS_LIVE_COUNT_MODEL_VERSION && cornerSignal?.countModelVersion === CORNERS_LIVE_COUNT_MODEL_VERSION && cornerSignal?.line != null && Math.abs(cornerSignal.line % 1) === 0.5 && cornerQuote
       ? [{ strategy: "CORNERS" as const, market: "CORNERS", side: cornerSide as Side, line: cornerSignal.line, probability: cornerSignal.modelProbability, marketProbability: cornerQuote.probability, price: { odds: cornerQuote.odds, bookmaker: cornerQuote.bookmaker }, samples: Array.isArray(cornerSignal.series) ? (cornerSignal.series as unknown[]).length : 0, overround: cornerQuote.overround, countModelVersion: prediction.countModelVersion }]
+      : []),
+    ...(cardEnabled && isPublicClubLeague(prediction.leagueId) && prediction.modelContext === "LEAGUE" && prediction.countModelVersion === CORNERS_LIVE_COUNT_MODEL_VERSION && prediction.refereeName && (prediction.refereeSample ?? 0) >= 5 && cardSignal?.countModelVersion === CORNERS_LIVE_COUNT_MODEL_VERSION && cardSignal?.line != null && Math.abs(cardSignal.line % 1) === 0.5 && cardQuote
+      ? [{ strategy: "CARDS_REF" as const, market: "CARDS", side: cardSide as Side, line: cardSignal.line, probability: cardSignal.modelProbability, marketProbability: cardQuote.probability, price: { odds: cardQuote.odds, bookmaker: cardQuote.bookmaker }, samples: Array.isArray(cardSignal.series) ? (cardSignal.series as unknown[]).length : 0, overround: cardQuote.overround, countModelVersion: prediction.countModelVersion }]
       : []),
   ];
   let created = 0;
@@ -172,20 +180,22 @@ export async function closeAutonomousPortfolio(fixtureId: number, books: BookOdd
   }
 }
 
-/** Doplní pouze výsledkovou část neměnného rohového výběru. */
+/** Doplní výsledkovou část neměnného výběru rohů nebo karet. */
 export async function settleAutonomousCountPortfolio(fixtureId: number, at: Date): Promise<number> {
   const rows = await prisma.autonomousTipSnapshot.findMany({
-    where: { fixtureId, strategy: "CORNERS", status: "candidate", settledAt: null },
+    where: { fixtureId, strategy: { in: ["CORNERS", "CARDS_REF"] }, status: "candidate", settledAt: null },
   });
   if (!rows.length) return 0;
   const stats = await prisma.matchStatCache.findMany({
     where: { fixtureId },
-    select: { teamId: true, corners: true },
+    select: { teamId: true, corners: true, yellowCards: true, redCards: true },
   });
   let settled = 0;
   for (const row of rows) {
-    const home = stats.find((item) => item.teamId === row.homeTeamId)?.corners;
-    const away = stats.find((item) => item.teamId === row.awayTeamId)?.corners;
+    const homeStat = stats.find((item) => item.teamId === row.homeTeamId);
+    const awayStat = stats.find((item) => item.teamId === row.awayTeamId);
+    const home = row.market === "CARDS" ? homeStat?.yellowCards == null && homeStat?.redCards == null ? null : (homeStat?.yellowCards ?? 0) + (homeStat?.redCards ?? 0) : homeStat?.corners;
+    const away = row.market === "CARDS" ? awayStat?.yellowCards == null && awayStat?.redCards == null ? null : (awayStat?.yellowCards ?? 0) + (awayStat?.redCards ?? 0) : awayStat?.corners;
     if (home == null || away == null) continue;
     const actualCount = home + away;
     const hit = binaryOutcome(row.market, row.side, null, null, row.line, actualCount);

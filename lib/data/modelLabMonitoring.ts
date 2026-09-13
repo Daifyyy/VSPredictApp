@@ -14,11 +14,13 @@ async function ledgerFor(strategy: string, policyVersion: number): Promise<Model
   const tips = await prisma.autonomousTipSnapshot.findMany({ where: { strategy, policyVersion, status: "candidate", modelContext: "LEAGUE" }, orderBy: { qualifiedAt: "asc" } });
   const results = await prisma.fixturePrediction.findMany({ where: { fixtureId: { in: [...new Set(tips.map((row) => row.fixtureId))] } }, select: { fixtureId: true, homeGoals: true, awayGoals: true } });
   const byFixture = new Map(results.map((row) => [row.fixtureId, row]));
-  const cornerTips = tips.filter((row) => row.market === "CORNERS");
-  const stats = cornerTips.length ? await prisma.matchStatCache.findMany({ where: { fixtureId: { in: cornerTips.map((row) => row.fixtureId) } }, select: { fixtureId: true, teamId: true, corners: true } }) : [];
+  const countTips = tips.filter((row) => row.market === "CORNERS" || row.market === "CARDS");
+  const stats = countTips.length ? await prisma.matchStatCache.findMany({ where: { fixtureId: { in: countTips.map((row) => row.fixtureId) } }, select: { fixtureId: true, teamId: true, corners: true, yellowCards: true, redCards: true } }) : [];
   return tips.map((row) => {
-    const home = stats.find((item) => item.fixtureId === row.fixtureId && item.teamId === row.homeTeamId)?.corners;
-    const away = stats.find((item) => item.fixtureId === row.fixtureId && item.teamId === row.awayTeamId)?.corners;
+    const homeStat = stats.find((item) => item.fixtureId === row.fixtureId && item.teamId === row.homeTeamId);
+    const awayStat = stats.find((item) => item.fixtureId === row.fixtureId && item.teamId === row.awayTeamId);
+    const home = row.market === "CARDS" ? homeStat?.yellowCards == null && homeStat?.redCards == null ? null : (homeStat?.yellowCards ?? 0) + (homeStat?.redCards ?? 0) : homeStat?.corners;
+    const away = row.market === "CARDS" ? awayStat?.yellowCards == null && awayStat?.redCards == null ? null : (awayStat?.yellowCards ?? 0) + (awayStat?.redCards ?? 0) : awayStat?.corners;
     return { ...row, homeGoals: byFixture.get(row.fixtureId)?.homeGoals ?? null, awayGoals: byFixture.get(row.fixtureId)?.awayGoals ?? null, actualCount: row.actualCount ?? (home != null && away != null ? home + away : null) };
   });
 }
@@ -89,20 +91,20 @@ async function monitorCornerCapture(definitionId: string, modelVersion: number, 
 /** Denní kontrola pouze čte zmrazený ledger. Vytváří reporty a doporučení, nikdy nemění politiku. */
 export async function monitorModelLab() {
   let reports = 0, findings = 0;
-  for (const item of STRATEGY_CATALOG.filter((entry) => entry.status === "LIVE_TEST" || entry.strategy === "CORNERS")) {
+  for (const item of STRATEGY_CATALOG.filter((entry) => entry.status === "LIVE_TEST" || entry.strategy === "CORNERS" || entry.strategy === "CARDS_REF")) {
     const definition = await prisma.modelStrategyDefinition.upsert({
       where: { strategy_policyVersion_modelContext_modelVersion: { strategy: item.strategy, policyVersion: item.policyVersion, modelContext: "LEAGUE", modelVersion: MODEL_VERSION } },
       create: { strategy: item.strategy, policyVersion: item.policyVersion, market: item.market, modelContext: "LEAGUE", modelVersion: MODEL_VERSION, status: item.status, title: item.title, rules: { text: item.rules }, decisionCriteria: { text: item.decision }, minimumSample: item.minimumSample, startedAt: new Date() },
       update: { title: item.title, rules: { text: item.rules }, decisionCriteria: { text: item.decision }, minimumSample: item.minimumSample },
     });
-    if (definition.status !== "LIVE_TEST") continue;
+    if (definition.status !== "LIVE_TEST" && !(definition.status === "RESEARCH" && (item.strategy === "CORNERS" || item.strategy === "CARDS_REF"))) continue;
     if (item.strategy === "CORNERS") findings += await monitorCornerCapture(definition.id, definition.modelVersion, definition.startedAt);
     const rows = await ledgerFor(item.strategy, item.policyVersion);
     const summary = modelLabSummary(rows);
     const settled = summary.portfolio.settled;
     for (const milestone of [50, 100, 200]) {
       if (settled < milestone) continue;
-      const ordered = rows.filter((row) => row.market === "CORNERS" ? row.actualCount != null : row.homeGoals != null && row.awayGoals != null).sort((a, b) => a.kickoff.getTime() - b.kickoff.getTime()).slice(0, milestone);
+      const ordered = rows.filter((row) => row.market === "CORNERS" || row.market === "CARDS" ? row.actualCount != null : row.homeGoals != null && row.awayGoals != null).sort((a, b) => a.kickoff.getTime() - b.kickoff.getTime()).slice(0, milestone);
       const reportSummary = modelLabSummary(ordered);
       await prisma.modelStrategyReviewReport.upsert({
         where: { definitionId_milestone: { definitionId: definition.id, milestone } },
