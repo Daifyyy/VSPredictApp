@@ -2,7 +2,7 @@ import { localDateKey } from "@/lib/competitionGrouping";
 import { drawTau, poissonVector } from "@/lib/stats/predict";
 import { bestLinePrice, bestPrice, bestResultTotalPrice, parseBooks, sharpFair, sharpLineFair } from "./books";
 
-export const INTUITION_POLICY_VERSION = 7;
+export const INTUITION_POLICY_VERSION = 8;
 
 const MIN_READINESS_SAMPLE = 6;
 const MIN_DIRECT_ODDS = 1.6;
@@ -55,6 +55,11 @@ export type EloDivergence = {
   longProbability: number; fastProbability: number; rawEdge: number;
   details?: string[];
 };
+
+export function isTicketLockable(firstKickoff: Date, at: Date, lockMinutes = 120) {
+  const lead = firstKickoff.getTime() - at.getTime();
+  return lead > 0 && lead <= lockMinutes * 60_000;
+}
 
 export function scoreProbabilities(row: IntuitionSource, winner: "HOME" | "AWAY", total: "OVER" | "UNDER", line: number) {
   const ph = poissonVector(row.lambdaHome), pa = poissonVector(row.lambdaAway);
@@ -123,6 +128,8 @@ function candidateFor(row: IntuitionSource, winner: "HOME" | "AWAY"): IntuitionC
   const winnerName = winner === "HOME" ? row.homeName : row.awayName;
   const modelWin = winner === "HOME" ? row.homeWin : row.awayWin;
   const context = contextualAssessment(row, winner, marketProbability ?? modelWin, modelWin - (marketProbability ?? modelWin));
+  const hardVetoes = context.vetoes.filter((reason) => reason !== "chybí pedigree nebo jednoznačná hierarchie");
+  if (hardVetoes.length) return null;
   const score = opportunityQuality(chosen.probability, marketProbability, context.pedigree, context.score, chosen.priceKind === "DIRECT", row.readinessSample);
   return {
     fixtureId: row.fixtureId, leagueId: row.leagueId, kickoff: row.kickoff, homeName: row.homeName, awayName: row.awayName,
@@ -131,9 +138,9 @@ function candidateFor(row: IntuitionSource, winner: "HOME" | "AWAY"): IntuitionC
     bookmaker: chosen.price?.bookmaker ?? null, priceKind: chosen.priceKind,
     modelExpectedValue: chosen.ev,
     pedigreeScore: context.pedigree, pedigreeSnapshotId: (winner === "HOME" ? row.pedigree?.home.id : row.pedigree?.away.id) ?? null,
-    contextScore: context.score, contextSupports: context.supports, contextVetoes: context.vetoes,
+    contextScore: context.score, contextSupports: context.supports, contextVetoes: [],
     reason: `${winnerName} + gólová hranice mají modelovou pravděpodobnost ${Math.round(chosen.probability * 100)} % a cenu s EV ${Math.round((chosen.ev ?? 0) * 100)} %.${context.supports.length ? ` Kvalitu podporuje: ${context.supports.join(", ")}.` : ""}`,
-    risk: context.vetoes.length ? `Kontextové riziko: ${context.vetoes.join(", ")}.` : chosen.priceKind === "SYNTHETIC" ? "Kombinovaný kurz je odhad ze samostatných trhů, nikoli doložená nabídka." : "Kombinovaná podmínka může selhat i při správně odhadnutém vítězi.",
+    risk: chosen.priceKind === "SYNTHETIC" ? "Kombinovaný kurz je odhad ze samostatných trhů, nikoli doložená nabídka." : "Kombinovaná podmínka může selhat i při správně odhadnutém vítězi.",
   };
 }
 
@@ -209,11 +216,7 @@ function assembleTickets(pool: IntuitionCandidate[]): IntuitionTicket[] {
     const available = unique.filter((leg) => !used.has(leg.fixtureId));
     const base = balancedBase(available);
     if (!base) break;
-    const legs = [...base];
-    const remaining = available.filter((leg) => !legs.some((picked) => picked.fixtureId === leg.fixtureId));
-    const fourth = remaining.find((leg) => !isSpeculativeLeg(leg));
-    const leavesSecondTicket = slot === 2 || balancedBase(remaining.filter((leg) => leg.fixtureId !== fourth?.fixtureId)) != null;
-    if (fourth && leavesSecondTicket && fourth.score >= legs[2].score * .90) legs.push(fourth);
+    const legs = base;
     const odds = legs.reduce((value, leg) => value * leg.decimalOdds!, 1);
     tickets.push({ slot, dateKeys: [...new Set(legs.map((item) => localDateKey(item.kickoff)))], odds, legs });
     legs.forEach((leg) => used.add(leg.fixtureId));
@@ -290,11 +293,7 @@ function assembleEloTickets(pool: IntuitionCandidate[]) {
     const available = unique.filter((leg) => !used.has(leg.fixtureId));
     const base = balancedBase(available);
     if (!base) break;
-    const legs = [...base];
-    const remaining = available.filter((leg) => !legs.some((picked) => picked.fixtureId === leg.fixtureId));
-    const fourth = remaining.find((leg) => !isSpeculativeLeg(leg) && (leg.pedigreeScore ?? 0) >= .60 && (leg.contextScore ?? 0) > 0);
-    const leavesSecondTicket = slot === 2 || balancedBase(remaining.filter((leg) => leg.fixtureId !== fourth?.fixtureId)) != null;
-    if (fourth && leavesSecondTicket && fourth.score >= legs[2].score * .90) legs.push(fourth);
+    const legs = base;
     const odds = legs.reduce((value, leg) => value * leg.decimalOdds!, 1);
     tickets.push({ slot, dateKeys: [...new Set(legs.map((x) => localDateKey(x.kickoff)))], odds, legs });
     legs.forEach((leg) => used.add(leg.fixtureId));

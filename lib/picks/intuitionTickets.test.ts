@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildEloIntuitionTickets, buildIntuitionTickets, rankEloCandidates, rankEloDivergences, rankIntuitionCandidates, type IntuitionSource } from "./intuitionTickets";
+import { buildEloIntuitionTickets, buildIntuitionTickets, isTicketLockable, rankEloCandidates, rankEloDivergences, rankIntuitionCandidates, type IntuitionSource } from "./intuitionTickets";
 
 const books = (home: number, away: number) => [{ id: 4, name: "Test", home, draw: 3.5, away, over25: 1.9, under25: 1.9, btts: 1.9, bttsNo: 1.9,
   resultTotals: [{ winner: "home", total: "over", line: 1.5, odds: home * 1.18 }, { winner: "away", total: "over", line: 1.5, odds: away * 1.18 }] }];
@@ -45,10 +45,20 @@ describe("intuition tickets", () => {
     expect(rankIntuitionCandidates([source])).toEqual([]);
   });
 
+  it("rejects VALUE when form and season performance create a serious context veto", () => {
+    const source = contextual(row(10, "2026-09-12", .62, 1.8), .8);
+    source.context = {
+      home: { ...source.context!.home, formPpg: .4, seasonPpg: .7 },
+      away: { ...source.context!.away, formPpg: 1.8, seasonPpg: 1.6 },
+    };
+    expect(rankIntuitionCandidates([source])).toEqual([]);
+  });
+
   it("builds two disjoint tickets only from at least six fixtures", () => {
     const rows = [row(1, "2026-09-12", .62, 1.8), row(2, "2026-09-12", .61, 1.85), ...[3,4,5,6].map((id) => row(id, "2026-09-12", .62, 1.8))];
     const tickets = buildIntuitionTickets(rows, "2026-09-12");
     expect(tickets).toHaveLength(2);
+    expect(tickets.every((ticket) => ticket.legs.length === 3)).toBe(true);
     expect(new Set(tickets.flatMap((ticket) => ticket.legs.map((leg) => leg.fixtureId))).size).toBe(6);
   });
 
@@ -64,6 +74,13 @@ describe("intuition tickets", () => {
 
   it("does not create a ticket from only two qualified legs", () => {
     expect(buildIntuitionTickets([row(71, "2026-09-12", .43, 3.4), row(72, "2026-09-12", .43, 3.4)], "2026-09-12")).toEqual([]);
+  });
+
+  it("never locks a ticket at or after its first kickoff", () => {
+    const at = new Date("2026-09-12T10:21:00Z");
+    expect(isTicketLockable(new Date("2026-09-12T10:15:00Z"), at)).toBe(false);
+    expect(isTicketLockable(new Date("2026-09-12T10:21:00Z"), at)).toBe(false);
+    expect(isTicketLockable(new Date("2026-09-12T11:00:00Z"), at)).toBe(true);
   });
 
   it("extends to the next day only when the first day has fewer than three candidates", () => {
@@ -86,7 +103,7 @@ describe("intuition tickets", () => {
     rows[0].oddsBooks = [{ id: 4, name: "Test", home: 3.4, draw: 3.5, away: 4.5, matchTotals: [{ line: 1.5, over: 1.5, under: 4.2 }] }];
     expect(rankEloCandidates([rows[0]])).toEqual([]);
     const tickets = buildEloIntuitionTickets(rows.slice(1), "2026-09-12");
-    expect(tickets.every((ticket) => ticket.legs.length >= 3 && ticket.legs.length <= 4 && ticket.odds! > 0)).toBe(true);
+    expect(tickets.every((ticket) => ticket.legs.length === 3 && ticket.odds! > 0)).toBe(true);
     expect(tickets.every((ticket) => ticket.legs.filter((leg) => leg.decimalOdds! > 3.25 || leg.marketWinnerProbability! < .38).length <= 1)).toBe(true);
     expect(new Set(tickets.flatMap((ticket) => ticket.legs.map((leg) => leg.fixtureId))).size).toBe(tickets.flatMap((ticket) => ticket.legs).length);
   });

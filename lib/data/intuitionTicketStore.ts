@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { localDateKey } from "@/lib/competitionGrouping";
 import { pragueDateBounds } from "@/lib/recentWindow";
-import { buildEloIntuitionTickets, buildIntuitionTickets, INTUITION_POLICY_VERSION, rankEloCandidates, rankEloDivergences, rankIntuitionCandidates, type IntuitionSource, type IntuitionTicket } from "@/lib/picks/intuitionTickets";
+import { buildEloIntuitionTickets, buildIntuitionTickets, INTUITION_POLICY_VERSION, isTicketLockable, rankEloCandidates, rankEloDivergences, rankIntuitionCandidates, type IntuitionSource, type IntuitionTicket } from "@/lib/picks/intuitionTickets";
 import { CLUB_ELO_MODEL_VERSION } from "@/lib/picks/clubElo";
 import { buildPedigree } from "@/lib/picks/clubPedigree";
 import { computeSeason } from "./catalog";
@@ -30,12 +30,13 @@ async function pedigreeSnapshots(teamIds: number[], asOfDate: Date, calculatedAt
   return prisma.clubPedigreeSnapshot.findMany({ where: { teamId: { in: teamIds }, asOfDate, modelVersion: CLUB_ELO_MODEL_VERSION } });
 }
 
-async function sources(windowKey: string, persistPedigree = false): Promise<IntuitionSource[]> {
+async function sources(windowKey: string, persistPedigree = false, asOf = new Date()): Promise<IntuitionSource[]> {
   const start = pragueDateBounds(windowKey).start;
   const end = new Date(start.getTime() + 48 * 60 * 60_000);
+  const upcomingFrom = asOf > start ? asOf : start;
   const rows = await prisma.fixturePrediction.findMany({
     where: {
-      available: true, kickoff: { gte: start, lt: end }, leagueId: { in: [...FIXTURE_LIST_LEAGUE_IDS] },
+      available: true, kickoff: { gt: upcomingFrom, lt: end }, leagueId: { in: [...FIXTURE_LIST_LEAGUE_IDS] },
       status: { notIn: ["PST", "CANC", "ABD"] },
     },
     orderBy: [{ kickoff: "asc" }, { fixtureId: "asc" }],
@@ -101,7 +102,7 @@ export async function previewIntuitionTickets(windowKey: string, now = new Date(
   const frozen = await prisma.intuitionTicket.findMany({
     where: { windowKey, policyVersion: INTUITION_POLICY_VERSION }, orderBy: [{ strategy: "asc" }, { slot: "asc" }], include: { legs: { orderBy: { kickoff: "asc" } } },
   });
-  const rows = await sources(windowKey);
+  const rows = await sources(windowKey, false, now);
   return { strategies: (["VALUE", "ELO_INTUITION"] as const).map((strategy) => {
     const persisted = frozen.filter((ticket) => ticket.strategy === strategy);
     const built = persisted.length ? [] : strategy === "VALUE" ? buildIntuitionTickets(rows, windowKey) : buildEloIntuitionTickets(rows, windowKey);
@@ -118,7 +119,7 @@ export async function captureIntuitionTickets(fixtureId: number, at: Date): Prom
   const trigger = await prisma.fixturePrediction.findUnique({ where: { fixtureId }, select: { kickoff: true } });
   if (!trigger || trigger.kickoff <= at) return 0;
   const windowKey = localDateKey(trigger.kickoff);
-  const rows = await sources(windowKey);
+  const rows = await sources(windowKey, false, at);
   const divergences = rankEloDivergences(rows);
   if (divergences.length) await prisma.clubEloDivergence.createMany({
     data: divergences.map((item) => ({ ...item, modelVersion: CLUB_ELO_MODEL_VERSION, policyVersion: INTUITION_POLICY_VERSION, observedAt: at })),
@@ -131,8 +132,8 @@ export async function captureIntuitionTickets(fixtureId: number, at: Date): Prom
     let tickets = strategy === "VALUE" ? buildIntuitionTickets(rows, windowKey) : buildEloIntuitionTickets(rows, windowKey);
     if (!tickets.length) continue;
     const firstKickoff = Math.min(...tickets.flatMap((ticket) => ticket.legs.map((leg) => leg.kickoff.getTime())));
-    if (firstKickoff - at.getTime() > LOCK_MINUTES * 60_000) continue;
-    lockedRows ??= await sources(windowKey, true);
+    if (!isTicketLockable(new Date(firstKickoff), at, LOCK_MINUTES)) continue;
+    lockedRows ??= await sources(windowKey, true, at);
     tickets = strategy === "VALUE" ? buildIntuitionTickets(lockedRows, windowKey) : buildEloIntuitionTickets(lockedRows, windowKey);
     if (!tickets.length) continue;
     await prisma.$transaction(tickets.map((ticket) => prisma.intuitionTicket.create({ data: {

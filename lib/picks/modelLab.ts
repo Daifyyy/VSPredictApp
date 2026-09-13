@@ -1,5 +1,6 @@
-import { binaryOutcome, freshClosing } from "./evaluation";
+import { freshClosing } from "./evaluation";
 import { summarizePortfolio, type PortfolioSummary } from "./portfolioStats";
+import { resolvedStrategyOutcome } from "./strategyOutcome";
 
 export const MODEL_LAB_STATUSES = ["RESEARCH", "LIVE_TEST", "CANDIDATE", "VALIDATED", "REJECTED", "RETIRED"] as const;
 export type ModelLabStatus = typeof MODEL_LAB_STATUSES[number];
@@ -53,8 +54,10 @@ export interface ModelLabLedgerRow {
   actualCount?: number | null;
 }
 
-const outcomeOf = (row: ModelLabLedgerRow) =>
-  binaryOutcome(row.market, row.side, row.homeGoals, row.awayGoals, row.line, row.actualCount ?? null);
+const outcomeOf = (row: ModelLabLedgerRow) => resolvedStrategyOutcome({
+  market: row.market, side: row.side, line: row.line,
+  homeGoals: row.homeGoals, awayGoals: row.awayGoals, actualCount: row.actualCount ?? null,
+});
 
 export interface ProbabilityMetrics { n: number; brier: number | null; logLoss: number | null; ece: number | null }
 
