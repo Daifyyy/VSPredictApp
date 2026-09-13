@@ -38,6 +38,8 @@ on:
     - cron: "30 4 * * *" # predict-upcoming
     - cron: "30 16 * * *" # predict-upcoming (večerní opravný průchod)
     - cron: "0 5 * * *" # refresh-transfers
+    # 09:00 Europe/Prague: oba UTC sloty kvuli DST; endpoint mimo lokalni 09:00 udela no-op.
+    - cron: "0 7,8 * * *" # telegram-digest
     # Plošný player-profiles refresh není plánovaný: zatím nemění veřejné
     # predikce a /players je kvůli stránkování drahý. Endpoint zůstává ručně dostupný.
     # Vypořádání jede DVAKRÁT denně (ráno + večer). S jediným ranním během čekal zápas
@@ -79,6 +81,7 @@ on:
           - collect-live
           - personnel-shadow
           - player-profiles
+          - telegram-digest
 
 jobs:
   run:
@@ -116,6 +119,7 @@ jobs:
             "30 4 * * *")   path="predict-upcoming" ;;
             "30 16 * * *")  path="predict-upcoming" ;;
             "0 5 * * *")    path="refresh-transfers" ;;
+            "0 7,8 * * *")  path="telegram-digest" ;;
             "0 6 * * *")    path="settle-results" ;;
             "0 12 * * *")   path="settle-results" ;;
             "0 18 * * *")   path="settle-results" ;;

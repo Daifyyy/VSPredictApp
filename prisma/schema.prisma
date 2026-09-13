@@ -3423,3 +3423,53 @@ model NotificationDelivery {
   @@unique([userId, fixtureId, type])
   @@index([sentAt])
 }
+
+/// Nemenny ranni snapshot odeslany do Telegramu. Payload je zdrojem pro nasledujici
+/// vysledkovou zpravu, takze pozdejsi zmena poradi nebo policy neprepise historii.
+model TelegramPublication {
+  id             String   @id @default(cuid())
+  dateKey        String
+  channelId      String
+  kind           String
+  policyVersions Json
+  payload        Json
+  contentHash    String
+  status         String   @default("PENDING")
+  attempts       Int      @default(0)
+  messageIds     Json     @default("[]")
+  lastError      String?  @db.Text
+  sentAt         DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([dateKey, channelId, kind])
+  @@index([status, updatedAt])
+}
+
+/// Serverless-safe strankovani prikazu /dalsi, oddelene podle uzivatele, dne a strategie.
+model TelegramCommandCursor {
+  userId    String
+  dateKey   String
+  strategy  String
+  offset    Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  @@id([userId, dateKey, strategy])
+  @@index([updatedAt])
+}
+
+/// Telegram webhook muze stejny update dorucit opakovane. Tento klic zajisti exactly-once
+/// zpracovani z pohledu aplikace.
+model TelegramUpdateReceipt {
+  updateId   BigInt   @id
+  userId     String
+  chatId     String
+  status     String   @default("PROCESSING")
+  payload    Json     @default("[]")
+  messageIds Json     @default("[]")
+  lastError  String?  @db.Text
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([status, updatedAt])
+}
