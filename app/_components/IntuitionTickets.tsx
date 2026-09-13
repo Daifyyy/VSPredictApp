@@ -6,7 +6,9 @@ type Leg = {
   fixtureId: number; kickoff: string; homeName: string; awayName: string; winnerName: string;
   totalSide: "OVER" | "UNDER"; totalLine: number; role: string; decimalOdds: number | null;
   bookmaker: string | null; reason: string; risk: string; eloExpectedValue?: number | null;
-  modelExpectedValue?: number | null; priceKind: "DIRECT" | "SYNTHETIC" | "NONE";
+  modelProbability: number; modelExpectedValue?: number | null; priceKind: "DIRECT" | "SYNTHETIC" | "NONE";
+  marketAnchorProbability?: number | null; decisionProbability?: number | null; decisionExpectedValue?: number | null;
+  modelWeight?: number | null; conditionRetention?: number | null; conditionOddsUplift?: number | null;
   pedigreeScore?: number | null; contextScore?: number | null; contextSupports?: string[];
   hit: boolean | null; homeGoals: number | null; awayGoals: number | null;
 };
@@ -23,8 +25,8 @@ type Payload = { date: string; strategies: Block[] };
 const emptyText: Record<string, string> = {
   WAITING_FOR_ODDS: "Čekáme na přímé kombinované kurzy.",
   INSUFFICIENT_ELO_HISTORY: "Týmy zatím nemají požadovaných 10 LONG a 5 FAST zápasů.",
-  NOT_ENOUGH_VALUE_LEGS: "Dnes nejsou alespoň tři samostatně kvalitní VALUE nohy.",
-  NOT_ENOUGH_CONTEXTUAL_LEGS: "Dnes nejsou alespoň tři lidsky obhajitelné ELO příležitosti.",
+  NOT_ENOUGH_VALUE_LEGS: "Dnes nejsou alespoň dvě samostatně kvalitní VALUE nohy.",
+  NOT_ENOUGH_CONTEXTUAL_LEGS: "Dnes nejsou alespoň dvě lidsky obhajitelné ELO příležitosti.",
   NOT_ENOUGH_BALANCED_LEGS: "Kandidáti existují, ale chybí alespoň dvě nosné nohy typu favorit + góly. Tiket z více drahých outsiderů neskládáme.",
   CONTEXT_VETO: "Elo signály existují, ale dostupný lidský kontext je vetoval.",
 };
@@ -57,7 +59,8 @@ function StrategyCard({ block, conflicts }: { block: Block; conflicts: Map<numbe
         <p className="mt-1 text-[11px] text-muted">{leg.reason}</p>
         {leg.contextSupports?.length ? <p className="mt-1 text-[10px] text-positive">Podpora: {leg.contextSupports.join(" · ")}</p> : null}
         <p className="mt-1 text-[10px] text-muted">Riziko: {leg.risk}</p>
-        <p className="mt-1 text-[10px] text-muted">{leg.decimalOdds?.toFixed(2)} · {leg.bookmaker} · {leg.priceKind === "SYNTHETIC" ? "ODHAD CENY" : "PŘÍMÝ KURZ"}{leg.modelExpectedValue != null ? ` · model EV ${(leg.modelExpectedValue * 100).toFixed(1)} %` : ""}{block.strategy === "ELO_INTUITION" && leg.eloExpectedValue != null ? ` · Elo EV ${(leg.eloExpectedValue * 100).toFixed(1)} %` : ""}{leg.pedigreeScore != null ? ` · pedigree ${Math.round(leg.pedigreeScore * 100)}` : ""}{leg.contextScore != null ? ` · kontext ${leg.contextScore >= 0 ? "+" : ""}${leg.contextScore}` : ""}</p>
+        <p className="mt-1 text-[10px] text-muted">{leg.decimalOdds?.toFixed(2)} · {leg.bookmaker} · {leg.priceKind === "SYNTHETIC" ? "ODHAD CENY" : "PŘÍMÝ KURZ"}{leg.modelExpectedValue != null ? ` · modelový rozdíl ${(leg.modelExpectedValue * 100).toFixed(1)} %` : ""}{block.strategy === "VALUE" && leg.decisionExpectedValue != null ? ` · konzervativní EV ${(leg.decisionExpectedValue * 100).toFixed(1)} %` : ""}{block.strategy === "ELO_INTUITION" && leg.eloExpectedValue != null ? ` · Elo EV ${(leg.eloExpectedValue * 100).toFixed(1)} %` : ""}{leg.pedigreeScore != null ? ` · pedigree ${Math.round(leg.pedigreeScore * 100)}` : ""}{leg.contextScore != null ? ` · kontext ${leg.contextScore >= 0 ? "+" : ""}${leg.contextScore}` : ""}</p>
+        {block.strategy === "VALUE" && leg.decisionProbability != null && <p className="mt-1 text-[10px] text-muted">Model {(leg.modelProbability * 100).toFixed(0)} % · rozhodovací pravděpodobnost {(leg.decisionProbability * 100).toFixed(0)} % · váha modelu {Math.round((leg.modelWeight ?? 0) * 100)} %{leg.conditionOddsUplift != null ? ` · navýšení kurzu ${Math.round((leg.conditionOddsUplift - 1) * 100)} %` : ""}{leg.conditionRetention != null ? ` · zachováno ${Math.round(leg.conditionRetention * 100)} % výher` : ""}</p>}
       </li>)}</ol>
       {ticket.hit != null && <div className={`flex justify-between border-t border-border px-4 py-2 text-[11px] font-bold ${ticket.hit ? "bg-positive/10 text-positive" : "bg-negative/10 text-negative"}`}><span>{ticket.hit ? "Tiket vyšel" : "Tiket nevyšel"}</span><span>{ticket.profit == null ? "Zisk —" : `${ticket.profit >= 0 ? "+" : ""}${ticket.profit.toFixed(2)} j`}</span></div>}
     </>}

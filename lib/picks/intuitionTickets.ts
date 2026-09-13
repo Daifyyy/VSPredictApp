@@ -2,7 +2,7 @@ import { localDateKey } from "@/lib/competitionGrouping";
 import { drawTau, poissonVector } from "@/lib/stats/predict";
 import { bestLinePrice, bestPrice, bestResultTotalPrice, parseBooks, sharpFair, sharpLineFair } from "./books";
 
-export const INTUITION_POLICY_VERSION = 10;
+export const INTUITION_POLICY_VERSION = 11;
 
 const MIN_READINESS_SAMPLE = 6;
 const MIN_DIRECT_ODDS = 1.6;
@@ -12,6 +12,10 @@ const SPECULATIVE_LEG_ODDS = 3.25;
 const SPECULATIVE_WIN_PROBABILITY = .38;
 const VALUE_MIN_EV = .08;
 const SYNTHETIC_VALUE_MIN_EV = .12;
+const DIRECT_MODEL_WEIGHT = .40;
+const SYNTHETIC_MODEL_WEIGHT = .25;
+const DIRECT_MIN_DECISION_EV = .03;
+const SYNTHETIC_MIN_DECISION_EV = .04;
 const MIN_DIRECT_CONDITION_EFFICIENCY = 1.03;
 const MIN_SYNTHETIC_CONDITION_EFFICIENCY = 1.08;
 const ELO_MARKET_WEIGHT = .30;
@@ -23,7 +27,7 @@ export type TeamContextSignal = { formPpg: number | null; seasonPpg: number | nu
 
 export type IntuitionSource = {
   fixtureId: number; leagueId: number; kickoff: Date; homeName: string; awayName: string;
-  homeWin: number; awayWin: number; lambdaHome: number; lambdaAway: number;
+  homeWin: number; awayWin: number; lambdaHome: number; lambdaAway: number; modelVersion?: number;
   lowConfidence: boolean; readinessSample: number; oddsBooks: unknown;
   homeTeamId?: number; awayTeamId?: number;
   pedigree?: { home: PedigreeSignal; away: PedigreeSignal } | null;
@@ -43,6 +47,9 @@ export type IntuitionCandidate = {
   eloLongProbability?: number | null; eloFastProbability?: number | null; eloWinnerProbability?: number | null; eloJointProbability?: number | null;
   eloLongHomeRating?: number | null; eloLongAwayRating?: number | null; eloFastHomeRating?: number | null; eloFastAwayRating?: number | null;
   eloLongSample?: number | null; eloFastSample?: number | null; modelExpectedValue?: number | null; eloExpectedValue?: number | null;
+  marketAnchorProbability?: number | null; decisionProbability?: number | null; decisionExpectedValue?: number | null; modelWeight?: number | null;
+  conditionRetention?: number | null; conditionOddsUplift?: number | null; conditionEfficiency?: number | null;
+  priceUncertainty?: "LOW" | "HIGH" | null; leagueReliability?: number | null; modelPredictionVersion?: number | null; decisionPolicyVersion?: number | null;
   marketWinnerProbability: number | null; winnerOdds: number | null;
   decimalOdds: number | null; bookmaker: string | null; priceKind: "DIRECT" | "SYNTHETIC" | "NONE"; reason: string; risk: string;
   pedigreeScore?: number | null; contextScore?: number | null; contextSupports?: string[]; contextVetoes?: string[];
@@ -100,7 +107,12 @@ function syntheticPrice(row: IntuitionSource, books: ReturnType<typeof parseBook
   const totalMargin = Math.max(1, (1 / goals.odds) / totalFair);
   const quotedProbability = Math.min(.99, fairJoint * winnerMargin * totalMargin * 1.05);
   const odds = 1 / quotedProbability;
-  return odds > 1 ? { odds, winnerOdds: win.odds, bookmaker: `${win.bookmaker} + ${goals.bookmaker}` } : null;
+  return odds > 1 ? { odds, winnerOdds: win.odds, marketAnchorProbability: fairJoint, bookmaker: `${win.bookmaker} + ${goals.bookmaker}` } : null;
+}
+
+function conservativeDecision(modelProbability: number, marketAnchorProbability: number, modelWeight: number, odds: number) {
+  const probability = marketAnchorProbability + modelWeight * (modelProbability - marketAnchorProbability);
+  return { probability, expectedValue: probability * odds - 1 };
 }
 
 function conditionQuality(joint: number, win: number, combinedOdds: number, winnerOdds: number) {
@@ -130,33 +142,42 @@ function candidateFor(row: IntuitionSource, winner: "HOME" | "AWAY"): IntuitionC
     const synthetic = direct ? null : syntheticPrice(row, books, winner, option.total, option.line);
     const price = direct ?? synthetic;
     const quality = price ? conditionQuality(probability, probabilities.win, price.odds, price.winnerOdds) : null;
-    return { ...option, probability, price, quality, priceKind: direct ? "DIRECT" as const : synthetic ? "SYNTHETIC" as const : "NONE" as const, ev: price ? probability * price.odds - 1 : null };
+    const priceKind = direct ? "DIRECT" as const : synthetic ? "SYNTHETIC" as const : "NONE" as const;
+    const modelWeight = priceKind === "DIRECT" ? DIRECT_MODEL_WEIGHT : SYNTHETIC_MODEL_WEIGHT;
+    const marketAnchorProbability = direct ? 1 / direct.odds : synthetic?.marketAnchorProbability ?? null;
+    const decision = price && marketAnchorProbability != null ? conservativeDecision(probability, marketAnchorProbability, modelWeight, price.odds) : null;
+    return { ...option, probability, price, quality, priceKind, modelWeight, marketAnchorProbability, decision, ev: price ? probability * price.odds - 1 : null };
   });
   const eligible = options.flatMap((option) => {
-    if (!option.price || option.ev == null || !option.quality) return [];
+    if (!option.price || option.ev == null || !option.quality || !option.decision || option.marketAnchorProbability == null) return [];
     const minOdds = option.priceKind === "DIRECT" ? MIN_DIRECT_ODDS : MIN_SYNTHETIC_ODDS;
     const minEv = option.priceKind === "DIRECT" ? VALUE_MIN_EV : SYNTHETIC_VALUE_MIN_EV;
     const minEfficiency = option.priceKind === "DIRECT" ? MIN_DIRECT_CONDITION_EFFICIENCY : MIN_SYNTHETIC_CONDITION_EFFICIENCY;
-    if (option.price.odds < minOdds || option.price.odds > MAX_LEG_ODDS || option.ev < minEv || option.quality.efficiency < minEfficiency) return [];
+    const minDecisionEv = option.priceKind === "DIRECT" ? DIRECT_MIN_DECISION_EV : SYNTHETIC_MIN_DECISION_EV;
+    if (option.price.odds < minOdds || option.price.odds > MAX_LEG_ODDS || option.ev < minEv || option.decision.expectedValue < minDecisionEv || option.quality.efficiency < minEfficiency) return [];
     return [{ ...option, role: "VALUE" as const }];
   }).sort((a, b) => b.probability - a.probability || Number(b.priceKind === "DIRECT") - Number(a.priceKind === "DIRECT"));
   const chosen = eligible[0];
-  if (!chosen || !chosen.quality) return null;
+  if (!chosen || !chosen.quality || !chosen.decision) return null;
   const winnerName = winner === "HOME" ? row.homeName : row.awayName;
   const modelWin = winner === "HOME" ? row.homeWin : row.awayWin;
   const context = contextualAssessment(row, winner, marketProbability ?? modelWin, modelWin - (marketProbability ?? modelWin));
   const hardVetoes = context.vetoes.filter((reason) => reason !== "chybí pedigree nebo jednoznačná hierarchie");
   if (hardVetoes.length) return null;
-  const score = opportunityQuality(chosen.probability, marketProbability, context.pedigree, context.score, chosen.priceKind === "DIRECT", row.readinessSample);
+  const score = opportunityQuality(chosen.decision.probability, marketProbability, context.pedigree, context.score, chosen.priceKind === "DIRECT", row.readinessSample);
   return {
     fixtureId: row.fixtureId, leagueId: row.leagueId, kickoff: row.kickoff, homeName: row.homeName, awayName: row.awayName,
     winner, winnerName, total: chosen.total, line: chosen.line, role: "VALUE", score, modelProbability: chosen.probability,
     marketWinnerProbability: marketProbability, winnerOdds: winPrice.odds, decimalOdds: chosen.price?.odds ?? null,
     bookmaker: chosen.price?.bookmaker ?? null, priceKind: chosen.priceKind,
-    modelExpectedValue: chosen.ev,
+    modelExpectedValue: chosen.ev, marketAnchorProbability: chosen.marketAnchorProbability, decisionProbability: chosen.decision.probability,
+    decisionExpectedValue: chosen.decision.expectedValue, modelWeight: chosen.modelWeight,
+    conditionRetention: chosen.quality.retention, conditionOddsUplift: chosen.quality.uplift, conditionEfficiency: chosen.quality.efficiency,
+    priceUncertainty: chosen.priceKind === "DIRECT" ? "LOW" : "HIGH", leagueReliability: chosen.modelWeight,
+    modelPredictionVersion: row.modelVersion ?? null, decisionPolicyVersion: INTUITION_POLICY_VERSION,
     pedigreeScore: context.pedigree, pedigreeSnapshotId: (winner === "HOME" ? row.pedigree?.home.id : row.pedigree?.away.id) ?? null,
     contextScore: context.score, contextSupports: context.supports, contextVetoes: [],
-    reason: `${winnerName} + gólová hranice mají modelovou pravděpodobnost ${Math.round(chosen.probability * 100)} % a cenu s EV ${Math.round((chosen.ev ?? 0) * 100)} %.${conditionReason(chosen.quality.retention, chosen.quality.uplift)}${context.supports.length ? ` Kvalitu podporuje: ${context.supports.join(", ")}.` : ""}`,
+    reason: `${winnerName} + gólová hranice mají modelovou pravděpodobnost ${Math.round(chosen.probability * 100)} %, po konzervativním stažení ${Math.round(chosen.decision.probability * 100)} % a rozhodovací EV ${Math.round(chosen.decision.expectedValue * 100)} %.${conditionReason(chosen.quality.retention, chosen.quality.uplift)}${context.supports.length ? ` Kvalitu podporuje: ${context.supports.join(", ")}.` : ""}`,
     risk: chosen.priceKind === "SYNTHETIC" ? "Kombinovaný kurz je odhad ze samostatných trhů, nikoli doložená nabídka." : "Kombinovaná podmínka může selhat i při správně odhadnutém vítězi.",
   };
 }
@@ -226,13 +247,37 @@ function balancedBase(pool: IntuitionCandidate[]) {
   return selected.length === 2 ? selected : null;
 }
 
+/** VALUE potřebuje dvě přímo realizovatelné nosné nohy. Syntetická cena smí být
+ * pouze třetí doplněk; nikdy nevytvoří dvouzápasový tiket ani jeho základ. */
+function balancedValueBase(pool: IntuitionCandidate[]) {
+  const selected: IntuitionCandidate[] = [];
+  let speculative = 0;
+  for (const leg of pool.filter((item) => item.priceKind === "DIRECT")) {
+    const risky = isSpeculativeLeg(leg);
+    if (risky && speculative >= 1) continue;
+    selected.push(leg);
+    if (risky) speculative++;
+    if (selected.length === 2) break;
+  }
+  if (selected.length < 2) return null;
+  const used = new Set(selected.map((item) => item.fixtureId));
+  for (const leg of pool) {
+    if (used.has(leg.fixtureId)) continue;
+    const risky = isSpeculativeLeg(leg);
+    if (risky && speculative >= 1) continue;
+    selected.push(leg);
+    break;
+  }
+  return selected;
+}
+
 function assembleTickets(pool: IntuitionCandidate[]): IntuitionTicket[] {
   const unique = [...new Map(pool.map((item) => [item.fixtureId, item])).values()];
   const tickets: IntuitionTicket[] = [];
   const used = new Set<number>();
   for (let slot = 1; slot <= 2; slot++) {
     const available = unique.filter((leg) => !used.has(leg.fixtureId));
-    const base = balancedBase(available);
+    const base = balancedValueBase(available);
     if (!base) break;
     const legs = base;
     const odds = legs.reduce((value, leg) => value * leg.decimalOdds!, 1);

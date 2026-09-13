@@ -6,6 +6,8 @@ import { STRATEGY_CATALOG } from "@/lib/picks/modelLab";
 import { GUARDED_ONE_X_TWO_POLICY_VERSION } from "@/lib/picks/autonomousPortfolio";
 import { personnelShadowDashboard } from "./personnelShadow";
 import { quickOverviewCaptureAudit } from "./quickOverviewAudit";
+import { MAIN_MODEL_SHADOW_METHOD, MAIN_MODEL_SHADOW_VERSION } from "@/lib/picks/mainModelShadow";
+import { evaluateModelRows, type ModelEvaluationRow } from "@/lib/picks/modelEvaluation";
 
 const FINISHED = ["FT", "AET", "PEN"];
 const EPS = 1e-9;
@@ -46,6 +48,64 @@ export async function getModelGovernanceDashboard(now = new Date()) {
     personnelShadowDashboard(now),
     quickOverviewCaptureAudit(now),
   ]);
+  const mainModelShadows = await prisma.mainModelShadowPrediction.findMany({
+    where: { shadowVersion: MAIN_MODEL_SHADOW_VERSION, method: MAIN_MODEL_SHADOW_METHOD, modelContext: "LEAGUE" },
+    orderBy: { kickoff: "asc" },
+  });
+  const shadowFixtures = mainModelShadows.length ? await prisma.fixturePrediction.findMany({
+    where: { fixtureId: { in: mainModelShadows.map((row) => row.fixtureId) }, homeGoals: { not: null }, awayGoals: { not: null } },
+    select: { fixtureId: true, leagueId: true, homeGoals: true, awayGoals: true, oddsCloseHome: true, oddsCloseDraw: true, oddsCloseAway: true },
+  }) : [];
+  const shadowFixtureById = new Map(shadowFixtures.map((row) => [row.fixtureId, row]));
+  const shadowCohort = mainModelShadows.flatMap((row) => {
+    const fixture = shadowFixtureById.get(row.fixtureId);
+    if (!fixture) return [];
+    const common = {
+      fixtureId: row.fixtureId, leagueId: fixture.leagueId, kickoff: row.kickoff,
+      homeGoals: fixture.homeGoals, awayGoals: fixture.awayGoals,
+      oddsHome: 1 / row.marketHome, oddsDraw: 1 / row.marketDraw, oddsAway: 1 / row.marketAway,
+      oddsCloseHome: fixture.oddsCloseHome, oddsCloseDraw: fixture.oddsCloseDraw, oddsCloseAway: fixture.oddsCloseAway,
+    };
+    return [{
+      source: { ...common, homeWin: row.sourceHome, draw: row.sourceDraw, awayWin: row.sourceAway } satisfies ModelEvaluationRow,
+      candidate: { ...common, homeWin: row.homeProbability, draw: row.drawProbability, awayWin: row.awayProbability } satisfies ModelEvaluationRow,
+    }];
+  });
+  const sourceEvaluation = evaluateModelRows(shadowCohort.map((row) => row.source));
+  const candidateEvaluation = evaluateModelRows(shadowCohort.map((row) => row.candidate));
+  const checkpointSizes = Array.from(new Set([
+    ...Array.from({ length: Math.floor(shadowCohort.length / 10) }, (_, index) => (index + 1) * 10),
+    shadowCohort.length,
+  ])).filter((size) => size > 0).slice(-12);
+  const development = checkpointSizes.map((size) => {
+    const cohort = shadowCohort.slice(0, size);
+    const source = evaluateModelRows(cohort.map((row) => row.source));
+    const candidate = evaluateModelRows(cohort.map((row) => row.candidate));
+    return {
+      sampleSize: size,
+      through: cohort.at(-1)?.candidate.kickoff ?? null,
+      sourceLogLoss: source.model.logLoss,
+      candidateLogLoss: candidate.model.logLoss,
+      openingLogLoss: candidate.opening.logLoss,
+      closingLogLoss: candidate.closing.logLoss,
+      deltaToSource: candidate.model.logLoss != null && source.model.logLoss != null ? candidate.model.logLoss - source.model.logLoss : null,
+      deltaToOpening: candidate.model.logLoss != null && candidate.opening.logLoss != null ? candidate.model.logLoss - candidate.opening.logLoss : null,
+    };
+  });
+  const mainModelShadow = {
+    version: MAIN_MODEL_SHADOW_VERSION,
+    method: MAIN_MODEL_SHADOW_METHOD,
+    captured: mainModelShadows.length,
+    settled: shadowCohort.length,
+    minimumDecisionSample: 100,
+    source: sourceEvaluation.model,
+    candidate: candidateEvaluation.model,
+    opening: candidateEvaluation.opening,
+    closing: candidateEvaluation.closing,
+    closingCoverage: candidateEvaluation.dataQuality.closingCoverage,
+    development,
+    verdict: shadowCohort.length < 100 ? "COLLECT" : candidateEvaluation.model.logLoss != null && sourceEvaluation.model.logLoss != null && candidateEvaluation.model.logLoss < sourceEvaluation.model.logLoss ? "V8_BEATS_V7" : "KEEP_V7",
+  };
   const definitionsByKey = new Map(definitions.map((row) => [`${row.strategy}:${row.policyVersion}:${row.modelContext}`, row]));
   const finishedFixtures = new Set(predictions.map((row) => row.fixtureId));
   const samplesByKey = new Map<string, number>();
@@ -74,5 +134,5 @@ export async function getModelGovernanceDashboard(now = new Date()) {
     ...leagues.filter((item) => item.status === "REVIEW").map((item) => ({ priority: "WATCH", title: `Prověřit kohortu ${item.name}`, reason: `Modelový log-loss je o ${((item.modelLogLoss! - item.marketLogLoss!) * 100).toFixed(1)} bodu horší než trh (n=${item.n})`, due: "před změnou modelu" })),
   ];
   const shadow = Object.fromEntries(shadowCounts.map((row) => [row.status, row._count]));
-  return { asOf: now, modelVersion: MODEL_VERSION, tasks, strategies, leagues, checkpoints, personnel, quickOverview, shadow: { total: Object.values(shadow).reduce((sum, value) => sum + value, 0), candidates: shadow.candidate ?? 0, watch: shadow.watch ?? 0 } };
+  return { asOf: now, modelVersion: MODEL_VERSION, tasks, strategies, leagues, checkpoints, personnel, quickOverview, mainModelShadow, shadow: { total: Object.values(shadow).reduce((sum, value) => sum + value, 0), candidates: shadow.candidate ?? 0, watch: shadow.watch ?? 0 } };
 }

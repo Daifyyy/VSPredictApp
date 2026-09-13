@@ -41,6 +41,7 @@
     "backfill-elo": "node --env-file=.env --import tsx scripts/backfillClubElo.ts",
     "backtest:elo": "node --env-file=.env --import tsx scripts/backtestClubElo.ts",
     "report:tickets": "node --env-file=.env --import tsx scripts/reportTicketStrategies.ts",
+    "report:model-v8": "node --env-file=.env --import tsx scripts/reportMainModelShadow.ts",
     "backfill-stats": "node --env-file=.env --import tsx scripts/backfillStats.ts",
     "backfill-referees": "node --env-file=.env --import tsx scripts/backfillReferees.ts",
     "backfill-tactics": "node --env-file=.env --import tsx scripts/backfillTactics.ts",

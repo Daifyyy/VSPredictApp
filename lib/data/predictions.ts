@@ -89,6 +89,7 @@ import { captureAutonomousPortfolio, closeAutonomousPortfolio, settleAutonomousC
 import { captureQuickOverviewDay, closeQuickOverviewSelections, settleQuickOverviewSelections } from "./quickOverviewStore";
 import { invalidateCachedJson } from "./cache";
 import { captureCalibrationShadows } from "./calibrationShadowStore";
+import { captureMainModelShadow } from "./mainModelShadowStore";
 import { captureIntuitionTickets, settleIntuitionTickets } from "./intuitionTicketStore";
 
 /**
@@ -681,6 +682,12 @@ export async function runSnapshotOdds(
         await saveClosingOdds(item.fixtureId, now, odds);
         await closeMarketSignals(item.fixtureId, odds.books ?? [], now);
         close++;
+      }
+      try {
+        await captureMainModelShadow(item.fixtureId, odds.books ?? [], now);
+      } catch (error) {
+        // Shadow model nesmí přerušit kurzový ani ticketový cron.
+        logError("predictions.main-model-shadow", error, { fixtureId: item.fixtureId });
       }
       if (plan.series) {
         const minutesToKickoff = (item.kickoff.getTime() - now.getTime()) / 60_000;

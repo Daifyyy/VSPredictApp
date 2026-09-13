@@ -22,6 +22,9 @@ describe("intuition tickets", () => {
     const candidate = rankIntuitionCandidates([row(9, "2026-09-12", .72, 1.8)])[0];
     expect(candidate).toMatchObject({ fixtureId: 9, winner: "HOME", role: "VALUE" });
     expect(candidate.modelExpectedValue).toBeGreaterThanOrEqual(.08);
+    expect(candidate.modelWeight).toBe(.4);
+    expect(candidate.decisionExpectedValue).toBeGreaterThanOrEqual(.03);
+    expect(candidate.decisionExpectedValue).toBeLessThan(candidate.modelExpectedValue!);
   });
 
   it("ranks a more probable quality-team combination above a larger-EV outsider", () => {
@@ -35,7 +38,8 @@ describe("intuition tickets", () => {
   it("estimates a correlated synthetic quote from separate winner and total prices", () => {
     const source = row(7, "2026-09-12", .62, 1.9);
     source.oddsBooks = [{ id: 4, name: "Test", home: 1.9, draw: 3.5, away: 4.5, over25: 1.9, under25: 1.9, btts: 1.9, bttsNo: 1.9, matchTotals: [{ line: 1.5, over: 2.5, under: 1.5 }, { line: 4.5, over: 5, under: 1.18 }] }];
-    expect(rankIntuitionCandidates([source])[0]).toMatchObject({ fixtureId: 7, priceKind: "SYNTHETIC" });
+    expect(rankIntuitionCandidates([source])[0]).toMatchObject({ fixtureId: 7, priceKind: "SYNTHETIC", modelWeight: .25, priceUncertainty: "HIGH" });
+    expect(buildIntuitionTickets([source, { ...source, fixtureId: 70 }], "2026-09-12")).toEqual([]);
   });
 
   it("rejects a short combined price with negative model EV", () => {
@@ -67,10 +71,8 @@ describe("intuition tickets", () => {
     const weakerCheap = [4, 5, 6].map((id) => row(id, "2026-09-12", .62, 1.8));
     for (const item of expensive) item.lambdaHome = 3;
     const tickets = buildIntuitionTickets([...expensive, ...weakerCheap], "2026-09-12");
-    expect(tickets).toHaveLength(2);
-    expect(tickets[0].legs.filter((leg) => leg.decimalOdds! > 3.25 || leg.marketWinnerProbability! < .38)).toHaveLength(1);
-    expect(tickets[1].legs).toHaveLength(2);
-    expect(tickets[1].legs.filter((leg) => leg.decimalOdds! > 3.25 || leg.marketWinnerProbability! < .38)).toHaveLength(1);
+    expect(tickets).toHaveLength(1);
+    expect(tickets[0].legs.filter((leg) => leg.decimalOdds! > 3.25 || leg.marketWinnerProbability! < .38).length).toBeLessThanOrEqual(1);
     expect(buildIntuitionTickets(expensive, "2026-09-12")).toEqual([]);
   });
 

@@ -5,7 +5,9 @@
 //    pozorovaných skóre → doporučení pro konstantu DC_RHO v lib/stats/predict.ts.
 // 2) Reportuje úspěšnost (1X2), Brier skóre a log-loss uložených predikcí.
 import { getSettledPredictions } from "../lib/data/predictionStore.ts";
-import { MODEL_VERSION } from "../lib/data/predictions.ts";
+// Leaf import: analytický skript nesmí kvůli číslu verze načíst celou Next.js
+// predikční orchestraci (a s ní `server-only`).
+import { MODEL_VERSION } from "../lib/data/modelVersion.ts";
 import {
   fitCalibration,
   fitRho,

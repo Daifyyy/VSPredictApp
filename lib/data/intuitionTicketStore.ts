@@ -40,7 +40,7 @@ async function sources(windowKey: string, persistPedigree = false, asOf = new Da
       status: { notIn: ["PST", "CANC", "ABD"] },
     },
     orderBy: [{ kickoff: "asc" }, { fixtureId: "asc" }],
-    select: { fixtureId: true, leagueId: true, kickoff: true, homeTeamId: true, awayTeamId: true, homeName: true, awayName: true, homeWin: true, awayWin: true, lambdaHome: true, lambdaAway: true, lowConfidence: true, readinessSample: true, oddsBooks: true, oddsCurrentBooks: true, homeGoals: true, awayGoals: true },
+    select: { fixtureId: true, leagueId: true, kickoff: true, homeTeamId: true, awayTeamId: true, homeName: true, awayName: true, homeWin: true, awayWin: true, lambdaHome: true, lambdaAway: true, modelVersion: true, lowConfidence: true, readinessSample: true, oddsBooks: true, oddsCurrentBooks: true, homeGoals: true, awayGoals: true },
   });
   const teamIds = [...new Set(rows.flatMap((row) => [row.homeTeamId, row.awayTeamId]))];
   const historyStart = new Date(start); historyStart.setUTCFullYear(historyStart.getUTCFullYear() - 1);
@@ -82,13 +82,13 @@ export type TicketEmptyReason = "WAITING_FOR_ODDS" | "INSUFFICIENT_ELO_HISTORY" 
 function emptyReason(strategy: "VALUE" | "ELO_INTUITION", rows: IntuitionSource[], tickets: IntuitionTicket[]): TicketEmptyReason | null {
   if (tickets.length) return null;
   const withOdds = rows.filter((row) => Array.isArray(row.oddsBooks) && row.oddsBooks.length > 0);
-  if (withOdds.length < 3) return "WAITING_FOR_ODDS";
-  if (strategy === "ELO_INTUITION" && rows.filter((row) => row.elo && Math.min(row.elo.homeLongSample, row.elo.awayLongSample) >= 10 && Math.min(row.elo.homeFastSample, row.elo.awayFastSample) >= 5).length < 3) return "INSUFFICIENT_ELO_HISTORY";
+  if (withOdds.length < 2) return "WAITING_FOR_ODDS";
+  if (strategy === "ELO_INTUITION" && rows.filter((row) => row.elo && Math.min(row.elo.homeLongSample, row.elo.awayLongSample) >= 10 && Math.min(row.elo.homeFastSample, row.elo.awayFastSample) >= 5).length < 2) return "INSUFFICIENT_ELO_HISTORY";
   const candidates = strategy === "VALUE" ? rankIntuitionCandidates(rows) : rankEloCandidates(rows);
-  if (candidates.length >= 3) return "NOT_ENOUGH_BALANCED_LEGS";
-  if (strategy === "VALUE") return candidates.length < 3 ? "NOT_ENOUGH_VALUE_LEGS" : null;
+  if (candidates.length >= 2) return "NOT_ENOUGH_BALANCED_LEGS";
+  if (strategy === "VALUE") return candidates.length < 2 ? "NOT_ENOUGH_VALUE_LEGS" : null;
   if (rankEloDivergences(rows).some((item) => item.reason === "CONTEXT_VETO")) return "CONTEXT_VETO";
-  return candidates.length < 3 ? "NOT_ENOUGH_CONTEXTUAL_LEGS" : null;
+  return candidates.length < 2 ? "NOT_ENOUGH_CONTEXTUAL_LEGS" : null;
 }
 
 function draft(strategy: string, tickets: IntuitionTicket[], now: Date) {
@@ -146,6 +146,9 @@ export async function captureIntuitionTickets(fixtureId: number, at: Date): Prom
       eloLongProbability: leg.eloLongProbability, eloFastProbability: leg.eloFastProbability, eloWinnerProbability: leg.eloWinnerProbability, eloJointProbability: leg.eloJointProbability,
       eloLongHomeRating: leg.eloLongHomeRating, eloLongAwayRating: leg.eloLongAwayRating, eloFastHomeRating: leg.eloFastHomeRating, eloFastAwayRating: leg.eloFastAwayRating,
       eloLongSample: leg.eloLongSample, eloFastSample: leg.eloFastSample, modelExpectedValue: leg.modelExpectedValue ?? (leg.decimalOdds ? leg.modelProbability * leg.decimalOdds - 1 : null), eloExpectedValue: leg.eloExpectedValue,
+      marketAnchorProbability: leg.marketAnchorProbability, decisionProbability: leg.decisionProbability, decisionExpectedValue: leg.decisionExpectedValue, modelWeight: leg.modelWeight,
+      conditionRetention: leg.conditionRetention, conditionOddsUplift: leg.conditionOddsUplift, conditionEfficiency: leg.conditionEfficiency,
+      priceUncertainty: leg.priceUncertainty, leagueReliability: leg.leagueReliability, modelPredictionVersion: leg.modelPredictionVersion, decisionPolicyVersion: leg.decisionPolicyVersion,
       winnerOdds: leg.winnerOdds, decimalOdds: leg.decimalOdds, bookmaker: leg.bookmaker, priceKind: leg.priceKind, reason: leg.reason, risk: leg.risk,
       pedigreeScore: leg.pedigreeScore, pedigreeSnapshotId: leg.pedigreeSnapshotId, contextScore: leg.contextScore, contextSupports: leg.contextSupports ?? [], contextVetoes: leg.contextVetoes ?? [],
     })) },

@@ -4,6 +4,7 @@ import { auditPipeline, withCronRun } from "@/lib/operations";
 import { logError } from "@/lib/logError";
 import { monitorModelLab } from "@/lib/data/modelLabMonitoring";
 import { reconcileQuickOverviewSettlements } from "@/lib/data/quickOverviewStore";
+import { captureModelEvaluationSnapshots } from "@/lib/data/modelEvaluationStore";
 
 export const maxDuration = 60;
 
@@ -15,9 +16,11 @@ export async function GET(req: Request) {
       const health = await auditPipeline();
       const repairedQuickSettlements = await reconcileQuickOverviewSettlements();
       const modelLab = await monitorModelLab();
+      const modelEvaluation = await captureModelEvaluationSnapshots();
       return {
         ...health,
         modelLab,
+        modelEvaluation,
         repairedQuickSettlements,
         candidates: health.coverage.reduce((sum, row) => sum + row.eligible, 0),
         processed: health.coverage.reduce((sum, row) => sum + row.covered, 0),

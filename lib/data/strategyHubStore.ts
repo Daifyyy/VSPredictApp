@@ -109,9 +109,9 @@ export async function strategyHubData(strategy: StrategyHubId, date: string) {
       byFixture.set(leg.fixtureId, {
         id: "id" in leg ? leg.id : `${strategy}-${ticket.slot}-${leg.fixtureId}`, fixtureId: leg.fixtureId, leagueId: leg.leagueId, leagueName: catalogLeagueName(leg.leagueId, ""), kickoff: leg.kickoff.toISOString(), homeName: leg.homeName, awayName: leg.awayName,
         selection: `${leg.winnerName} + ${leg.totalSide === "OVER" ? "více" : "méně"} než ${fmtLine(leg.totalLine)} gólu`, reason: leg.reason, risk: leg.risk,
-        probability: strategy === "VALUE" ? leg.modelProbability : leg.eloJointProbability ?? null, marketProbability: leg.decimalOdds ? 1 / leg.decimalOdds : null,
+        probability: strategy === "VALUE" ? leg.decisionProbability ?? leg.modelProbability : leg.eloJointProbability ?? null, marketProbability: strategy === "VALUE" ? leg.marketAnchorProbability ?? (leg.decimalOdds ? 1 / leg.decimalOdds : null) : leg.decimalOdds ? 1 / leg.decimalOdds : null,
         edge: leg.eloWinnerProbability != null && leg.marketWinnerProbability != null ? leg.eloWinnerProbability - leg.marketWinnerProbability : null,
-        expectedValue: (strategy === "VALUE" ? leg.modelExpectedValue : leg.eloExpectedValue) ?? null, confidence: leg.contextScore ?? null, odds: leg.decimalOdds, bookmaker: leg.bookmaker,
+        expectedValue: (strategy === "VALUE" ? leg.decisionExpectedValue ?? leg.modelExpectedValue : leg.eloExpectedValue) ?? null, confidence: leg.contextScore ?? null, odds: leg.decimalOdds, bookmaker: leg.bookmaker,
         priceKind: leg.priceKind as StrategyHubOpportunity["priceKind"], outcome: outcome(leg.hit), score: leg.homeGoals == null || leg.awayGoals == null ? null : `${leg.homeGoals}:${leg.awayGoals}`, ticketSlots: [ticket.slot],
         strategyConflict: [...(opposingWinners.get(leg.fixtureId) ?? [])].some((winner) => winner !== leg.winner)
           ? "Druhá strategie vybírá v tomto zápase opačného vítěze."

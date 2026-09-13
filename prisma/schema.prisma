@@ -1173,22 +1173,22 @@ model QuickOverviewSelection {
 
 /// Neměnný experimentální akumulátor sestavený pouze z předzápasových snapshotů.
 model IntuitionTicket {
-  id            String               @id @default(cuid())
-  windowKey     String
-  slot          Int
-  policyVersion Int                  @default(1)
-  strategy      String               @default("VALUE")
-  status        String               @default("LOCKED")
-  combinedOdds  Float?
+  id                  String               @id @default(cuid())
+  windowKey           String
+  slot                Int
+  policyVersion       Int                  @default(1)
+  strategy            String               @default("VALUE")
+  status              String               @default("LOCKED")
+  combinedOdds        Float?
   naturalCombinedOdds Float?
   estimatedPriceCount Int                  @default(0)
-  priceKind     String               @default("NONE")
-  generatedAt   DateTime
-  lockedAt      DateTime
-  settledAt     DateTime?
-  hit           Boolean?
-  profit        Float?
-  legs          IntuitionTicketLeg[]
+  priceKind           String               @default("NONE")
+  generatedAt         DateTime
+  lockedAt            DateTime
+  settledAt           DateTime?
+  hit                 Boolean?
+  profit              Float?
+  legs                IntuitionTicketLeg[]
 
   @@unique([windowKey, strategy, slot, policyVersion])
   @@index([strategy, status, settledAt])
@@ -1221,6 +1221,17 @@ model IntuitionTicketLeg {
   eloLongSample           Float?
   eloFastSample           Float?
   modelExpectedValue      Float?
+  marketAnchorProbability Float?
+  decisionProbability     Float?
+  decisionExpectedValue   Float?
+  modelWeight             Float?
+  conditionRetention      Float?
+  conditionOddsUplift     Float?
+  conditionEfficiency     Float?
+  priceUncertainty        String?
+  leagueReliability       Float?
+  modelPredictionVersion  Int?
+  decisionPolicyVersion   Int?
   eloExpectedValue        Float?
   marketWinnerProbability Float?
   winnerOdds              Float?
@@ -1241,6 +1252,78 @@ model IntuitionTicketLeg {
   ticket                  IntuitionTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 
   @@unique([ticketId, fixtureId])
+  @@index([fixtureId])
+}
+
+/// Neměnný denní audit modelu proti trhu na přesně vymezené kohortě.
+model ModelEvaluationSnapshot {
+  id                String    @id @default(cuid())
+  modelVersion      Int
+  modelContext      String
+  contextVersion    Int
+  evaluationVersion Int       @default(1)
+  datasetCutoff     DateTime
+  windowType        String
+  leagueId          Int       @default(0)
+  sampleSize        Int
+  fromKickoff       DateTime?
+  toKickoff         DateTime?
+  modelAccuracy     Float?
+  modelLogLoss      Float?
+  modelBrier        Float?
+  modelEce          Float?
+  openingSampleSize Int       @default(0)
+  openingAccuracy   Float?
+  openingLogLoss    Float?
+  openingBrier      Float?
+  openingEce        Float?
+  closingSampleSize Int       @default(0)
+  closingAccuracy   Float?
+  closingLogLoss    Float?
+  closingBrier      Float?
+  closingEce        Float?
+  dataQuality       Json?
+  createdAt         DateTime  @default(now())
+
+  @@unique([modelVersion, modelContext, contextVersion, evaluationVersion, datasetCutoff, windowType, leagueId], map: "ModelEvaluationSnapshot_scope_key")
+  @@index([modelContext, modelVersion, datasetCutoff])
+  @@index([leagueId, datasetCutoff])
+}
+
+/// Prospektivní shadow výstup kandidátního hlavního modelu. První dostupný trh jej
+/// zmrazí; pozdější kurzy ani výsledky původní pravděpodobnosti nepřepisují.
+model MainModelShadowPrediction {
+  id                 String   @id @default(cuid())
+  fixtureId          Int
+  shadowVersion      Int
+  sourceModelVersion Int
+  modelContext       String
+  contextVersion     Int
+  method             String
+  kickoff            DateTime
+  capturedAt         DateTime
+  bookmaker          String
+  marketHome         Float
+  marketDraw         Float
+  marketAway         Float
+  sourceHome         Float
+  sourceDraw         Float
+  sourceAway         Float
+  eloHome            Float?
+  eloDraw            Float?
+  eloAway            Float?
+  homeProbability    Float
+  drawProbability    Float
+  awayProbability    Float
+  marketWeight       Float
+  sourceWeight       Float
+  eloWeight          Float
+  eloLongSample      Float?
+  eloFastSample      Float?
+  createdAt          DateTime @default(now())
+
+  @@unique([fixtureId, shadowVersion, method], map: "MainModelShadowPrediction_fixture_version_method_key")
+  @@index([shadowVersion, modelContext, kickoff])
   @@index([fixtureId])
 }
 
