@@ -67,13 +67,21 @@ describe("intuition tickets", () => {
     const weakerCheap = [4, 5, 6].map((id) => row(id, "2026-09-12", .62, 1.8));
     for (const item of expensive) item.lambdaHome = 3;
     const tickets = buildIntuitionTickets([...expensive, ...weakerCheap], "2026-09-12");
-    expect(tickets).toHaveLength(1);
+    expect(tickets).toHaveLength(2);
     expect(tickets[0].legs.filter((leg) => leg.decimalOdds! > 3.25 || leg.marketWinnerProbability! < .38)).toHaveLength(1);
+    expect(tickets[1].legs).toHaveLength(2);
+    expect(tickets[1].legs.filter((leg) => leg.decimalOdds! > 3.25 || leg.marketWinnerProbability! < .38)).toHaveLength(1);
     expect(buildIntuitionTickets(expensive, "2026-09-12")).toEqual([]);
   });
 
-  it("does not create a ticket from only two qualified legs", () => {
-    expect(buildIntuitionTickets([row(71, "2026-09-12", .43, 3.4), row(72, "2026-09-12", .43, 3.4)], "2026-09-12")).toEqual([]);
+  it("creates a two-leg fallback when exactly two balanced opportunities qualify", () => {
+    const tickets = buildIntuitionTickets([row(71, "2026-09-12", .62, 1.8), row(72, "2026-09-12", .61, 1.85)], "2026-09-12");
+    expect(tickets).toHaveLength(1);
+    expect(tickets[0].legs).toHaveLength(2);
+  });
+
+  it("does not create a ticket from a single qualified leg", () => {
+    expect(buildIntuitionTickets([row(73, "2026-09-12", .62, 1.8)], "2026-09-12")).toEqual([]);
   });
 
   it("never locks a ticket at or after its first kickoff", () => {
@@ -83,9 +91,10 @@ describe("intuition tickets", () => {
     expect(isTicketLockable(new Date("2026-09-12T11:00:00Z"), at)).toBe(true);
   });
 
-  it("extends to the next day only when the first day has fewer than three candidates", () => {
+  it("prefers a two-leg same-day fallback over adding a third leg from the next day", () => {
     const tickets = buildIntuitionTickets([row(1, "2026-09-12", .43, 3.4), row(2, "2026-09-12", .62, 1.8), row(3, "2026-09-13", .6, 1.9)], "2026-09-12");
-    expect(tickets[0]?.dateKeys).toEqual(["2026-09-12", "2026-09-13"]);
+    expect(tickets[0]?.dateKeys).toEqual(["2026-09-12"]);
+    expect(tickets[0]?.legs).toHaveLength(2);
   });
 
   it("accepts a Monaco-type direct candidate in ELO even when the main-model EV is negative", () => {
@@ -117,6 +126,7 @@ describe("intuition tickets", () => {
     expect(tickets.every((ticket) => ticket.legs.length === 3 && ticket.odds! > 0)).toBe(true);
     expect(tickets.every((ticket) => ticket.legs.filter((leg) => leg.decimalOdds! > 3.25 || leg.marketWinnerProbability! < .38).length <= 1)).toBe(true);
     expect(new Set(tickets.flatMap((ticket) => ticket.legs.map((leg) => leg.fixtureId))).size).toBe(tickets.flatMap((ticket) => ticket.legs).length);
+    expect(buildEloIntuitionTickets(rows.slice(1, 3), "2026-09-12")[0]?.legs).toHaveLength(2);
   });
 
   it("Lazio-type extrém proti shodě trhu a modelu ukládá jako divergenci, ne kandidáta", () => {

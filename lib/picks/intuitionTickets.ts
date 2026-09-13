@@ -2,7 +2,7 @@ import { localDateKey } from "@/lib/competitionGrouping";
 import { drawTau, poissonVector } from "@/lib/stats/predict";
 import { bestLinePrice, bestPrice, bestResultTotalPrice, parseBooks, sharpFair, sharpLineFair } from "./books";
 
-export const INTUITION_POLICY_VERSION = 9;
+export const INTUITION_POLICY_VERSION = 10;
 
 const MIN_READINESS_SAMPLE = 6;
 const MIN_DIRECT_ODDS = 1.6;
@@ -209,7 +209,8 @@ function isSpeculativeLeg(leg: IntuitionCandidate) {
   return (leg.decimalOdds ?? Infinity) > SPECULATIVE_LEG_ODDS || (leg.marketWinnerProbability ?? 0) < SPECULATIVE_WIN_PROBABILITY;
 }
 
-/** Vybere tři nejlepší nohy při zachování charakteru „favorit + góly“.
+/** Vybere tři nejlepší nohy, případně dvě, pokud třetí kvalitní noha chybí,
+ * při zachování charakteru „favorit + góly“.
  * Dražší nebo trhem méně pravděpodobný výběr je dovolen jako jediná výjimka,
  * nikdy jako základ celé akumulace. Celkový kurz do výběru nevstupuje. */
 function balancedBase(pool: IntuitionCandidate[]) {
@@ -222,7 +223,7 @@ function balancedBase(pool: IntuitionCandidate[]) {
     if (risky) speculative++;
     if (selected.length === 3) return selected;
   }
-  return null;
+  return selected.length === 2 ? selected : null;
 }
 
 function assembleTickets(pool: IntuitionCandidate[]): IntuitionTicket[] {
