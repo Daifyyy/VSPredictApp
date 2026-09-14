@@ -130,6 +130,14 @@ function toRow(p: PredictionRowSource): PredictionRow {
 }
 
 /** Upsert predikce (přepíše predikční pole, výsledek nechá být). */
+type VersionedShadow = { version?: unknown } | null | undefined;
+
+/** v1 smí před výkopem jednou přejít na v2; uložená v2 a historie jsou neměnné. */
+export function frozenPerformancePressure(existing: VersionedShadow, incoming: VersionedShadow, canUpgrade: boolean) {
+  if (!existing) return incoming;
+  return canUpgrade && Number(existing.version) === 1 && Number(incoming?.version) === 2 ? incoming : existing;
+}
+
 export async function upsertPrediction(row: PredictionUpsert): Promise<void> {
   const now = new Date();
   const existing = await prisma.fixturePrediction.findUnique({ where: { fixtureId: row.fixtureId } });
@@ -141,8 +149,9 @@ export async function upsertPrediction(row: PredictionUpsert): Promise<void> {
     : null;
   // První shadow profil je prospektivní audit. Opravný predikční běh smí aktualizovat
   // hlavní prognózu, ale nesmí podle pozdějších informací přepsat původní shadow vstupy.
+  const canUpgradePressure = existing?.status === "NS" && existing.kickoff.getTime() > now.getTime();
   const frozenInput = incomingInput
-    ? { ...incomingInput, performancePressure: existingInput?.performancePressure ?? incomingInput.performancePressure }
+    ? { ...incomingInput, performancePressure: frozenPerformancePressure(existingInput?.performancePressure as VersionedShadow, incomingInput.performancePressure, canUpgradePressure) }
     : null;
   // Prázdný fixture payload nesmí smazat ruční delegaci. Neprázdný údaj API je autoritativní.
   const preserveManual = existing?.refereeSource === "MANUAL" && !row.refereeName;
