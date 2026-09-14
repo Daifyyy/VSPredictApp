@@ -2,6 +2,7 @@ import "server-only";
 import { isRealDataConfigured, prisma } from "@/lib/db";
 import type { FixtureDay, ModelReviewChip, PlayedModelReview } from "@/lib/types";
 import { binaryOutcome, countTone, freshClosing, portfolioProfit } from "@/lib/picks/evaluation";
+import type { MatchFlowEvaluation } from "@/lib/picks/matchFlowEvaluation";
 
 const pct = (value: number) => `${Math.round(value * 100)} %`;
 const one = (value: number) => value.toFixed(1).replace(".", ",");
@@ -13,12 +14,14 @@ export async function getResultModelReviews(fixtureIds: number[]): Promise<Map<n
   if (!isRealDataConfigured()) return new Map();
   const ids = [...new Set(fixtureIds)];
   if (!ids.length) return new Map();
-  const [predictions, stats, selections, signals] = await Promise.all([
+  const [predictions, stats, selections, signals, flowRows] = await Promise.all([
     prisma.fixturePrediction.findMany({ where: { fixtureId: { in: ids } } }),
     prisma.matchStatCache.findMany({ where: { fixtureId: { in: ids } }, select: { fixtureId: true, teamId: true, context: true, corners: true, fouls: true, yellowCards: true, redCards: true } }),
     prisma.autonomousTipSnapshot.findMany({ where: { fixtureId: { in: ids }, status: "candidate" } }),
     prisma.marketSignalSnapshot.findMany({ where: { fixtureId: { in: ids } }, orderBy: { openedAt: "asc" } }),
+    prisma.matchFlowEvaluationSnapshot.findMany({ where: { fixtureId: { in: ids }, status: "SETTLED" }, orderBy: { evaluationVersion: "desc" } }),
   ]);
+  const flowMap = new Map(flowRows.map((row) => [row.fixtureId, row.evaluation as unknown as MatchFlowEvaluation]));
   const statMap = new Map<number, typeof stats>();
   for (const row of stats) statMap.set(row.fixtureId, [...(statMap.get(row.fixtureId) ?? []), row]);
   const selectionMap = new Map<number, typeof selections>();
@@ -61,7 +64,7 @@ export async function getResultModelReviews(fixtureIds: number[]): Promise<Map<n
       const hit = binaryOutcome(row.market, row.side, p.homeGoals, p.awayGoals);
       return { strategy: row.strategy, side: row.side, odds: row.decimalOdds, hit, profit: portfolioProfit(hit, row.decimalOdds, row.stake), policyVersion: row.policyVersion };
     });
-    reviews.set(p.fixtureId, { chips, probabilities: { home: p.homeWin, draw: p.draw, away: p.awayWin, over25: p.over25, bttsYes: p.bttsYes }, expectedScore: { home: p.lambdaHome, away: p.lambdaAway }, counts: { corners, cards, fouls }, modelVersion: p.modelVersion, countModelVersion: p.countModelVersion, foulModelVersion: p.foulModelVersion, context: p.modelContext, readinessSample: p.readinessSample, lowConfidence: p.lowConfidence, referee: { name: p.refereeName, factor: p.refereeFactor, sample: p.refereeSample }, market, portfolio });
+    reviews.set(p.fixtureId, { chips, probabilities: { home: p.homeWin, draw: p.draw, away: p.awayWin, over25: p.over25, bttsYes: p.bttsYes }, expectedScore: { home: p.lambdaHome, away: p.lambdaAway }, counts: { corners, cards, fouls }, modelVersion: p.modelVersion, countModelVersion: p.countModelVersion, foulModelVersion: p.foulModelVersion, context: p.modelContext, readinessSample: p.readinessSample, lowConfidence: p.lowConfidence, referee: { name: p.refereeName, factor: p.refereeFactor, sample: p.refereeSample }, market, portfolio, matchFlow: flowMap.get(p.fixtureId) ?? null });
   }
   return reviews;
 }

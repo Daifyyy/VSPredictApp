@@ -14,6 +14,7 @@ import {
   getLeagueCountBaseline,
   cacheFinishedFixtureStats,
 } from "./realRepository";
+import { pendingMatchFlowFixtureIds, settleMatchFlowEvaluation } from "./matchFlowStore";
 import {
   DEFAULT_CORNER_BASELINE,
   cornerValues,
@@ -790,10 +791,12 @@ export async function runSettleResults(): Promise<{
 }> {
   const statusPending = await getUnsettledPredictions();
   const statsRepairIds = await getMissingActualStatPredictionIds();
+  const flowRepairIds = await pendingMatchFlowFixtureIds();
   const repairSet = new Set(statsRepairIds);
   const pending = [...new Set([
     ...statusPending.map((row) => row.fixtureId),
     ...statsRepairIds,
+    ...flowRepairIds,
   ])].map((fixtureId) => ({ fixtureId }));
   let settled = 0;
   let statusUpdated = 0;
@@ -851,6 +854,12 @@ export async function runSettleResults(): Promise<{
       } catch (error) {
         statsErrors++;
         logError("predictions.runSettleResults.statistics", error, { fixtureId: f.fixture.id });
+      }
+      try {
+        await settleMatchFlowEvaluation(f.fixture.id, new Date());
+      } catch (error) {
+        errors++;
+        logError("predictions.runSettleResults.matchFlow", error, { fixtureId: f.fixture.id });
       }
       try {
         await settleQuickOverviewSelections(f.fixture.id, ft?.home ?? null, ft?.away ?? null, new Date());

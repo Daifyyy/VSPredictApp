@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { getLiveMatchReport } from "@/lib/data/repository";
 import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
-import { publicCache } from "@/lib/cacheHeaders";
 import { logError } from "@/lib/logError";
+import { getCurrentUser } from "@/lib/authUser";
+import { liveMatchFlowEvaluation } from "@/lib/data/matchFlowStore";
 
 /**
  * Přehled **probíhajícího** zápasu (kdo zatím určuje hru) pro rozbalený řádek v Programu.
@@ -58,9 +59,20 @@ export async function GET(req: Request) {
     // `reason` cestuje na klienta schválně: „ještě je brzy" a „statistiky nedorazily"
     // vypadají v UI stejně (prázdno), ale znamenají něco jiného – a rozbité parsování
     // se pozná právě tím, že celý zápasový den hlásí `nostats`.
+    const user = await getCurrentUser();
+    const snapshot = report?.snapshot;
+    const expectedVsActual = user?.tier === "PRO" && snapshot ? await liveMatchFlowEvaluation(fixtureId, {
+      minute: snapshot.minute,
+      status,
+      home: { XG:snapshot.home.xg??undefined, SHOTS:snapshot.home.shots??undefined, SHOTS_ON_TARGET:snapshot.home.shotsOnTarget??undefined, SHOTS_INSIDE_BOX:snapshot.home.shotsInsideBox??undefined, CORNERS:snapshot.home.corners??undefined, POSSESSION:snapshot.home.possession??undefined },
+      away: { XG:snapshot.away.xg??undefined, SHOTS:snapshot.away.shots??undefined, SHOTS_ON_TARGET:snapshot.away.shotsOnTarget??undefined, SHOTS_INSIDE_BOX:snapshot.away.shotsInsideBox??undefined, CORNERS:snapshot.away.corners??undefined, POSSESSION:snapshot.away.possession??undefined },
+      goals: snapshot.goals,
+      redCards: events.filter((event) => event.kind === "red").length,
+      interrupted: ["INT", "SUSP"].includes(status),
+    }) : null;
     return NextResponse.json(
-      { report, reason, events },
-      { headers: publicCache(30, 60) }
+      { report, reason, events, expectedVsActual },
+      { headers: { "Cache-Control": "private, no-store" } }
     );
   } catch (e) {
     logError("api/live-report", e, { fixtureId });

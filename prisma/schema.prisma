@@ -123,6 +123,31 @@ model LiveModelSnapshot {
   @@index([fixtureId, calculatedAt])
 }
 
+/// Neměnný pozápasový audit shody předzápasového obrazu se skutečným průběhem.
+model MatchFlowEvaluationSnapshot {
+  id                String   @id @default(cuid())
+  fixtureId         Int
+  leagueId          Int
+  kickoff           DateTime
+  pressureVersion   Int
+  evaluationVersion Int
+  status            String   @default("PENDING")
+  verdict           String?
+  coverage          Float    @default(0)
+  structurallyChanged Boolean @default(false)
+  expectation       Json
+  halftime          Json?
+  actual             Json?
+  evaluation         Json?
+  evaluatedAt        DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([fixtureId, pressureVersion, evaluationVersion])
+  @@index([pressureVersion, evaluationVersion, status])
+  @@index([leagueId, kickoff])
+}
+
 /// Prospektivní experimentální 1u výběr. Po vzniku se nemění; settlement doplní
 /// pouze výsledek a profit.
 model LiveCandidateSnapshot {

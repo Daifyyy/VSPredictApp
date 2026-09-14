@@ -7,6 +7,7 @@ import { deriveLiveMomentum, type LiveMomentum } from "@/lib/stats/liveMomentum"
 import type { MatchEvent } from "@/lib/stats/matchEvents";
 import { Chip, DimensionBar } from "./MatchDimensionBar";
 import { EventTimeline } from "./EventTimeline";
+import type { MatchFlowEvaluation } from "@/lib/picks/matchFlowEvaluation";
 
 /**
  * Přehled **probíhajícího** zápasu v rozbaleném řádku Programu – kdo zatím určuje hru.
@@ -31,6 +32,7 @@ type PanelState =
       reason: string | null;
       events: MatchEvent[];
       momentum: LiveMomentum | null;
+      expectedVsActual: MatchFlowEvaluation | null;
     }
   | { state: "error" };
 
@@ -77,6 +79,7 @@ function useLiveReport(fixture: UpcomingFixture): PanelState {
             report: LiveReport | null;
             reason: string | null;
             events?: MatchEvent[];
+            expectedVsActual?: MatchFlowEvaluation | null;
           }) => {
             if (!signal.cancelled) {
               const snapshot = d.report?.snapshot ?? null;
@@ -91,6 +94,7 @@ function useLiveReport(fixture: UpcomingFixture): PanelState {
                 reason: d.reason ?? null,
                 events: d.events ?? [],
                 momentum,
+                expectedVsActual: d.expectedVsActual ?? null,
               });
             }
           }
@@ -205,6 +209,8 @@ export function LiveReportPanel({ fixture }: { fixture: UpcomingFixture }) {
           </div>
         )}
 
+        {data.expectedVsActual && <MatchFlowComparison evaluation={data.expectedVsActual} />}
+
         {report.available && (
           <div className="space-y-2.5">
             {report.dimensions.map((d) => (
@@ -238,4 +244,15 @@ export function LiveReportPanel({ fixture }: { fixture: UpcomingFixture }) {
       </div>
     </Frame>
   );
+}
+
+function MatchFlowComparison({ evaluation }: { evaluation: MatchFlowEvaluation }) {
+  const labels = { TREFENO: "Trefeno", CASTECNE: "Částečně", NETREFENO: "Netrefeno", NEDOSTATEK_DAT: "Málo dat" } as const;
+  const tone = evaluation.verdict === "TREFENO" ? "text-positive" : evaluation.verdict === "NETREFENO" ? "text-negative" : "text-warning";
+  return <section className="rounded-lg border border-border bg-background/70 p-3" aria-label="Očekávání proti skutečnému průběhu">
+    <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Očekávání vs. realita</p><p className="mt-1 text-xs font-medium text-foreground">{evaluation.headline}</p></div><strong className={`shrink-0 text-xs ${tone}`}>{labels[evaluation.verdict]}</strong></div>
+    {evaluation.components.length > 0 && <div className="mt-2 grid gap-1.5 sm:grid-cols-2">{evaluation.components.map((component) => <div key={component.key} className="rounded-md border border-border/70 px-2 py-1.5"><div className="flex justify-between gap-2 text-[10px]"><strong>{component.label}</strong><span>{labels[component.verdict]}</span></div><p className="mt-0.5 text-[10px] leading-4 text-muted">{component.detail}</p></div>)}</div>}
+    {evaluation.warnings.map((warning) => <p key={warning} className="mt-2 text-[10px] text-warning">⚠ {warning}</p>)}
+    <p className="mt-2 text-[9px] text-muted">Shadow audit · pokrytí {Math.round(evaluation.coverage * 100)} % · neovlivňuje tip</p>
+  </section>;
 }

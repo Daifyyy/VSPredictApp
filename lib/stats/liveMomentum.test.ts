@@ -4,8 +4,8 @@ import type { LiveSnapshot } from "./liveReport";
 
 const snapshot = (minute: number, home: Partial<LiveSnapshot["home"]> = {}, away: Partial<LiveSnapshot["away"]> = {}): LiveSnapshot => ({
   minute,
-  home: { xg: 0, shots: 0, shotsOnTarget: 0, corners: 0, ...home },
-  away: { xg: 0, shots: 0, shotsOnTarget: 0, corners: 0, ...away },
+  home: { xg: 0, shots: 0, shotsOnTarget: 0, shotsInsideBox: 0, corners: 0, possession: 50, ...home },
+  away: { xg: 0, shots: 0, shotsOnTarget: 0, shotsInsideBox: 0, corners: 0, possession: 50, ...away },
   goals: { home: 0, away: 0 },
 });
 

@@ -10,6 +10,8 @@ import { quickOverviewCaptureAudit } from "./quickOverviewAudit";
 import { MAIN_MODEL_SHADOW_METHOD, MAIN_MODEL_SHADOW_VERSION } from "@/lib/picks/mainModelShadow";
 import { evaluateModelRows, type ModelEvaluationRow } from "@/lib/picks/modelEvaluation";
 import type { PerformancePressureShadow } from "@/lib/picks/performancePressureShadow";
+import type { MatchFlowEvaluation } from "@/lib/picks/matchFlowEvaluation";
+import type { ExpectedMatchShape } from "@/lib/picks/performancePressureShadow";
 
 const FINISHED = ["FT", "AET", "PEN"];
 const EPS = 1e-9;
@@ -117,7 +119,7 @@ export async function getModelGovernanceDashboard(now = new Date()) {
   const pressureCohort = pressureRows.flatMap((row) => {
     const snapshot = row.inputSnapshot as { performancePressure?: PerformancePressureShadow } | null;
     const pressure = snapshot?.performancePressure;
-    return pressure ? [{ ...row, pressure }] : [];
+    return pressure?.version === 2 ? [{ ...row, pressure }] : [];
   }).reverse();
   const settledPressure = pressureCohort.filter((row) => row.homeGoals != null && row.awayGoals != null && row.pressure.shadowOver25 != null);
   const binaryMetrics = (rows: typeof settledPressure, candidate: "current" | "shadow") => {
@@ -139,7 +141,7 @@ export async function getModelGovernanceDashboard(now = new Date()) {
   });
   const pressureDeltaRows = pressureCohort.filter((row) => row.pressure.over25Delta != null);
   const performancePressure = {
-    version: 1,
+    version: 2,
     captured: pressureCohort.length,
     settled: settledPressure.length,
     minimumDecisionSample: 200,
@@ -151,6 +153,19 @@ export async function getModelGovernanceDashboard(now = new Date()) {
     development: pressureCheckpoints,
     recent: pressureCohort.slice(-12).reverse().map((row) => ({ fixtureId: row.fixtureId, kickoff: row.kickoff, homeName: row.homeName, awayName: row.awayName, opennessScore: row.pressure.opennessScore, currentOver25: row.pressure.currentOver25, shadowOver25: row.pressure.shadowOver25, over25Delta: row.pressure.over25Delta, coverage: row.pressure.coverage.ratio, dependencyRisk: row.pressure.dependencyRisk.level, homePressure: row.pressure.home.expectedPressure, awayPressure: row.pressure.away.expectedPressure })),
   };
+  const flowRows = await prisma.matchFlowEvaluationSnapshot.findMany({ where: { pressureVersion: 2, evaluationVersion: 1, status: "SETTLED" }, orderBy: { kickoff: "desc" }, take: 500 });
+  const flowEvaluations = flowRows.flatMap((row) => row.evaluation ? [{ row, evaluation: row.evaluation as unknown as MatchFlowEvaluation }] : []);
+  const flowCounts = { TREFENO: 0, CASTECNE: 0, NETREFENO: 0, NEDOSTATEK_DAT: 0 };
+  for (const item of flowEvaluations) flowCounts[item.evaluation.verdict]++;
+  const flowComponents = flowEvaluations.flatMap((item) => item.evaluation.components);
+  const componentSummary = (["DOMINANCE", "PACE", "CHANCE_CREATION", "WEAKER_SIDE"] as const).map((key) => { const rows = flowComponents.filter((row) => row.key === key), errors = rows.filter((row) => row.difference != null); return { key, n: rows.length, hitRate: rows.length ? rows.filter((row) => row.verdict === "TREFENO").length / rows.length : 0, averageError: errors.length ? errors.reduce((sum, row) => sum + Math.abs(row.difference!), 0) / errors.length : null }; });
+  const segment = (label:string,rows:typeof flowEvaluations) => ({label,n:rows.length,hitRate:rows.length?rows.filter((item)=>item.evaluation.verdict==="TREFENO").length/rows.length:0});
+  const expectedOf=(item:typeof flowEvaluations[number])=>(item.row.expectation as unknown as {shape?:ExpectedMatchShape;dependencyRisk?:{level?:string}});
+  const roleOf=(item:typeof flowEvaluations[number])=>{const share=expectedOf(item).shape?.home.chanceShare.value??.5;return share>.55?"HOME":share<.45?"AWAY":"BALANCED"};
+  const roleSegments=["HOME","AWAY","BALANCED"].map((role)=>segment(role,flowEvaluations.filter((item)=>roleOf(item)===role)));
+  const dependencySegments=["LOW","MEDIUM","HIGH"].map((level)=>segment(level,flowEvaluations.filter((item)=>expectedOf(item).dependencyRisk?.level===level)));
+  const leagueSegments=[...new Set(flowEvaluations.map((item)=>item.row.leagueId))].map((leagueId)=>segment(PUBLIC_CLUB_LEAGUES.find((league)=>league.id===leagueId)?.name??String(leagueId),flowEvaluations.filter((item)=>item.row.leagueId===leagueId))).sort((a,b)=>b.n-a.n).slice(0,10);
+  const matchFlow = { version: 1, pressureVersion: 2, total: flowEvaluations.length, counts: flowCounts, averageCoverage: flowEvaluations.length ? flowEvaluations.reduce((sum,item)=>sum+item.evaluation.coverage,0)/flowEvaluations.length : 0, structurallyChanged: flowEvaluations.filter((item)=>item.evaluation.structurallyChanged).length, components: componentSummary,segments:{role:roleSegments,dependency:dependencySegments,league:leagueSegments} };
   const definitionsByKey = new Map(definitions.map((row) => [`${row.strategy}:${row.policyVersion}:${row.modelContext}`, row]));
   const finishedFixtures = new Set(predictions.map((row) => row.fixtureId));
   const samplesByKey = new Map<string, number>();
@@ -179,5 +194,5 @@ export async function getModelGovernanceDashboard(now = new Date()) {
     ...leagues.filter((item) => item.status === "REVIEW").map((item) => ({ priority: "WATCH", title: `Prověřit kohortu ${item.name}`, reason: `Modelový log-loss je o ${((item.modelLogLoss! - item.marketLogLoss!) * 100).toFixed(1)} bodu horší než trh (n=${item.n})`, due: "před změnou modelu" })),
   ];
   const shadow = Object.fromEntries(shadowCounts.map((row) => [row.status, row._count]));
-  return { asOf: now, modelVersion: MODEL_VERSION, tasks, strategies, leagues, checkpoints, personnel, quickOverview, mainModelShadow, performancePressure, shadow: { total: Object.values(shadow).reduce((sum, value) => sum + value, 0), candidates: shadow.candidate ?? 0, watch: shadow.watch ?? 0 } };
+  return { asOf: now, modelVersion: MODEL_VERSION, tasks, strategies, leagues, checkpoints, personnel, quickOverview, mainModelShadow, performancePressure, matchFlow, shadow: { total: Object.values(shadow).reduce((sum, value) => sum + value, 0), candidates: shadow.candidate ?? 0, watch: shadow.watch ?? 0 } };
 }

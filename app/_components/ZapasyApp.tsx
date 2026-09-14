@@ -7,6 +7,7 @@ import type {
   FixtureDay,
   LiveScore,
   PlayedFixture,
+  PlayedModelReview,
   UpcomingFixture,
 } from "@/lib/types";
 import { TeamLogo } from "./TeamLogo";
@@ -1619,6 +1620,7 @@ function ResultModelAudit({ fixture }: { fixture: PlayedFixture }) {
       <div className="mt-2 grid gap-2 sm:grid-cols-3">
         {countRows.map(([label, item]) => <AuditMetric key={label} label={label} value={item.expected == null ? "model nebyl dostupný" : `model ${item.expected.toFixed(1)} · skutečnost ${item.actual?.toFixed(0) ?? "—"} · chyba ${item.error?.toFixed(1) ?? "—"}`} />)}
       </div>
+      {review.matchFlow ? <MatchFlowResult evaluation={review.matchFlow} /> : <p className="mt-3 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted">Audit průběhu nebyl pro tento starší zápas zachycen.</p>}
       {review.market.length > 0 && (
         <details className="mt-3 rounded-lg border border-border bg-background">
           <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-foreground">Trh a CLV ({review.market.length})</summary>
@@ -1637,6 +1639,11 @@ function ResultModelAudit({ fixture }: { fixture: PlayedFixture }) {
       <p className="mt-3 text-[10px] leading-4 text-muted">Běžná prognóza není publikovaný tip. Barva pouze porovnává tehdejší modelový výstup se skutečností; u početních modelů je zelená tolerance ±1.</p>
     </section>
   );
+}
+
+function MatchFlowResult({ evaluation }: { evaluation: NonNullable<PlayedModelReview["matchFlow"]> }) {
+  const labels = { TREFENO: "Trefeno", CASTECNE: "Částečně", NETREFENO: "Netrefeno", NEDOSTATEK_DAT: "Málo dat" } as const;
+  return <section className="mt-3 rounded-lg border border-border bg-background px-3 py-3"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="section-kicker">Jak model trefil průběh</p><p className="mt-1 text-xs font-medium">{evaluation.headline}</p></div><strong className="text-xs">{labels[evaluation.verdict]}</strong></div><div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{evaluation.components.map((component) => <AuditMetric key={component.key} label={`${component.label} · ${labels[component.verdict]}`} value={component.detail} />)}</div>{evaluation.warnings.map((warning) => <p key={warning} className="mt-2 text-xs text-warning">⚠ {warning}</p>)}<p className="mt-2 text-[10px] text-muted">Shadow v{evaluation.pressureVersion} · metodika {evaluation.version} · pokrytí {Math.round(evaluation.coverage * 100)} %</p></section>;
 }
 
 function AuditMetric({ label, value }: { label: string; value: string }) {

@@ -70,7 +70,9 @@ export interface LiveSnapshotSide {
   xg: number | null;
   shots: number | null;
   shotsOnTarget: number | null;
+  shotsInsideBox: number | null;
   corners: number | null;
+  possession: number | null;
 }
 
 function liveSnapshot(
@@ -83,7 +85,9 @@ function liveSnapshot(
     xg: num(value.XG),
     shots: num(value.SHOTS),
     shotsOnTarget: num(value.SHOTS_ON_TARGET),
+    shotsInsideBox: num(value.SHOTS_INSIDE_BOX),
     corners: num(value.CORNERS),
+    possession: num(value.POSSESSION),
   });
   return { minute, home: side(home), away: side(away), goals };
 }

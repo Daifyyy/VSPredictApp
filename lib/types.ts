@@ -346,6 +346,7 @@ export interface PlayedModelReview {
     profit: number | null;
     policyVersion: number;
   }>;
+  matchFlow?: import("@/lib/picks/matchFlowEvaluation").MatchFlowEvaluation | null;
 }
 
 /**
