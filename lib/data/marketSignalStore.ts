@@ -80,6 +80,10 @@ export async function openMarketSignals(
       openingLine: auditQuote.line,
       openingBenchmarkQuality: auditQuote.benchmarkQuality,
       openingBenchmarkProbability: auditQuote.fairProbability,
+      // Kohorta CLV se urcuje pri vzniku signalu, ne az podle toho, zda se nam
+      // pozdeji podarilo closing skutecne zachytit. Jinak by chybejici closingy
+      // zmizely ze jmenovatele coverage.
+      clvMethodVersion: CLV_METHOD_VERSION,
       quotedAt: quote ? at : null,
       referenceOverround: quote?.overround ?? null,
       series: [{ t: Math.max(0, Math.round((new Date(row.kickoff).getTime() - at.getTime()) / 60_000)), p: quote?.probability ?? signal.marketProbability }],

@@ -171,6 +171,8 @@ export async function captureIntuitionTickets(fixtureId: number, at: Date): Prom
       conditionRetention: leg.conditionRetention, conditionOddsUplift: leg.conditionOddsUplift, conditionEfficiency: leg.conditionEfficiency,
       priceUncertainty: leg.priceUncertainty, leagueReliability: leg.leagueReliability, modelPredictionVersion: leg.modelPredictionVersion, decisionPolicyVersion: leg.decisionPolicyVersion,
       winnerOdds: leg.winnerOdds, decimalOdds: leg.decimalOdds, bookmaker: leg.bookmaker, priceKind: leg.priceKind, reason: leg.reason, risk: leg.risk,
+      // I neuspesne zachyceny closing musi zustat soucasti prospektivni kohorty.
+      clvMethodVersion: CLV_METHOD_VERSION,
       pedigreeScore: leg.pedigreeScore, pedigreeSnapshotId: leg.pedigreeSnapshotId, contextScore: leg.contextScore, contextSupports: leg.contextSupports ?? [], contextVetoes: leg.contextVetoes ?? [],
     })) },
     } })));

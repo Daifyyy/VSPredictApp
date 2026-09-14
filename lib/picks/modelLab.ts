@@ -145,7 +145,7 @@ export function modelLabSummary(rows: ModelLabLedgerRow[]) {
   const holdoutSettled = chronologicalHoldout.flatMap((row) => { const hit = outcomeOf(row); return hit == null ? [] : [{ row, hit }]; });
   const holdoutModel = probabilityMetrics(holdoutSettled.map(({ row, hit }) => ({ probability: row.modelProbability, outcome: hit })));
   const holdoutOpening = probabilityMetrics(holdoutSettled.map(({ row, hit }) => ({ probability: row.marketProbability, outcome: hit })));
-  const v2Primary = rows.filter((row) => row.clvMethodVersion === 2 && row.closingFreshness === "PRIMARY_30" && row.sameBookClv && row.priceClv != null);
+  const v2Primary = rows.filter((row) => row.clvMethodVersion === 2 && row.closingFreshness === "PRIMARY_30" && row.closingBenchmarkQuality === "PANEL" && row.sameBookClv && row.priceClv != null);
   const segmentGroups = new Map<string, number[]>();
   const dayGroups = new Map<string, number[]>();
   for (const row of v2Primary) {

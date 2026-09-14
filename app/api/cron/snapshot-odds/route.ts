@@ -40,8 +40,16 @@ export async function GET(req: Request) {
   const limit = limitParam ? Number(limitParam) : undefined;
   const seenFixtureIds = (searchParams.get("cursor") ?? "").split(",").map(Number).filter((id) => Number.isInteger(id) && id > 0).slice(0, 100);
   const mode = searchParams.get("mode") === "priority" ? "priority" : "full";
-  if (mode === "priority" && process.env.CLV_V2_PRIORITY_ENABLED !== "true") {
-    return NextResponse.json({ ok: true, mode, processed: 0, reason: "CLV_V2_SHADOW_DISABLED" });
+  // Candidate-first sběr je po opravě coverage výchozí. Hodnota `false` zůstává
+  // jako provozní kill switch; denní i globální rozpočet se hlídají níže.
+  if (mode === "priority" && process.env.CLV_V2_PRIORITY_ENABLED === "false") {
+    // I zamerne vypnuty scheduler musi zanechat auditni stopu. Bez ni vypadal
+    // zeleny GitHub run stejne jako situace, kdy se endpoint vubec nespustil.
+    const stats = await withCronRun("snapshot-odds-priority", async () => ({
+      mode, candidates: 0, processed: 0, remaining: 0, errors: 0,
+      reason: "CLV_V2_SHADOW_DISABLED",
+    }));
+    return cronJson("cron/snapshot-odds-priority", stats, 0, 0);
   }
 
   try {

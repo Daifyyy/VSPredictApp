@@ -120,7 +120,12 @@ export async function marketClvSummaries(): Promise<MarketClvSummary[]> {
     const primary = v2.filter((row) => row.closingFreshness === "PRIMARY_30");
     const fallback = v2.filter((row) => row.closingFreshness === "PRIMARY_30" || row.closingFreshness === "FALLBACK_75");
     const panel = fallback.filter((row) => row.closingBenchmarkQuality === "PANEL");
-    const priceRows = v2.filter((row) => row.sameBookClv && row.priceClv != null);
+    const priceRows = v2.filter((row) =>
+      row.sameBookClv &&
+      row.priceClv != null &&
+      row.closingFreshness === "PRIMARY_30" &&
+      row.closingBenchmarkQuality === "PANEL"
+    );
     const priceValues = priceRows.map((row) => row.priceClv!);
     const priceMean = priceValues.length ? average(priceValues) : null;
     // Konzervativní normální CI je průběžná diagnostika; validační report používá

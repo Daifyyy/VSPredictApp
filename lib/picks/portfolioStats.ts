@@ -103,7 +103,14 @@ export function summarizePortfolio(entries: PortfolioEntryInput[]): PortfolioSum
   const prospective = entries.filter((entry) => entry.clvMethodVersion === 2);
   const primary = prospective.filter((entry) => entry.closingFreshness === "PRIMARY_30");
   const fallback = prospective.filter((entry) => entry.closingFreshness === "PRIMARY_30" || entry.closingFreshness === "FALLBACK_75");
-  const pricedClv = prospective.filter((entry) => entry.priceClv != null && entry.sameBookClv === true);
+  // Ekonomickou validacni metriku tvori jen srovnatelny primary closing z panelu.
+  // Fallback a single-book zustavaji diagnostikou, nikoli dukazem edge.
+  const pricedClv = prospective.filter((entry) =>
+    entry.priceClv != null &&
+    entry.sameBookClv === true &&
+    entry.closingFreshness === "PRIMARY_30" &&
+    entry.benchmarkQuality === "PANEL"
+  );
   const panel = fallback.filter((entry) => entry.benchmarkQuality === "PANEL");
   const priceClvConfidence95 = blockBootstrapClv(pricedClv);
   const averagePriceClv = pricedClv.length ? pricedClv.reduce((sum, entry) => sum + entry.priceClv!, 0) / pricedClv.length : null;

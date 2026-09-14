@@ -70,6 +70,7 @@ on:
         type: choice
         options:
           - snapshot-odds
+          - snapshot-odds-priority
           - refresh-league-styles
           - warm
           - refresh-elo

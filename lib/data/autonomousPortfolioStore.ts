@@ -149,6 +149,7 @@ export async function captureAutonomousPortfolio(fixtureId: number, books: BookO
       openingLine: openingAudit.line,
       openingBenchmarkQuality: openingAudit.benchmarkQuality,
       openingBenchmarkProbability: openingAudit.fairProbability,
+      clvMethodVersion: CLV_METHOD_VERSION,
       sampleCount: input.samples, reason: decision.reason, stake: 1,
       modelContext: prediction.modelContext, modelVersion: prediction.modelVersion,
       contextVersion: prediction.contextVersion, countModelVersion: input.countModelVersion ?? null,
@@ -173,6 +174,7 @@ export async function captureAutonomousPortfolio(fixtureId: number, books: BookO
       secondProbability: Math.max(prediction.draw, oneSide === "HOME" ? prediction.awayWin : prediction.homeWin),
       readinessSample: prediction.readinessSample, lowConfidence: prediction.lowConfidence, sampleCount, minutesToKickoff,
     });
+    const openingAudit = auditQuote(books, "1X2", oneSide, null, at);
     const key = { fixtureId, strategy: "ONE_X_TWO_GUARDED", policyVersion: GUARDED_ONE_X_TWO_POLICY_VERSION };
     const existing = await prisma.autonomousTipSnapshot.findUnique({ where: { fixtureId_strategy_policyVersion: key } });
     if (existing?.status !== "candidate") {
@@ -181,6 +183,10 @@ export async function captureAutonomousPortfolio(fixtureId: number, books: BookO
         homeName: prediction.homeName, awayName: prediction.awayName, homeLogo: prediction.homeLogo || null, awayLogo: prediction.awayLogo || null,
         market: "1X2", side: oneSide, line: null, modelProbability: oneProb, marketProbability,
         edge: decision.edge ?? 0, expectedValue: decision.expectedValue, decimalOdds: price?.odds ?? null, bookmaker: price?.bookmaker ?? null,
+        openingBookmakerId: openingAudit.bookmakerId, openingBookmaker: openingAudit.bookmaker,
+        openingDecimalOdds: openingAudit.decimalOdds, openingOppositeOdds: openingAudit.oppositeOdds,
+        openingLine: openingAudit.line, openingBenchmarkQuality: openingAudit.benchmarkQuality,
+        openingBenchmarkProbability: openingAudit.fairProbability, clvMethodVersion: CLV_METHOD_VERSION,
         sampleCount, reason: decision.reason, stake: 1, modelContext: prediction.modelContext, modelVersion: prediction.modelVersion,
         contextVersion: prediction.contextVersion, modelInputSnapshot: prediction.inputSnapshot ?? undefined, referenceOverround: oneFair.overround, status: decision.status,
         capturedAt: at, qualifiedAt: decision.status === "candidate" ? at : null,
