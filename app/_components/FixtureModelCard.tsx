@@ -65,7 +65,7 @@ export function FixtureModelCard({
   const f = data.forecast;
   if (countsOnly) return <div id={`model-${fixtureId}`} className="scroll-mt-20 space-y-3 rounded-xl border border-border bg-background/55 p-3 text-xs">
     <TempoDiscipline corners={f.corners} fouls={f.fouls} cards={f.cards} referee={f.refereeProfile} />
-    <RefereeProfile profile={f.refereeProfile} expanded fixtureId={fixtureId} canEdit={user?.isAdmin === true} onAssigned={() => setRevision((value) => value + 1)} />
+    <RefereeProfile profile={f.refereeProfile} fixtureId={fixtureId} canEdit={user?.isAdmin === true} onAssigned={() => setRevision((value) => value + 1)} />
   </div>;
   return (
     <div id={`model-${fixtureId}`} className="scroll-mt-20 space-y-3 rounded-xl border border-border bg-background/55 p-3 text-xs">
@@ -158,7 +158,7 @@ function TechnicalDetails({ forecast, fixtureId, canEditReferee, onRefereeAssign
       <details className="group/market rounded-lg border border-border bg-background"><summary className="flex min-h-11 cursor-pointer list-none items-center justify-between px-3 font-semibold text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"><span>Historie trhu</span><span className="text-muted transition-transform group-open/market:rotate-180" aria-hidden>⌄</span></summary><div className="border-t border-border p-3"><CurrentMarketMovement signals={forecast.marketSignals} /></div></details>
       <div className="grid gap-2 tabular-nums lg:grid-cols-2"><CountMetric market="corners" value={forecast.corners} /><CountMetric market="cards" value={forecast.cards} /></div>
       <div className="rounded-lg bg-background px-3 py-3 text-muted"><strong className="text-foreground">Diagnostika modelu</strong><p className="mt-1">Efektivní vzorek {forecast.readinessSample.toFixed(1)} · {forecast.lowConfidence ? "omezená spolehlivost" : "standardní spolehlivost"}{forecast.experimental ? " · evropský experiment" : ""}.</p>{forecast.fouls && <p className="mt-1">Fauly v{forecast.fouls.version} · {forecast.fouls.evaluatedSample} vyhodnoceno{forecast.fouls.mae != null ? ` · MAE ${forecast.fouls.mae.toFixed(1)}` : ""}.</p>}</div>
-      <RefereeProfile profile={forecast.refereeProfile} expanded fixtureId={fixtureId} canEdit={canEditReferee} onAssigned={onRefereeAssigned} />
+      <RefereeProfile profile={forecast.refereeProfile} fixtureId={fixtureId} canEdit={canEditReferee} onAssigned={onRefereeAssigned} />
       {forecast.headToHead && <HeadToHeadCard summary={forecast.headToHead} teamAName={teamName(forecast.headToHead, forecast.headToHead.teamAId, "Domácí")} teamBName={teamName(forecast.headToHead, forecast.headToHead.teamBId, "Hosté")} compact />}
       <p className="text-[10px] leading-4 text-muted">Pravděpodobnost není sama o sobě doporučení. Rozhodovací stav navíc vyžaduje odpovídající trh, kurz, datovou připravenost a pevné publikační brány.</p>
     </div>
@@ -216,13 +216,11 @@ function MarketMovementChart({ signal }: { signal: FixtureModelForecast["marketS
 
 function RefereeProfile({
   profile,
-  expanded,
   fixtureId,
   canEdit,
   onAssigned,
 }: {
   profile: FixtureModelForecast["refereeProfile"];
-  expanded: boolean;
   fixtureId: number;
   canEdit: boolean;
   onAssigned: () => void;
@@ -239,7 +237,6 @@ function RefereeProfile({
   }
   const number = (value: number | null, digits = 1) => value == null ? "—" : value.toFixed(digits);
   const hasHistory = profile.sample > 0;
-  const neutral = hasHistory && Math.abs(profile.factor - 1) < 0.015;
   const influence = profile.lambdaBefore != null && profile.lambdaAfter != null
     ? `${profile.factor >= 1 ? "+" : ""}${Math.round((profile.factor - 1) * 100)} % · ${profile.lambdaBefore.toFixed(1)} → ${profile.lambdaAfter.toFixed(1)} karty`
     : "—";
@@ -251,28 +248,15 @@ function RefereeProfile({
           <strong className="text-foreground">{profile.name}</strong>
           {canEdit && <div className="mt-1"><RefereeEditor fixtureId={fixtureId} label="Změnit" onAssigned={onAssigned} /></div>}
         </div>
-        <div className="flex flex-wrap gap-1">
-          {profile.smallSample && <Badge>Málo dat · {profile.sample} zápasů</Badge>}
-          {profile.labels.map((label) => <Badge key={label}>{label}</Badge>)}
-        </div>
       </div>
-      <dl className={`mt-2 grid gap-2 ${expanded ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+      <dl className="mt-3 grid gap-2 sm:grid-cols-3">
         <Metric label="Karty / zápas" value={number(profile.cardsPerMatch)} />
         <Metric label="Fauly / zápas" value={number(profile.foulsPerMatch)} />
-        <Metric label="Červené / zápas" value={number(profile.redCardsPerMatch, 2)} />
-        <Metric label="Upravený faktor" value={hasHistory ? `${profile.factor.toFixed(2)}×` : "Bez dat"} />
         <Metric
           label="Vliv na očekávání"
-          value={!hasHistory ? "Nezapočítal se" : neutral ? `Neutrální · ${influence}` : influence}
+          value={!hasHistory ? "Nezapočítal se" : influence}
         />
-        {expanded && <Metric label="Karty na faul" value={number(profile.cardsPerFoul, 2)} />}
-        {expanded && <Metric label="Percentil karet" value={profile.cardPercentile == null ? "—" : `${profile.cardPercentile}.`} />}
-        {expanded && <Metric label="Percentil faulů" value={profile.foulPercentile == null ? "—" : `${profile.foulPercentile}.`} />}
       </dl>
-      <p className="mt-2 text-[10px] leading-relaxed">
-        {hasHistory ? "Faktor porovnává skutečné karty s tím, co čekal týmový model, a je smrštěný k průměru." : "Pro tohoto rozhodčího nemáme použitelnou historii, proto zůstal faktor neutrální 1,00 a model karet se nezměnil."}
-        Jde o jeden vstup prognózy, nikoli sázkový tip; průměr může ovlivnit i typ přidělovaných zápasů.
-      </p>
     </section>
   );
 }

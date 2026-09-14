@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 type Leg = {
-  fixtureId: number; kickoff: string; homeName: string; awayName: string; winnerName: string;
+  fixtureId: number; leagueId: number; homeTeamId?: number; awayTeamId?: number; kickoff: string; homeName: string; awayName: string; winnerName: string;
   totalSide: "OVER" | "UNDER"; totalLine: number; decimalOdds: number | null;
   priceKind: "DIRECT" | "SYNTHETIC" | "NONE"; hit: boolean | null;
   homeGoals: number | null; awayGoals: number | null;
@@ -34,6 +34,12 @@ function selection(leg: Leg) {
   return `${leg.winnerName} + ${goals}`;
 }
 
+function comparisonHref(leg: Leg) {
+  if (leg.homeTeamId == null || leg.awayTeamId == null) return null;
+  const params = new URLSearchParams({ mode: "CLUB", homeLeague: String(leg.leagueId), awayLeague: String(leg.leagueId), home: String(leg.homeTeamId), away: String(leg.awayTeamId), fixture: String(leg.fixtureId) });
+  return `/porovnani?${params.toString()}`;
+}
+
 function Outcome({ hit }: { hit: boolean | null }) {
   const style = hit === true ? "bg-positive/10 text-positive" : hit === false ? "bg-negative/10 text-negative" : "bg-background text-muted";
   return <span className={`rounded-full px-2 py-1 text-[9px] font-black uppercase tracking-wide ${style}`}>{hit === true ? "Vyhráno" : hit === false ? "Prohráno" : "Čeká"}</span>;
@@ -56,7 +62,7 @@ function StrategyCard({ block, date }: { block: Block; date: string }) {
     {!ticket ? <div className="flex min-h-44 flex-col items-center justify-center px-6 py-7 text-center"><span className="grid size-10 place-items-center rounded-full bg-background text-lg text-muted" aria-hidden>—</span><p className="mt-3 max-w-sm text-sm font-semibold text-foreground">{emptyText[block.emptyReason ?? ""] ?? "Tiket pro tento den nevznikl."}</p><p className="mt-1 text-[11px] text-muted">{block.coverage.candidates} kvalifikovaných z {block.coverage.fixtures} zápasů</p></div> : <>
       <ol className="divide-y divide-border">{ticket.legs.map((leg, index) => <li key={leg.fixtureId} className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3.5">
         <span className="grid size-6 place-items-center rounded-full bg-background text-[10px] font-black text-muted">{index + 1}</span>
-        <div className="min-w-0"><div className="flex items-center gap-2"><p className="truncate text-[10px] font-semibold text-muted">{leg.homeName} – {leg.awayName}</p>{leg.priceKind === "SYNTHETIC" ? <span className="rounded bg-warning/10 px-1.5 py-0.5 text-[8px] font-black text-warning">ODHAD</span> : null}</div><p className="mt-1 truncate text-sm font-extrabold text-foreground">{selection(leg)}</p><p className="mt-1 text-[10px] text-muted">{new Date(leg.kickoff).toLocaleString("cs-CZ", { weekday: "short", hour: "2-digit", minute: "2-digit" })}{leg.homeGoals != null && leg.awayGoals != null ? ` · ${leg.homeGoals}:${leg.awayGoals}` : ""}</p></div>
+        <div className="min-w-0"><div className="flex items-center gap-2">{comparisonHref(leg) ? <Link href={comparisonHref(leg)!} className="truncate text-[10px] font-semibold text-muted underline-offset-2 transition hover:text-foreground hover:underline">{leg.homeName} – {leg.awayName}</Link> : <p className="truncate text-[10px] font-semibold text-muted">{leg.homeName} – {leg.awayName}</p>}{leg.priceKind === "SYNTHETIC" ? <span className="rounded bg-warning/10 px-1.5 py-0.5 text-[8px] font-black text-warning">ODHAD</span> : null}</div><p className="mt-1 truncate text-sm font-extrabold text-foreground">{selection(leg)}</p><p className="mt-1 text-[10px] text-muted">{new Date(leg.kickoff).toLocaleString("cs-CZ", { weekday: "short", hour: "2-digit", minute: "2-digit" })}{leg.homeGoals != null && leg.awayGoals != null ? ` · ${leg.homeGoals}:${leg.awayGoals}` : ""}</p></div>
         <div className="flex flex-col items-end gap-1.5"><strong className="text-sm tabular-nums text-foreground">{leg.decimalOdds?.toFixed(2) ?? "—"}</strong>{block.frozen ? <Outcome hit={leg.hit} /> : null}</div>
       </li>)}</ol>
       {ticket.hit != null ? <div className={`flex items-center justify-between border-t border-border px-4 py-2.5 text-xs font-bold ${ticket.hit ? "bg-positive/10 text-positive" : "bg-negative/10 text-negative"}`}><span>{ticket.hit ? "Tiket vyhrál" : "Tiket nevyšel"}</span><span>{ticket.profit == null ? "—" : `${ticket.profit >= 0 ? "+" : ""}${ticket.profit.toFixed(2)} j`}</span></div> : null}

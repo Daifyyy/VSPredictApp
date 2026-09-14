@@ -656,7 +656,7 @@ export function ZapasyApp({
         spotlight={liveFixtures[0] ?? featured?.fixture ?? dayFixtures[0] ?? null}
       />
 
-      {liveFixtures.length > 0 ? <MatchCenter fixtures={liveFixtures} user={user} /> : featured ? <FeaturedFixture fixture={featured.fixture} editorialTitle={featured.title} /> : null}
+      {liveFixtures.length > 0 ? <MatchCenter fixtures={liveFixtures} user={user} /> : null}
 
       <ViewTabs
         tabs={[
@@ -814,35 +814,6 @@ function DashboardHeader({ today, todayCount, selectedDate, selectedCount, liveC
       </div>
     </section>
   );
-}
-
-function FeaturedFixture({ fixture, editorialTitle }: { fixture: UpcomingFixture; editorialTitle: string }) {
-  const href = buildCompareHref(fixture);
-  const time = new Date(fixture.kickoff).toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" });
-  const content = (
-    <div>
-      <div className="grid items-center gap-4 sm:grid-cols-[1fr_auto_1fr]">
-        <div className="flex items-center gap-3 sm:justify-end sm:text-right"><TeamLogo src={fixture.home.logoUrl} alt={fixture.home.name} size={44} /><span><span className="block font-bold text-foreground">{fixture.home.name}</span>{fixture.homeRank ? <small className="text-muted">{fixture.homeRank}. místo</small> : null}</span></div>
-        <div className="text-center"><p className={`text-xs font-bold ${fixture.live ? "text-negative" : "text-muted"}`}>{fixture.live ? `${fixture.elapsed ?? ""}' · ŽIVĚ` : time}</p><p key={`${fixture.liveHome}:${fixture.liveAway}`} className={`mt-1 text-xl font-black tabular-nums text-foreground ${fixture.live ? "reveal-pop" : ""}`}>{fixture.live ? `${fixture.liveHome ?? 0} : ${fixture.liveAway ?? 0}` : "vs."}</p></div>
-        <div className="flex items-center gap-3"><TeamLogo src={fixture.away.logoUrl} alt={fixture.away.name} size={44} /><span><span className="block font-bold text-foreground">{fixture.away.name}</span>{fixture.awayRank ? <small className="text-muted">{fixture.awayRank}. místo</small> : null}</span></div>
-      </div>
-      <div className="mt-4 flex flex-wrap justify-center gap-1.5 border-t border-border pt-3">
-        {fixture.competitionRound ? <ContentTag>{fixture.competitionRound}</ContentTag> : null}
-        {href ? <><ContentTag>Porovnání týmů</ContentTag><ContentTag>Model 1X2</ContentTag><ContentTag>⛳ Rohy</ContentTag><ContentTag>🟨 Karty</ContentTag></> : null}
-        {fixture.live ? <ContentTag>Živý průběh</ContentTag> : null}
-      </div>
-    </div>
-  );
-  return (
-    <section className="mt-3 overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
-      <div className="flex items-center justify-between gap-3 border-b border-border bg-background/70 px-4 py-2 text-xs"><span className="truncate font-semibold text-foreground">{editorialTitle}</span><span className="shrink-0 text-muted">{fixture.leagueName}</span></div>
-      {href ? <Link href={href} className="featured-fixture block p-4 transition sm:p-5">{content}</Link> : <div className="p-4 sm:p-5">{content}</div>}
-    </section>
-  );
-}
-
-function ContentTag({ children }: { children: React.ReactNode }) {
-  return <span className="rounded-full border border-border bg-background/75 px-2.5 py-1 text-[11px] font-medium text-muted">{children}</span>;
 }
 
 function SmartEmptyProgram({ days, activeIndex, onSelect }: { days: FixtureDay[]; activeIndex: number; onSelect: (index: number) => void }) {
