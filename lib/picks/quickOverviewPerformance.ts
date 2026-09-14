@@ -18,7 +18,7 @@ export interface QuickPerformanceRow {
 }
 
 export function quickOverviewOutcome(input: { market: string | null; side: string | null; line: number | null; homeGoals: number | null; awayGoals: number | null; actualCount?: number | null }) {
-  if ((input.market === "CORNERS" || input.market === "CARDS") && input.line != null && input.actualCount != null) return input.side === "OVER" ? input.actualCount > input.line : input.actualCount < input.line;
+  if (["CORNERS", "CARDS", "FOULS"].includes(input.market ?? "") && input.line != null && input.actualCount != null) return input.side === "OVER" ? input.actualCount > input.line : input.actualCount < input.line;
   return binaryOutcome(input.market ?? "", input.side ?? "", input.homeGoals, input.awayGoals, input.line);
 }
 
@@ -36,6 +36,8 @@ export function quickOverviewSummary(rows: QuickPerformanceRow[]) {
     marketProbability: row.marketProbability ?? 0,
     closingMarketProbability: row.marketProbability == null ? null : freshClosing(row.kickoff, row.closedAt, row.closingMarketProbability).close,
     qualifiedAt: row.qualifiedAt,
+    kickoff: row.kickoff,
+    closedAt: row.closedAt,
   })));
   const comparable = closes.filter((item) => item.close != null && item.row.marketProbability != null);
   return {

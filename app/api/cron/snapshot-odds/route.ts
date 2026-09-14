@@ -4,7 +4,8 @@ import { isRealDataConfigured } from "@/lib/db";
 import { logError } from "@/lib/logError";
 import { requireCronAuth } from "@/lib/cronAuth";
 import { cronJson } from "@/lib/cronResult";
-import { safeApiBudget, withCronRun } from "@/lib/operations";
+import { acquireOddsCronLease, releaseOddsCronLease, resolveIncident, safeApiBudget, safeOddsApiBudget, upsertIncident, withCronRun } from "@/lib/operations";
+import { allowedOddsFixtures } from "@/lib/picks/oddsCronPolicy";
 
 // Snímky kurzů pro CLV: otevírací, zavírací a body ČASOVÉ ŘADY. Běží **hodinově**,
 // na rozdíl od ostatních cronů – a je to nutnost, ne ladění:
@@ -38,14 +39,26 @@ export async function GET(req: Request) {
   const limitParam = searchParams.get("limit");
   const limit = limitParam ? Number(limitParam) : undefined;
   const seenFixtureIds = (searchParams.get("cursor") ?? "").split(",").map(Number).filter((id) => Number.isInteger(id) && id > 0).slice(0, 100);
+  const mode = searchParams.get("mode") === "priority" ? "priority" : "full";
+  if (mode === "priority" && process.env.CLV_V2_PRIORITY_ENABLED !== "true") {
+    return NextResponse.json({ ok: true, mode, processed: 0, reason: "CLV_V2_SHADOW_DISABLED" });
+  }
 
   try {
-    const stats = await withCronRun("snapshot-odds", async () => {
+    const stats = await withCronRun(mode === "priority" ? "snapshot-odds-priority" : "snapshot-odds", async () => {
+      const lease = await acquireOddsCronLease(mode);
+      if (!lease) return { due: 0, open: 0, close: 0, series: 0, empty: 0, errors: 0, withBooks: 0, coverage: {}, missingMarkets: [], checklistCandidates: 0, checklistNotifications: 0, autonomousCandidates: 0, remaining: 0, processedFixtureIds: [], failed: [], candidates: 0, processed: 0, deferred: 0, cursor: null, reason: "LEASE_HELD" };
+      try {
       const budget = await safeApiBudget();
-      const requested = Number.isFinite(limit) && limit! > 0 ? Math.min(24, limit!) : 12;
-      const allowed = Math.min(requested, budget.remaining);
-      const result = await runSnapshotOdds(allowed, undefined, seenFixtureIds);
-      if (allowed === 0) return { ...result, candidates: result.remaining, processed: 0, remaining: 0, deferred: result.remaining, cursor: null, reason: "DAILY_BUDGET", quota: budget };
+      const oddsBudget = await safeOddsApiBudget();
+      if (oddsBudget.warned) await upsertIncident({ fingerprint: "odds-api:daily-warning", kind: "API_BUDGET", severity: "WARNING", message: `Kurzový sběr dnes použil ${oddsBudget.apiCalls}/${oddsBudget.ceiling} API pokusů.`, details: oddsBudget });
+      else await resolveIncident("odds-api:daily-warning");
+      const requested = mode === "priority" ? 12 : Number.isFinite(limit) && limit! > 0 ? Math.min(24, limit!) : 12;
+      // Jeden logický fetch může mít až dva retry; rezervujeme proto tři skutečné pokusy,
+      // aby ani nejhorší transientní série nepřekročila kurzový hard limit.
+      const allowed = allowedOddsFixtures({ requested, globalRemaining: budget.remaining, oddsRemaining: oddsBudget.remaining });
+      const result = await runSnapshotOdds(allowed, undefined, seenFixtureIds, mode);
+      if (allowed === 0) return { ...result, candidates: result.remaining, processed: 0, remaining: 0, deferred: result.remaining, cursor: null, reason: budget.remaining === 0 ? "DAILY_BUDGET" : "ODDS_DAILY_BUDGET", quota: budget, oddsQuota: oddsBudget };
       const nextCursor = [...new Set([...seenFixtureIds, ...result.processedFixtureIds])].join(",");
       return {
         ...result,
@@ -54,7 +67,12 @@ export async function GET(req: Request) {
         cursor: result.remaining > 0 ? nextCursor : null,
         reason: result.remaining > 0 ? "BATCH_LIMIT" : null,
         quota: budget,
+        oddsQuota: oddsBudget,
+        mode,
       };
+      } finally {
+        await releaseOddsCronLease(lease);
+      }
     });
     // „Zvládnuto" = uložený snímek jakéhokoli druhu. `empty` (kniha zápas nekótuje)
     // se nepočítá ani do chyb, ani do úspěchů – to je legitimní prázdná odpověď.

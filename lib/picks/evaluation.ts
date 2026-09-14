@@ -11,7 +11,7 @@ export function binaryOutcome(
   line: number | null = null,
   actualCount: number | null = null
 ): boolean | null {
-  if ((market === "CORNERS" || market === "CARDS") && line != null && actualCount != null)
+  if (["CORNERS", "CARDS", "FOULS"].includes(market) && line != null && actualCount != null)
     return side === "OVER" ? actualCount > line : side === "UNDER" ? actualCount < line : null;
   if (home == null || away == null) return null;
   if (market === "1X2")

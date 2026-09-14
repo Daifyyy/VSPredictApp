@@ -43,6 +43,18 @@ model CronRun {
   @@index([status, startedAt])
 }
 
+/// Jediný distribuovaný lease pro plný/prioritní kurzový průchod. Zabraňuje tomu,
+/// aby dvě serverless instance současně spotřebovaly kvótu na stejných zápasech.
+model OddsCronLease {
+  key        String   @id
+  owner      String
+  mode       String
+  leaseUntil DateTime
+  updatedAt  DateTime @updatedAt
+
+  @@index([leaseUntil])
+}
+
 /// Neměnný bod živého průběhu. Nikdy se nemíchá do MatchStatCache, která smí obsahovat
 /// pouze definitivní pozápasové statistiky.
 model LiveMatchSnapshot {
@@ -553,9 +565,29 @@ model MarketSignalSnapshot {
   /// Historická politika v1 ji nemá a nesmí proto vstupovat do ROI.
   decimalOdds            Float?
   bookmaker              String?
+  openingBookmakerId     Int?
+  openingBookmaker       String?
+  openingDecimalOdds     Float?
+  openingOppositeOdds    Float?
+  openingLine            Float?
+  openingBenchmarkQuality String?
+  openingBenchmarkProbability Float?
   quotedAt               DateTime?
   referenceOverround     Float?
   closedAt               DateTime?
+  closingDecimalOdds     Float?
+  closingOppositeOdds    Float?
+  closingBookmakerId     Int?
+  closingBookmaker       String?
+  closingLine            Float?
+  closingBenchmarkQuality String?
+  closingBenchmarkProbability Float?
+  closingFreshness       String?
+  sameBookClv            Boolean?
+  priceClv               Float?
+  probabilityClv         Float?
+  lineMovement           Float?
+  clvMethodVersion       Int?
   series                 Json?
   sampleAttempts         Int       @default(0)
   lastSampleAttemptAt    DateTime?
@@ -565,6 +597,7 @@ model MarketSignalSnapshot {
   @@index([modelContext, market, closedAt])
   @@index([modelContext, market, openedAt])
   @@index([leagueId, kickoff])
+  @@index([market, policyVersion, clvMethodVersion, closedAt])
 }
 
 /// Stav rozhodovacího checklistu zmrazený před výkopem. Řádek se průběžně aktualizuje,
@@ -622,6 +655,13 @@ model AutonomousTipSnapshot {
   expectedValue            Float?
   decimalOdds              Float?
   bookmaker                String?
+  openingBookmakerId       Int?
+  openingBookmaker         String?
+  openingDecimalOdds       Float?
+  openingOppositeOdds      Float?
+  openingLine              Float?
+  openingBenchmarkQuality  String?
+  openingBenchmarkProbability Float?
   sampleCount              Int
   reason                   String
   stake                    Float     @default(1)
@@ -637,6 +677,19 @@ model AutonomousTipSnapshot {
   qualifiedAt              DateTime?
   closingMarketProbability Float?
   closedAt                 DateTime?
+  closingDecimalOdds       Float?
+  closingOppositeOdds      Float?
+  closingBookmakerId       Int?
+  closingBookmaker         String?
+  closingLine              Float?
+  closingBenchmarkQuality  String?
+  closingBenchmarkProbability Float?
+  closingFreshness         String?
+  sameBookClv              Boolean?
+  priceClv                 Float?
+  probabilityClv           Float?
+  lineMovement             Float?
+  clvMethodVersion         Int?
   settlementStatus         String    @default("PENDING")
   actualCount              Int?
   hit                      Boolean?
@@ -649,6 +702,7 @@ model AutonomousTipSnapshot {
   @@index([kickoff])
   @@index([capturedAt])
   @@index([settledAt])
+  @@index([strategy, policyVersion, clvMethodVersion, closedAt])
 }
 
 /// Ručně řízený stav verzované strategie. Výpočty mohou doporučit změnu, nikdy ji však
@@ -1238,6 +1292,12 @@ model IntuitionTicketLeg {
   decimalOdds             Float?
   bookmaker               String?
   priceKind               String          @default("NONE")
+  closingDecimalOdds      Float?
+  closingBookmaker        String?
+  closingAt               DateTime?
+  closingFreshness        String?
+  priceClv                Float?
+  clvMethodVersion        Int?
   reason                  String
   risk                    String
   pedigreeScore           Float?
@@ -1253,6 +1313,7 @@ model IntuitionTicketLeg {
 
   @@unique([ticketId, fixtureId])
   @@index([fixtureId])
+  @@index([clvMethodVersion, closingAt])
 }
 
 /// Neměnný denní audit modelu proti trhu na přesně vymezené kohortě.

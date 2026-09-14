@@ -7,8 +7,29 @@ import { CLUB_ELO_MODEL_VERSION } from "@/lib/picks/clubElo";
 import { buildPedigree } from "@/lib/picks/clubPedigree";
 import { computeSeason } from "./catalog";
 import { FIXTURE_LIST_LEAGUE_IDS } from "./catalog";
+import type { BookOdds } from "./apiFootball";
+import { bestResultTotalPrice } from "@/lib/picks/books";
+import { CLV_METHOD_VERSION, closingFreshness } from "@/lib/picks/comparableMarketQuote";
 
 const LOCK_MINUTES = 120;
+
+/** Stores only a realizable direct closing quote. Economic CLV stays null until the
+ * provider supplies enough opposite outcomes to de-vig this combined market. */
+export async function closeIntuitionTicketLegs(fixtureId: number, books: BookOdds[], at: Date) {
+  const legs = await prisma.intuitionTicketLeg.findMany({ where: { fixtureId, priceKind: "DIRECT" } });
+  for (const leg of legs) {
+    if (at >= leg.kickoff) continue;
+    const quote = bestResultTotalPrice(books, leg.winner === "HOME" ? "home" : "away", leg.totalSide.toLowerCase() as "over" | "under", leg.totalLine);
+    if (!quote) continue;
+    const freshness = closingFreshness(leg.kickoff, at);
+    if (freshness === "STALE") continue;
+    await prisma.intuitionTicketLeg.update({ where: { id: leg.id }, data: {
+      closingDecimalOdds: quote.odds, closingBookmaker: quote.bookmaker,
+      closingAt: at, closingFreshness: freshness, priceClv: null,
+      clvMethodVersion: CLV_METHOD_VERSION,
+    } });
+  }
+}
 
 function points(row: { homeTeamId: number; awayTeamId: number; homeGoals: number | null; awayGoals: number | null }, teamId: number) {
   if (row.homeGoals == null || row.awayGoals == null) return 0;

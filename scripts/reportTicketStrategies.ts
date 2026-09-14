@@ -8,9 +8,20 @@ for (const strategy of ["VALUE", "ELO_INTUITION"] as const) {
   const priced = tickets.filter((ticket) => ticket.combinedOdds != null && ticket.profit != null);
   const byPriceKind = (["DIRECT", "SYNTHETIC"] as const).map((priceKind) => { const rows = priced.filter((ticket) => ticket.priceKind === priceKind); return { priceKind, tickets: rows.length, roi: rows.length ? rows.reduce((sum, ticket) => sum + ticket.profit!, 0) / rows.length : null, averageOdds: rows.length ? rows.reduce((sum, ticket) => sum + ticket.combinedOdds!, 0) / rows.length : null }; });
   const legs = tickets.flatMap((ticket) => ticket.legs).filter((leg) => leg.hit != null);
-  const fixtures = await prisma.fixturePrediction.findMany({ where: { fixtureId: { in: legs.map((leg) => leg.fixtureId) } }, select: { fixtureId: true, oddsCloseBooks: true } });
-  const closeBooks = new Map(fixtures.map((fixture) => [fixture.fixtureId, parseBooks(fixture.oddsCloseBooks)]));
-  const clvRows = tickets.flatMap((ticket) => { const close = ticket.legs.map((leg) => bestResultTotalPrice(closeBooks.get(leg.fixtureId) ?? [], leg.winner === "HOME" ? "home" : "away", leg.totalSide.toLowerCase() as "over"|"under", leg.totalLine)?.odds ?? null); return ticket.combinedOdds != null && close.every((odd):odd is number=>odd!=null) ? [ticket.combinedOdds / close.reduce((a,b)=>a*b,1)-1] : []; });
+  const fixtures = await prisma.fixturePrediction.findMany({ where: { fixtureId: { in: legs.map((leg) => leg.fixtureId) } }, select: { fixtureId: true, kickoff: true, oddsCloseAt: true, oddsCloseBooks: true } });
+  const closeBooks = new Map(fixtures.map((fixture) => [fixture.fixtureId, fixture]));
+  // Ticketový pohyb je pouze diagnostika přímých cen. Syntetické tikety ani stale/post-kickoff
+  // snapshoty se nesmějí tvářit jako realizovatelné CLV.
+  const clvRows = tickets.filter((ticket) => ticket.priceKind === "DIRECT" && ticket.legs.every((leg) => leg.priceKind === "DIRECT")).flatMap((ticket) => {
+    const close = ticket.legs.map((leg) => {
+      const fixture = closeBooks.get(leg.fixtureId);
+      if (!fixture?.oddsCloseAt) return null;
+      const minutes = (fixture.kickoff.getTime() - fixture.oddsCloseAt.getTime()) / 60_000;
+      if (minutes < 0 || minutes > 75) return null;
+      return bestResultTotalPrice(parseBooks(fixture.oddsCloseBooks), leg.winner === "HOME" ? "home" : "away", leg.totalSide.toLowerCase() as "over"|"under", leg.totalLine)?.odds ?? null;
+    });
+    return ticket.combinedOdds != null && close.every((odd): odd is number => odd != null) ? [ticket.combinedOdds / close.reduce((a, b) => a * b, 1) - 1] : [];
+  });
   const probability = (leg:typeof legs[number]) => strategy === "ELO_INTUITION" ? leg.eloJointProbability : leg.modelProbability;
   const logLoss = legs.length ? legs.reduce((sum, leg) => { const p = Math.max(.001, Math.min(.999, probability(leg) ?? .5)); return sum - Math.log(leg.hit ? p : 1-p); }, 0) / legs.length : null;
   const bins=Array.from({length:10},()=>({n:0,p:0,y:0})); for(const leg of legs){const p=Math.max(0,Math.min(.999,probability(leg)??.5));const bin=bins[Math.floor(p*10)];bin.n++;bin.p+=p;bin.y+=leg.hit?1:0} const calibrationEce=legs.length?bins.reduce((sum,bin)=>bin.n?sum+(bin.n/legs.length)*Math.abs(bin.p/bin.n-bin.y/bin.n):sum,0):null;

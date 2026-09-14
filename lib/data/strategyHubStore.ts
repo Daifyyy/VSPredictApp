@@ -138,7 +138,7 @@ export async function strategyHubData(strategy: StrategyHubId, date: string) {
     const rows = await prisma.marketSignalSnapshot.findMany({
       where: { policyVersion: definition.policyVersion, market: { in: ["TEAM_HOME_05", "TEAM_HOME_15", "TEAM_AWAY_05", "TEAM_AWAY_15"] }, modelContext: "LEAGUE" },
       orderBy: { openedAt: "asc" },
-      select: { id: true, fixtureId: true, leagueId: true, kickoff: true, market: true, modelProbability: true, openMarketProbability: true, closeMarketProbability: true, decimalOdds: true, bookmaker: true, openedAt: true },
+      select: { id: true, fixtureId: true, leagueId: true, kickoff: true, market: true, modelProbability: true, openMarketProbability: true, closeMarketProbability: true, decimalOdds: true, bookmaker: true, openedAt: true, closedAt: true, closingFreshness: true, closingBenchmarkQuality: true, priceClv: true, probabilityClv: true, sameBookClv: true, clvMethodVersion: true },
     });
     const fixtureIds = [...new Set(rows.map((row) => row.fixtureId))];
     const fixtures = fixtureIds.length ? await prisma.fixturePrediction.findMany({
@@ -156,7 +156,7 @@ export async function strategyHubData(strategy: StrategyHubId, date: string) {
       if (!current || decision.score > current.decision.score) qualifiedByFixture.set(row.fixtureId, { row, fixture, hit, decision });
     }
     const qualified = [...qualifiedByFixture.values()];
-    const summaryRows = qualified.map(({ row, hit }) => ({ strategy, stake: 1, odds: row.decimalOdds, hit, marketProbability: row.openMarketProbability, closingMarketProbability: row.closeMarketProbability, qualifiedAt: row.openedAt }));
+    const summaryRows = qualified.map(({ row, hit }) => ({ strategy, stake: 1, odds: row.decimalOdds, hit, marketProbability: row.openMarketProbability, closingMarketProbability: row.closeMarketProbability, qualifiedAt: row.openedAt, fixtureId: row.fixtureId, kickoff: row.kickoff, closedAt: row.closedAt, closingFreshness: row.closingFreshness, benchmarkQuality: row.closingBenchmarkQuality, priceClv: row.priceClv, probabilityClv: row.probabilityClv, sameBookClv: row.sameBookClv, clvMethodVersion: row.clvMethodVersion }));
     const daily = qualified.filter(({ row }) => row.kickoff >= bounds.start && row.kickoff < bounds.end);
     const opportunities: StrategyHubOpportunity[] = daily.flatMap(({ row, fixture, hit, decision }) => fixture ? [{ id: row.id, fixtureId: row.fixtureId, leagueId: row.leagueId, leagueName: catalogLeagueName(row.leagueId, ""), kickoff: row.kickoff.toISOString(), homeName: fixture.homeName, awayName: fixture.awayName, selection: teamGoalSelection(row.market, fixture.homeName, fixture.awayName), reason: `Konzervativní odhad ${(decision.decisionProbability * 100).toFixed(0)} % při kurzu ${row.decimalOdds?.toFixed(2)}.`, risk: "Výzkumná strategie zatím nemá dostatečný potvrzený vzorek.", probability: decision.decisionProbability, marketProbability: row.openMarketProbability, edge: decision.decisionProbability - row.openMarketProbability, expectedValue: decision.expectedValue, confidence: null, odds: row.decimalOdds, bookmaker: row.bookmaker, priceKind: "DIRECT", outcome: outcome(hit), score: fixture.homeGoals == null || fixture.awayGoals == null ? null : `${fixture.homeGoals}:${fixture.awayGoals}`, ticketSlots: [] }] : []);
     return { opportunities, tickets: [], metrics: { all: summarizePortfolio(summaryRows), recent: summarizePortfolio(summaryRows.filter((item) => new Date(item.qualifiedAt) >= recentFrom)), selectionAccuracy: summarizePortfolio(summaryRows).accuracy, unit: "SELECTIONS" } satisfies StrategyHubMetrics, coverage: { candidates: opportunities.length, priced: opportunities.filter((item) => item.odds != null).length, tickets: 0 }, emptyReason: opportunities.length ? null : "NOT_ENOUGH_CANDIDATES" };
@@ -165,7 +165,7 @@ export async function strategyHubData(strategy: StrategyHubId, date: string) {
   const rows = await prisma.autonomousTipSnapshot.findMany({
     where: { strategy, policyVersion: definition.policyVersion, status: "candidate", modelContext: "LEAGUE" },
     orderBy: { qualifiedAt: "asc" },
-    select: { id: true, fixtureId: true, leagueId: true, kickoff: true, homeTeamId: true, awayTeamId: true, homeName: true, awayName: true, market: true, side: true, line: true, modelProbability: true, marketProbability: true, edge: true, expectedValue: true, decimalOdds: true, bookmaker: true, sampleCount: true, stake: true, reason: true, qualifiedAt: true, closingMarketProbability: true, settlementStatus: true, actualCount: true, hit: true },
+    select: { id: true, fixtureId: true, leagueId: true, kickoff: true, homeTeamId: true, awayTeamId: true, homeName: true, awayName: true, market: true, side: true, line: true, modelProbability: true, marketProbability: true, edge: true, expectedValue: true, decimalOdds: true, bookmaker: true, sampleCount: true, stake: true, reason: true, qualifiedAt: true, closingMarketProbability: true, closedAt: true, closingFreshness: true, closingBenchmarkQuality: true, priceClv: true, probabilityClv: true, sameBookClv: true, clvMethodVersion: true, settlementStatus: true, actualCount: true, hit: true },
   });
   const fixtureIds = [...new Set(rows.map((row) => row.fixtureId))];
   const countRows = rows.filter((row) => ["CORNERS", "CARDS", "FOULS"].includes(row.market) && row.actualCount == null);
@@ -189,7 +189,7 @@ export async function strategyHubData(strategy: StrategyHubId, date: string) {
     const hit = resolvedStrategyOutcome({ storedHit: row.hit, market: row.market, side: row.side, line: row.line, homeGoals: result?.homeGoals ?? null, awayGoals: result?.awayGoals ?? null, actualCount });
     return { row, result, hit };
   });
-  const summaryRows = resolved.map(({ row, hit }) => ({ strategy, stake: row.stake, odds: row.decimalOdds, hit, marketProbability: row.marketProbability, closingMarketProbability: row.closingMarketProbability, qualifiedAt: row.qualifiedAt }));
+  const summaryRows = resolved.map(({ row, hit }) => ({ strategy, stake: row.stake, odds: row.decimalOdds, hit, marketProbability: row.marketProbability, closingMarketProbability: row.closingMarketProbability, qualifiedAt: row.qualifiedAt, fixtureId: row.fixtureId, kickoff: row.kickoff, closedAt: row.closedAt, closingFreshness: row.closingFreshness, benchmarkQuality: row.closingBenchmarkQuality, priceClv: row.priceClv, probabilityClv: row.probabilityClv, sameBookClv: row.sameBookClv, clvMethodVersion: row.clvMethodVersion }));
   const dailyRows = rows.filter((row) => row.kickoff >= bounds.start && row.kickoff < bounds.end);
   const dailyIds = new Set(dailyRows.map((row) => row.id));
   const opportunities: StrategyHubOpportunity[] = resolved.filter(({ row }) => dailyIds.has(row.id)).map(({ row, result, hit }) => {

@@ -1,4 +1,5 @@
 import type { CountBaselines, Team } from "@/lib/types";
+import { prisma } from "@/lib/db";
 import { MODEL_VERSION } from "./modelVersion";
 import {
   getCompareTeam,
@@ -87,6 +88,8 @@ import { normalizeRefereeName, type RefereeEstimate } from "@/lib/picks/cards";
 import { FOUL_MODEL_VERSION, predictFouls } from "@/lib/picks/fouls";
 import { captureAutonomousPortfolio, closeAutonomousPortfolio, settleAutonomousCountPortfolio } from "./autonomousPortfolioStore";
 import { captureQuickOverviewDay, closeQuickOverviewSelections, settleQuickOverviewSelections } from "./quickOverviewStore";
+import { closeIntuitionTicketLegs } from "./intuitionTicketStore";
+import { priorityOrder } from "@/lib/picks/oddsCronPolicy";
 import { invalidateCachedJson } from "./cache";
 import { captureCalibrationShadows } from "./calibrationShadowStore";
 import { captureMainModelShadow } from "./mainModelShadowStore";
@@ -577,7 +580,8 @@ const SNAPSHOT_BUDGET_MS = 35_000;
 export async function runSnapshotOdds(
   limit = SNAPSHOT_LIMIT,
   budgetMs = SNAPSHOT_BUDGET_MS,
-  skipFixtureIds: readonly number[] = []
+  skipFixtureIds: readonly number[] = [],
+  mode: "full" | "priority" = "full"
 ): Promise<{
   due: number;
   open: number;
@@ -603,8 +607,33 @@ export async function runSnapshotOdds(
   /** ID skutečně navštívená v této dávce; workflow je v témže běhu znovu neposílá. */
   processedFixtureIds: number[];
   failed: Array<{ fixtureId: number; phase: string; message: string }>;
+  priority?: { p0: number; p1: number; deferred: number };
+  provider429?: number;
+  provider5xx?: number;
 }> {
   const now = new Date();
+  const priorityHorizon = new Date(now.getTime() + 90 * 60_000);
+  const priorityRows = mode === "priority" ? await prisma.autonomousTipSnapshot.findMany({
+    where: {
+      kickoff: { gt: now, lte: priorityHorizon },
+      OR: [
+        { status: "candidate" },
+        // Watch řádky nejblíže hraně. Přesná kvalifikace zůstává v policy modulu;
+        // zde jde jen o levnější opakovaný vzorek, nikdy o publikaci tipu.
+        { status: "watch", edge: { gte: -0.02 } },
+      ],
+    },
+    select: { fixtureId: true, status: true, kickoff: true },
+    orderBy: [{ status: "asc" }, { kickoff: "asc" }],
+    take: 100,
+  }) : [];
+  const ticketFixtureIds = mode === "priority" ? (await prisma.intuitionTicketLeg.findMany({
+    where: { kickoff: { gt: now, lte: priorityHorizon }, ticket: { status: "LOCKED" } },
+    select: { fixtureId: true },
+    distinct: ["fixtureId"],
+  })).map((row) => row.fixtureId) : [];
+  const p0 = new Set([...ticketFixtureIds, ...priorityRows.filter((row) => row.status === "candidate").map((row) => row.fixtureId)]);
+  const p1 = new Set(priorityRows.filter((row) => row.status !== "candidate").map((row) => row.fixtureId));
   const candidates = await fixturesNeedingOdds({
     // Jen klubové ligy: reprezentace kurzy prakticky nemají a napříč konfederacemi
     // by stejně nebyly srovnatelné (týž důvod jako u benchmarku).
@@ -614,10 +643,12 @@ export async function runSnapshotOdds(
     limit: SNAPSHOT_SCAN_LIMIT,
   });
 
-  const planned = candidates
+  const unsortedPlanned = candidates
     .map((item) => ({ item, plan: snapshotPlan(item, now, ODDS_CLOSING_HOURS) }))
-    .filter((entry) => entry.plan.fetch && !skipFixtureIds.includes(entry.item.fixtureId))
-    .sort((a, b) => {
+    .filter((entry) => (mode === "priority" ? p0.has(entry.item.fixtureId) || p1.has(entry.item.fixtureId) : entry.plan.fetch) && !skipFixtureIds.includes(entry.item.fixtureId));
+  const planned = mode === "priority"
+    ? priorityOrder(unsortedPlanned.map((entry) => ({ ...entry, fixtureId: entry.item.fixtureId, kickoff: entry.item.kickoff })), p0)
+    : unsortedPlanned.sort((a, b) => {
       const minsA = (a.item.kickoff.getTime() - now.getTime()) / 60_000;
       const minsB = (b.item.kickoff.getTime() - now.getTime()) / 60_000;
       return snapshotPriority(a.plan, minsA) - snapshotPriority(b.plan, minsB) || minsA - minsB;
@@ -645,7 +676,8 @@ export async function runSnapshotOdds(
       remaining += queue.length - index;
       break;
     }
-    const { item, plan } = queue[index];
+    const { item, plan: originalPlan } = queue[index];
+    const plan = mode === "priority" ? { ...originalPlan, fetch: true, close: true, series: true } : originalPlan;
     processedFixtureIds.push(item.fixtureId);
     // Čisté rozhodnutí: co se má z tohohle zápasu udělat. Zápas, který nepotřebuje nic,
     // se kvóty ani nedotkne.
@@ -710,6 +742,7 @@ export async function runSnapshotOdds(
       if (plan.close) {
         await closeAutonomousPortfolio(item.fixtureId, odds.books ?? [], now);
         await closeQuickOverviewSelections(item.fixtureId, odds.books ?? [], now);
+        await closeIntuitionTicketLegs(item.fixtureId, odds.books ?? [], now);
       }
       // Checklist v2 pouze vysvětluje stejné brány jako portfolio. Nevytváří vlastní
       // účetní výběr ani push; v1 zůstává v DB jako neměnný historický archiv.
@@ -730,7 +763,7 @@ export async function runSnapshotOdds(
       { withBooks, coverage }
     );
   }
-  return { due, open, close, series, empty, errors, withBooks, coverage, missingMarkets, checklistCandidates, checklistNotifications, autonomousCandidates, remaining, processedFixtureIds, failed };
+  return { due, open, close, series, empty, errors, withBooks, coverage, missingMarkets, checklistCandidates, checklistNotifications, autonomousCandidates, remaining, processedFixtureIds, failed, provider429: failed.filter((item) => /429/.test(item.message)).length, provider5xx: failed.filter((item) => /HTTP 5\d\d/.test(item.message)).length, priority: mode === "priority" ? { p0: p0.size, p1: p1.size, deferred: remaining } : undefined };
 }
 
 /** Dotáhne výsledky u predikcí, jejichž zápas už proběhl (batch po 20 ID). */

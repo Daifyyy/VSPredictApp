@@ -7,6 +7,7 @@ import { AUTONOMOUS_POLICY_VERSION, CORNERS_LIVE_COUNT_MODEL_VERSION, GUARDED_ON
 import { COUNT_MARKET_SIGNAL_POLICY_VERSION, MARKET_SIGNAL_POLICY_VERSION, marketProbabilityAt } from "@/lib/picks/marketSignals";
 import { isPublicClubLeague } from "./catalog";
 import { binaryOutcome, portfolioProfit, RELIABLE_CLOSE_MAX_MINUTES } from "@/lib/picks/evaluation";
+import { CLV_METHOD_VERSION, clvV2, comparableMarketQuote, type ComparableMarket } from "@/lib/picks/comparableMarketQuote";
 
 const countActivationCache = new Map<string, { enabled: boolean; expiresAt: number }>();
 
@@ -24,6 +25,15 @@ async function countResearchEnabled(strategy: "CORNERS" | "CARDS_REF" | "FOULS",
 }
 
 type Side = "HOME" | "AWAY" | "OVER" | "UNDER";
+
+function auditMarket(market: string): ComparableMarket {
+  if (market.startsWith("TEAM_HOME")) return "TEAM_HOME";
+  if (market.startsWith("TEAM_AWAY")) return "TEAM_AWAY";
+  return market as ComparableMarket;
+}
+
+const auditQuote = (books: BookOdds[], market: string, side: string, line: number | null, at: Date) =>
+  comparableMarketQuote({ books, market: auditMarket(market), side: side as Side, line, sampledAt: at });
 
 function referenceBook(books: BookOdds[], strategy: AutonomousStrategy): { odds: number; bookmaker: string } | null {
   const field = strategy === "ONE_X_TWO" ? null : strategy === "OVER_25" ? "over25" : "btts";
@@ -122,6 +132,7 @@ export async function captureAutonomousPortfolio(fixtureId: number, books: BookO
       sampleCount: input.samples,
       minutesToKickoff,
     });
+    const openingAudit = auditQuote(books, input.market, input.side, input.line, at);
     const data = {
       leagueId: prediction.leagueId, kickoff: prediction.kickoff,
       homeTeamId: prediction.homeTeamId, awayTeamId: prediction.awayTeamId,
@@ -131,6 +142,13 @@ export async function captureAutonomousPortfolio(fixtureId: number, books: BookO
       modelProbability: input.probability, marketProbability: input.marketProbability,
       edge: decision.edge ?? 0, expectedValue: decision.expectedValue,
       decimalOdds: input.price?.odds ?? null, bookmaker: input.price?.bookmaker ?? null,
+      openingBookmakerId: openingAudit.bookmakerId,
+      openingBookmaker: openingAudit.bookmaker,
+      openingDecimalOdds: openingAudit.decimalOdds,
+      openingOppositeOdds: openingAudit.oppositeOdds,
+      openingLine: openingAudit.line,
+      openingBenchmarkQuality: openingAudit.benchmarkQuality,
+      openingBenchmarkProbability: openingAudit.fairProbability,
       sampleCount: input.samples, reason: decision.reason, stake: 1,
       modelContext: prediction.modelContext, modelVersion: prediction.modelVersion,
       contextVersion: prediction.contextVersion, countModelVersion: input.countModelVersion ?? null,
@@ -186,7 +204,26 @@ export async function closeAutonomousPortfolio(fixtureId: number, books: BookOdd
     if (minutesToKickoff < 0 || minutesToKickoff > RELIABLE_CLOSE_MAX_MINUTES) continue;
     const probability = marketProbabilityAt(books, row.market as never, row.side as never, row.line);
     if (probability == null) continue;
-    await prisma.autonomousTipSnapshot.update({ where: { id: row.id }, data: { closingMarketProbability: probability, closedAt: at } });
+    const closing = auditQuote(books, row.market, row.side, row.openingLine ?? row.line, at);
+    const opening = {
+      bookmakerId: row.openingBookmakerId, bookmaker: row.openingBookmaker,
+      decimalOdds: row.openingDecimalOdds, oppositeOdds: row.openingOppositeOdds,
+      fairProbability: row.openingBenchmarkProbability,
+      line: row.openingLine ?? row.line, sampledAt: row.qualifiedAt ?? row.capturedAt,
+      benchmarkQuality: (row.openingBenchmarkQuality ?? "UNAVAILABLE") as "PANEL" | "PINNACLE_SINGLE" | "CROSS_BOOK" | "UNAVAILABLE",
+      panelSize: 0,
+    };
+    const audit = clvV2({ opening, closing, kickoff: row.kickoff });
+    await prisma.autonomousTipSnapshot.update({ where: { id: row.id }, data: {
+      closingMarketProbability: probability, closedAt: at,
+      closingDecimalOdds: closing.decimalOdds, closingOppositeOdds: closing.oppositeOdds,
+      closingBookmakerId: closing.bookmakerId, closingBookmaker: closing.bookmaker,
+      closingLine: closing.line, closingBenchmarkQuality: closing.benchmarkQuality,
+      closingBenchmarkProbability: closing.fairProbability, closingFreshness: audit.freshness,
+      sameBookClv: audit.sameBook, priceClv: audit.priceClv,
+      probabilityClv: audit.probabilityClv, lineMovement: audit.lineMovement,
+      clvMethodVersion: CLV_METHOD_VERSION,
+    } });
   }
 }
 

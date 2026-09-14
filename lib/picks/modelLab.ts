@@ -50,6 +50,12 @@ export interface ModelLabLedgerRow {
   qualifiedAt: Date | null;
   closingMarketProbability: number | null;
   closedAt: Date | null;
+  priceClv?: number | null;
+  probabilityClv?: number | null;
+  closingFreshness?: string | null;
+  closingBenchmarkQuality?: string | null;
+  sameBookClv?: boolean | null;
+  clvMethodVersion?: number | null;
   homeGoals: number | null;
   awayGoals: number | null;
   actualCount?: number | null;
@@ -131,17 +137,35 @@ export function modelLabSummary(rows: ModelLabLedgerRow[]) {
     const close = freshClosing(row.kickoff, row.closedAt, row.closingMarketProbability).close;
     return close == null ? [] : [{ probability: close, outcome: hit }];
   }));
-  const portfolioInput = rows.map((row) => ({ strategy: row.strategy, stake: row.stake, odds: row.decimalOdds, hit: outcomeOf(row), marketProbability: row.marketProbability, closingMarketProbability: freshClosing(row.kickoff, row.closedAt, row.closingMarketProbability).close, qualifiedAt: row.qualifiedAt }));
+  const portfolioInput = rows.map((row) => ({ strategy: row.strategy, stake: row.stake, odds: row.decimalOdds, hit: outcomeOf(row), marketProbability: row.marketProbability, closingMarketProbability: row.closingMarketProbability, qualifiedAt: row.qualifiedAt, fixtureId: row.fixtureId, kickoff: row.kickoff, closedAt: row.closedAt, priceClv: row.priceClv, probabilityClv: row.probabilityClv, closingFreshness: row.closingFreshness, benchmarkQuality: row.closingBenchmarkQuality, sameBookClv: row.sameBookClv, clvMethodVersion: row.clvMethodVersion }));
   const portfolio = summarizePortfolio(portfolioInput);
   const positiveClvRate = closes.length ? closes.filter(({ row, close }) => close > row.marketProbability).length / closes.length : null;
-  const holdout = summarizePortfolio(holdoutRows(rows).map((row) => ({ strategy: row.strategy, stake: row.stake, odds: row.decimalOdds, hit: outcomeOf(row), marketProbability: row.marketProbability, closingMarketProbability: freshClosing(row.kickoff, row.closedAt, row.closingMarketProbability).close, qualifiedAt: row.qualifiedAt })));
+  const chronologicalHoldout = holdoutRows(rows);
+  const holdout = summarizePortfolio(chronologicalHoldout.map((row) => ({ strategy: row.strategy, stake: row.stake, odds: row.decimalOdds, hit: outcomeOf(row), marketProbability: row.marketProbability, closingMarketProbability: row.closingMarketProbability, qualifiedAt: row.qualifiedAt, fixtureId: row.fixtureId, kickoff: row.kickoff, closedAt: row.closedAt, priceClv: row.priceClv, probabilityClv: row.probabilityClv, closingFreshness: row.closingFreshness, benchmarkQuality: row.closingBenchmarkQuality, sameBookClv: row.sameBookClv, clvMethodVersion: row.clvMethodVersion })));
+  const holdoutSettled = chronologicalHoldout.flatMap((row) => { const hit = outcomeOf(row); return hit == null ? [] : [{ row, hit }]; });
+  const holdoutModel = probabilityMetrics(holdoutSettled.map(({ row, hit }) => ({ probability: row.modelProbability, outcome: hit })));
+  const holdoutOpening = probabilityMetrics(holdoutSettled.map(({ row, hit }) => ({ probability: row.marketProbability, outcome: hit })));
+  const v2Primary = rows.filter((row) => row.clvMethodVersion === 2 && row.closingFreshness === "PRIMARY_30" && row.sameBookClv && row.priceClv != null);
+  const segmentGroups = new Map<string, number[]>();
+  const dayGroups = new Map<string, number[]>();
+  for (const row of v2Primary) {
+    const oddsBucket = row.decimalOdds == null ? "none" : row.decimalOdds < 1.7 ? "short" : row.decimalOdds < 2.2 ? "mid" : "long";
+    for (const key of [`league:${row.leagueId}`, `odds:${oddsBucket}`]) segmentGroups.set(key, [...(segmentGroups.get(key) ?? []), row.priceClv!]);
+    const day = row.kickoff.toISOString().slice(0, 10);
+    dayGroups.set(day, [...(dayGroups.get(day) ?? []), row.priceClv!]);
+  }
+  const meaningfulSegments = [...segmentGroups.values()].filter((values) => values.length >= 20);
+  const segmentStable = meaningfulSegments.every((values) => values.reduce((sum, value) => sum + value, 0) / values.length >= 0);
+  const dayMeans = [...dayGroups.values()].map((values) => values.reduce((sum, value) => sum + value, 0) / values.length);
+  const dayStable = dayMeans.length >= 20 && dayMeans.filter((value) => value > 0).length / dayMeans.length > .5;
   const gates = {
     frozenPolicy: rows.length > 0,
-    sample: closes.length >= 200,
-    holdoutRoi: (holdout.roi ?? -Infinity) > 0,
-    clv: (portfolio.averageClv ?? -Infinity) >= .015 && (positiveClvRate ?? 0) > .52,
+    sampleAndCoverage: portfolio.gateReason === "REQUIRES_HOLDOUT_AND_SEGMENT_VALIDATION",
+    clv: portfolio.gateReason === "REQUIRES_HOLDOUT_AND_SEGMENT_VALIDATION" && (portfolio.averagePriceClv ?? -Infinity) > 0,
     calibration: model.ece != null && model.ece <= .05,
-    vsClosing: model.logLoss != null && closing.logLoss != null && model.logLoss <= closing.logLoss,
+    chronologicalHoldout: holdoutModel.logLoss != null && holdoutOpening.logLoss != null && holdoutModel.logLoss < holdoutOpening.logLoss,
+    segmentStable,
+    dayStable,
   };
   const recommendedStatus: ModelLabStatus = Object.values(gates).every(Boolean) ? "CANDIDATE" : rows.length ? "LIVE_TEST" : "RESEARCH";
   const verdict = !rows.length ? "Zatím bez živých výběrů." : model.logLoss != null && closing.logLoss != null && model.logLoss > closing.logLoss ? "Model zatím nepřekonává closingový trh." : portfolio.roiConfidence95 && portfolio.roiConfidence95.low <= 0 ? "ROI je neprůkazné; interval stále zahrnuje ztrátu." : gates.clv ? "Trh se pohybuje směrem modelu, čekáme na dostatečný holdout." : "Vzorek nebo CLV zatím nestačí k rozhodnutí.";

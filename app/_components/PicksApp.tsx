@@ -80,7 +80,7 @@ interface StatsSetters {
 }
 
 interface MarketClvSummary {
-  market: "1X2" | "OVER_25" | "CORNERS" | "CARDS";
+  market: "1X2" | "OVER_25" | "BTTS" | "CORNERS" | "CARDS" | "FOULS";
   context: "LEAGUE" | "EURO_CUP" | "NATIONAL";
   publishedOnly: boolean;
   eligible: number;
@@ -90,6 +90,13 @@ interface MarketClvSummary {
   towardModelRate: number;
   averageModelVsOpen: number;
   averageModelVsClose: number;
+  priceClv: number | null;
+  probabilityClv: number | null;
+  coverage30: number;
+  coverage75: number;
+  panelCoverage: number;
+  priceClvConfidence95: { low: number; high: number } | null;
+  gateReason: string;
 }
 
 interface ChecklistPerformance {
@@ -450,6 +457,8 @@ function ModelView({
 
 const CLV_MARKET_LABELS: Record<MarketClvSummary["market"], string> = {
   "1X2": "1X2",
+  BTTS: "Oba týmy dají gól",
+  FOULS: "Fauly",
   OVER_25: "Góly · Over/Under 2,5",
   CORNERS: "⛳ Rohy",
   CARDS: "🟨 Karty",
@@ -509,6 +518,8 @@ function ClvMarketCard({ row }: { row: MarketClvSummary }) {
       <div><dt className="text-muted">Směrem k modelu</dt><dd className="font-bold tabular-nums text-foreground">{Math.round(row.towardModelRate * 100)} %</dd></div>
       <div><dt className="text-muted">Datová úplnost</dt><dd className="font-bold tabular-nums text-foreground">{Math.round(row.completeness * 100)} %</dd></div>
       <div><dt className="text-muted">Model vs. uzavření</dt><dd className="font-bold tabular-nums text-foreground">{pct(row.averageModelVsClose)}</dd></div>
+      <div><dt className="text-muted">Price CLV v2</dt><dd className="font-bold tabular-nums text-foreground">{row.priceClv == null ? "—" : `${row.priceClv >= 0 ? "+" : ""}${(row.priceClv * 100).toFixed(1)} %`}</dd></div>
+      <div><dt className="text-muted">Closing ≤30 / ≤75 min</dt><dd className="font-bold tabular-nums text-foreground">{Math.round(row.coverage30 * 100)} / {Math.round(row.coverage75 * 100)} %</dd></div>
     </dl>
     <p className="mt-2 text-[10px] leading-4 text-muted">Úplnost říká, u kolika způsobilých prognóz máme srovnatelné otevření i uzavření. Nízká hodnota znamená méně reprezentativní vzorek.</p>
   </article>;

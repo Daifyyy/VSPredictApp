@@ -190,6 +190,40 @@ export async function safeApiBudget(now = new Date()) {
   return { apiCalls, ceiling: SAFE_API_DAILY_CEILING, remaining: Math.max(0, SAFE_API_DAILY_CEILING - apiCalls) };
 }
 
+export const ODDS_API_WARNING = 800;
+export const ODDS_API_HARD_LIMIT = 1_200;
+
+export async function safeOddsApiBudget(now = new Date()) {
+  const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const used = await prisma.cronRun.aggregate({
+    where: { job: { in: ["snapshot-odds", "snapshot-odds-priority"] }, startedAt: { gte: startOfDay } },
+    _sum: { apiCalls: true },
+  });
+  const apiCalls = used._sum.apiCalls ?? 0;
+  return { apiCalls, warning: ODDS_API_WARNING, ceiling: ODDS_API_HARD_LIMIT, warned: apiCalls >= ODDS_API_WARNING, remaining: Math.max(0, ODDS_API_HARD_LIMIT - apiCalls) };
+}
+
+export async function acquireOddsCronLease(mode: "full" | "priority", now = new Date()) {
+  const owner = crypto.randomUUID();
+  const leaseUntil = new Date(now.getTime() + 55_000);
+  const claimed = await prisma.oddsCronLease.updateMany({
+    where: { key: "snapshot-odds", leaseUntil: { lt: now } },
+    data: { owner, mode, leaseUntil },
+  });
+  if (claimed.count === 0) {
+    try {
+      await prisma.oddsCronLease.create({ data: { key: "snapshot-odds", owner, mode, leaseUntil } });
+    } catch {
+      return null;
+    }
+  }
+  return owner;
+}
+
+export async function releaseOddsCronLease(owner: string) {
+  await prisma.oddsCronLease.updateMany({ where: { key: "snapshot-odds", owner }, data: { leaseUntil: new Date(0) } });
+}
+
 export async function auditPipeline(now = new Date()) {
   const horizon = new Date(now.getTime() + 72 * 60 * 60_000);
   const recent = new Date(now.getTime() - 7 * 24 * 60 * 60_000);

@@ -5,7 +5,7 @@ import { allowRequest, tooMany } from "@/lib/rateLimit";
 import { summarizePortfolio } from "@/lib/picks/portfolioStats";
 import { PUBLIC_CLUB_LEAGUE_IDS } from "@/lib/data/catalog";
 import { logError } from "@/lib/logError";
-import { binaryOutcome, freshClosing } from "@/lib/picks/evaluation";
+import { binaryOutcome } from "@/lib/picks/evaluation";
 import { pragueTwoDayStart } from "@/lib/recentWindow";
 
 export const dynamic = "force-dynamic";
@@ -43,7 +43,7 @@ export async function GET(req: Request) {
     const allIds = [...new Set(allForStats.map((x) => x.fixtureId))];
     const allResults = await prisma.fixturePrediction.findMany({ where: { fixtureId: { in: allIds } }, select: { fixtureId: true, homeGoals: true, awayGoals: true } });
     const results = new Map(allResults.map((x) => [x.fixtureId, x]));
-    const statRows = allForStats.map((row) => ({ strategy: row.strategy, stake: row.stake, odds: row.decimalOdds, hit: binaryOutcome(row.market, row.side, results.get(row.fixtureId)?.homeGoals ?? null, results.get(row.fixtureId)?.awayGoals ?? null), marketProbability: row.marketProbability, closingMarketProbability: freshClosing(row.kickoff, row.closedAt, row.closingMarketProbability).close, qualifiedAt: row.qualifiedAt }));
+    const statRows = allForStats.map((row) => ({ strategy: row.strategy, stake: row.stake, odds: row.decimalOdds, hit: binaryOutcome(row.market, row.side, results.get(row.fixtureId)?.homeGoals ?? null, results.get(row.fixtureId)?.awayGoals ?? null, row.line, row.actualCount), marketProbability: row.marketProbability, closingMarketProbability: row.closingMarketProbability, qualifiedAt: row.qualifiedAt, fixtureId: row.fixtureId, kickoff: row.kickoff, closedAt: row.closedAt, closingFreshness: row.closingFreshness, benchmarkQuality: row.closingBenchmarkQuality, priceClv: row.priceClv, probabilityClv: row.probabilityClv, sameBookClv: row.sameBookClv, clvMethodVersion: row.clvMethodVersion }));
     const leagueRows = statRows.filter((_, index) => PUBLIC_CLUB_LEAGUE_IDS.includes(allForStats[index].leagueId as never));
     const europeanRows = statRows.filter((_, index) => allForStats[index].modelContext === "EURO_CUP");
     const strategies = ["ONE_X_TWO", "OVER_25", "BTTS_YES"].map((strategy) => ({ strategy, summary: summarizePortfolio(leagueRows.filter((row) => row.strategy === strategy)) }));
