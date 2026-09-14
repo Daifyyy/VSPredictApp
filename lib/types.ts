@@ -480,6 +480,8 @@ export interface FixtureModelForecast {
   fouls: FoulModelForecast | null;
   refereeProfile: RefereeProfileForecast | null;
   headToHead: import("@/lib/h2h").HeadToHeadSummary;
+  /** Point-in-time shadow diagnostika střel, tlaku a závislosti gólového overu. */
+  performancePressure?: import("@/lib/picks/performancePressureShadow").PerformancePressureShadow | null;
 }
 
 export interface TeamGoalForecast {
@@ -1022,6 +1024,8 @@ export interface PredictionRow {
     neutral: boolean;
     source: string;
     capturedAt: string;
+    /** Paralelní diagnostika tvorby šancí; nikdy nemění ostrou predikci. */
+    performancePressure?: import("@/lib/picks/performancePressureShadow").PerformancePressureShadow;
   } | null;
   status: string; // "NS" | "FT" | "AET" | "PEN" | …
   homeGoals: number | null;

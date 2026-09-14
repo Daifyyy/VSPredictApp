@@ -1,4 +1,5 @@
 import "server-only";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { MODEL_VERSION } from "./modelVersion";
 import { PUBLIC_CLUB_LEAGUES } from "./catalog";
@@ -8,6 +9,7 @@ import { personnelShadowDashboard } from "./personnelShadow";
 import { quickOverviewCaptureAudit } from "./quickOverviewAudit";
 import { MAIN_MODEL_SHADOW_METHOD, MAIN_MODEL_SHADOW_VERSION } from "@/lib/picks/mainModelShadow";
 import { evaluateModelRows, type ModelEvaluationRow } from "@/lib/picks/modelEvaluation";
+import type { PerformancePressureShadow } from "@/lib/picks/performancePressureShadow";
 
 const FINISHED = ["FT", "AET", "PEN"];
 const EPS = 1e-9;
@@ -51,6 +53,12 @@ export async function getModelGovernanceDashboard(now = new Date()) {
   const mainModelShadows = await prisma.mainModelShadowPrediction.findMany({
     where: { shadowVersion: MAIN_MODEL_SHADOW_VERSION, method: MAIN_MODEL_SHADOW_METHOD, modelContext: "LEAGUE" },
     orderBy: { kickoff: "asc" },
+  });
+  const pressureRows = await prisma.fixturePrediction.findMany({
+    where: { modelVersion: MODEL_VERSION, modelContext: "LEAGUE", inputSnapshot: { not: Prisma.DbNull } },
+    orderBy: { kickoff: "desc" },
+    take: 500,
+    select: { fixtureId: true, kickoff: true, homeName: true, awayName: true, homeGoals: true, awayGoals: true, inputSnapshot: true },
   });
   const shadowFixtures = mainModelShadows.length ? await prisma.fixturePrediction.findMany({
     where: { fixtureId: { in: mainModelShadows.map((row) => row.fixtureId) }, homeGoals: { not: null }, awayGoals: { not: null } },
@@ -106,6 +114,43 @@ export async function getModelGovernanceDashboard(now = new Date()) {
     development,
     verdict: shadowCohort.length < 100 ? "COLLECT" : candidateEvaluation.model.logLoss != null && sourceEvaluation.model.logLoss != null && candidateEvaluation.model.logLoss < sourceEvaluation.model.logLoss ? "V8_BEATS_V7" : "KEEP_V7",
   };
+  const pressureCohort = pressureRows.flatMap((row) => {
+    const snapshot = row.inputSnapshot as { performancePressure?: PerformancePressureShadow } | null;
+    const pressure = snapshot?.performancePressure;
+    return pressure ? [{ ...row, pressure }] : [];
+  }).reverse();
+  const settledPressure = pressureCohort.filter((row) => row.homeGoals != null && row.awayGoals != null && row.pressure.shadowOver25 != null);
+  const binaryMetrics = (rows: typeof settledPressure, candidate: "current" | "shadow") => {
+    if (!rows.length) return { n: 0, brier: null as number | null, logLoss: null as number | null };
+    let brier = 0, logLoss = 0;
+    for (const row of rows) {
+      const hit = row.homeGoals! + row.awayGoals! > 2 ? 1 : 0;
+      const raw = candidate === "current" ? row.pressure.currentOver25 : row.pressure.shadowOver25!;
+      const probability = Math.min(1 - EPS, Math.max(EPS, raw));
+      brier += (probability - hit) ** 2;
+      logLoss += -(hit * Math.log(probability) + (1 - hit) * Math.log(1 - probability));
+    }
+    return { n: rows.length, brier: brier / rows.length, logLoss: logLoss / rows.length };
+  };
+  const pressureCheckpoints = Array.from(new Set([...Array.from({ length: Math.floor(settledPressure.length / 10) }, (_, index) => (index + 1) * 10), settledPressure.length])).filter(Boolean).slice(-12).map((size) => {
+    const cohort = settledPressure.slice(0, size);
+    const current = binaryMetrics(cohort, "current"), candidate = binaryMetrics(cohort, "shadow");
+    return { sampleSize: size, through: cohort.at(-1)?.kickoff ?? null, currentLogLoss: current.logLoss, shadowLogLoss: candidate.logLoss, delta: current.logLoss != null && candidate.logLoss != null ? candidate.logLoss - current.logLoss : null };
+  });
+  const pressureDeltaRows = pressureCohort.filter((row) => row.pressure.over25Delta != null);
+  const performancePressure = {
+    version: 1,
+    captured: pressureCohort.length,
+    settled: settledPressure.length,
+    minimumDecisionSample: 200,
+    averageCoverage: pressureCohort.length ? pressureCohort.reduce((sum, row) => sum + row.pressure.coverage.ratio, 0) / pressureCohort.length : 0,
+    averageOverDelta: pressureDeltaRows.length ? pressureDeltaRows.reduce((sum, row) => sum + row.pressure.over25Delta!, 0) / pressureDeltaRows.length : null,
+    highDependency: pressureCohort.filter((row) => row.pressure.dependencyRisk.level === "HIGH").length,
+    current: binaryMetrics(settledPressure, "current"),
+    shadow: binaryMetrics(settledPressure, "shadow"),
+    development: pressureCheckpoints,
+    recent: pressureCohort.slice(-12).reverse().map((row) => ({ fixtureId: row.fixtureId, kickoff: row.kickoff, homeName: row.homeName, awayName: row.awayName, opennessScore: row.pressure.opennessScore, currentOver25: row.pressure.currentOver25, shadowOver25: row.pressure.shadowOver25, over25Delta: row.pressure.over25Delta, coverage: row.pressure.coverage.ratio, dependencyRisk: row.pressure.dependencyRisk.level, homePressure: row.pressure.home.expectedPressure, awayPressure: row.pressure.away.expectedPressure })),
+  };
   const definitionsByKey = new Map(definitions.map((row) => [`${row.strategy}:${row.policyVersion}:${row.modelContext}`, row]));
   const finishedFixtures = new Set(predictions.map((row) => row.fixtureId));
   const samplesByKey = new Map<string, number>();
@@ -134,5 +179,5 @@ export async function getModelGovernanceDashboard(now = new Date()) {
     ...leagues.filter((item) => item.status === "REVIEW").map((item) => ({ priority: "WATCH", title: `Prověřit kohortu ${item.name}`, reason: `Modelový log-loss je o ${((item.modelLogLoss! - item.marketLogLoss!) * 100).toFixed(1)} bodu horší než trh (n=${item.n})`, due: "před změnou modelu" })),
   ];
   const shadow = Object.fromEntries(shadowCounts.map((row) => [row.status, row._count]));
-  return { asOf: now, modelVersion: MODEL_VERSION, tasks, strategies, leagues, checkpoints, personnel, quickOverview, mainModelShadow, shadow: { total: Object.values(shadow).reduce((sum, value) => sum + value, 0), candidates: shadow.candidate ?? 0, watch: shadow.watch ?? 0 } };
+  return { asOf: now, modelVersion: MODEL_VERSION, tasks, strategies, leagues, checkpoints, personnel, quickOverview, mainModelShadow, performancePressure, shadow: { total: Object.values(shadow).reduce((sum, value) => sum + value, 0), candidates: shadow.candidate ?? 0, watch: shadow.watch ?? 0 } };
 }

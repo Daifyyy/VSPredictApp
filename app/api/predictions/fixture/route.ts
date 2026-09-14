@@ -221,6 +221,7 @@ export async function GET(req: Request) {
       fouls,
       refereeProfile,
       headToHead,
+      performancePressure: row.inputSnapshot?.performancePressure ?? null,
     };
     return NextResponse.json({ forecast });
   } catch (error) {

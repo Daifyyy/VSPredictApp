@@ -94,6 +94,7 @@ import { invalidateCachedJson } from "./cache";
 import { captureCalibrationShadows } from "./calibrationShadowStore";
 import { captureMainModelShadow } from "./mainModelShadowStore";
 import { captureIntuitionTickets, settleIntuitionTickets } from "./intuitionTicketStore";
+import { buildPerformancePressureShadow } from "@/lib/picks/performancePressureShadow";
 
 /**
  * Orchestrace predikční pipeline (běží jen na pozadí / cron, real data).
@@ -395,6 +396,13 @@ export async function runPredictUpcoming(
         });
         const p = result.prediction;
         if (!p) continue;
+        const performancePressure = buildPerformancePressureShadow({
+          homeValues: result.home.values,
+          awayValues: result.away.values,
+          currentLambdaHome: p.lambdaHomeBase,
+          currentLambdaAway: p.lambdaAwayBase,
+          currentOver25: p.over25,
+        });
         // λ ROHŮ A KARET vedle gólové – **čistá matematika nad zápasy, které už máme
         // v ruce, tedy 0 volání API navíc**. Do teď tyhle modely v produkci nikdy
         // neběžely (volal je jen backtest), takže jsme na oba trhy sbírali kurzy
@@ -470,6 +478,7 @@ export async function runPredictUpcoming(
             neutral: fixtureNeutral,
             source: result.source,
             capturedAt: new Date().toISOString(),
+            performancePressure,
           },
         });
         try {

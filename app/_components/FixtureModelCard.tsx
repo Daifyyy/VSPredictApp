@@ -77,6 +77,7 @@ export function FixtureModelCard({
         </div>
       </div>
       <ExpectedMatch forecast={f} />
+      <PerformancePressure forecast={f} />
       <TempoDiscipline corners={f.corners} fouls={f.fouls} cards={f.cards} referee={f.refereeProfile} />
       <TechnicalDetails forecast={f} fixtureId={fixtureId} canEditReferee={user?.isAdmin === true} onRefereeAssigned={() => setRevision((value) => value + 1)} />
     </div>
@@ -94,6 +95,23 @@ function ExpectedMatch({ forecast }: { forecast: FixtureModelForecast }) {
     <div className="mt-3 grid gap-2 sm:grid-cols-2"><Metric label="Góly" value={`Over 2,5 ${pct(forecast.goals.over25)} · BTTS ${pct(forecast.goals.btts)}`} />{(["home", "away"] as const).map((side) => <Metric key={side} label={side === "home" ? "Góly domácích" : "Góly hostů"} value={forecast.teamGoals[side].lines.map((line) => `O${line.line.toFixed(1)} ${pct(line.overProbability)}`).join(" · ") || "—"} />)}</div>
   </section>;
 }
+
+function PerformancePressure({ forecast }: { forecast: FixtureModelForecast }) {
+  const shadow = forecast.performancePressure;
+  if (!shadow) return <section className="rounded-xl border border-border bg-surface p-3"><div className="flex items-center justify-between gap-2"><strong className="text-foreground">Tlak a tvorba šancí</strong><Badge>Shadow</Badge></div><p className="mt-2 text-muted">Profil vznikne při příštím přepočtu predikce. Ostrý model ani tipy neovlivňuje.</p></section>;
+  const risk = shadow.dependencyRisk.level === "HIGH" ? "Vysoká" : shadow.dependencyRisk.level === "MEDIUM" ? "Střední" : "Nízká";
+  const value = (input: number | null, digits: number, suffix = "") => input == null ? "—" : `${input.toFixed(digits)}${suffix}`;
+  const side = (label: string, data: typeof shadow.home) => <div className="rounded-lg bg-background px-3 py-3"><strong className="text-foreground">{label}</strong><dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 tabular-nums"><MiniDatum label="Oček. tlak" value={value(data.expectedPressure, 0, "/100")} /><MiniDatum label="Schopnost tlaku" value={value(data.pressureCapability, 0, "/100")} /><MiniDatum label="Střely" value={value(data.shots, 1)} /><MiniDatum label="Na branku" value={value(data.shotsOnTarget, 1)} /><MiniDatum label="Z vápna" value={value(data.shotsInsideBox, 1)} /><MiniDatum label="xG / střelu" value={value(data.shotQuality, 2)} /></dl></div>;
+  return <section className="rounded-xl border border-border bg-surface p-3" aria-label="Shadow model tlaku a tvorby šancí">
+    <div className="flex flex-wrap items-start justify-between gap-2"><div><strong className="text-foreground">Tlak a tvorba šancí</strong><p className="mt-1 text-[10px] text-muted">Experimentální předzápasový profil z historických střel a xG.</p></div><Badge>Shadow v{shadow.version} · neovlivňuje tip</Badge></div>
+    <div className="mt-3 grid gap-2 sm:grid-cols-2">{side("Domácí", shadow.home)}{side("Hosté", shadow.away)}</div>
+    <div className="mt-2 grid gap-2 sm:grid-cols-4"><Metric label="Otevřenost zápasu" value={value(shadow.opennessScore, 0, "/100")} /><Metric label="Současné λ" value={shadow.currentTotalLambda.toFixed(2)} /><Metric label="Shot shadow λ" value={value(shadow.shotTotalLambda, 2)} /><Metric label="Over 2,5" value={`${pct(shadow.currentOver25)} → ${pct(shadow.shadowOver25)}`} /></div>
+    <div className="mt-2 rounded-lg border border-border bg-background px-3 py-2 text-[11px] leading-5"><strong className="text-foreground">Závislost Overu: {risk}</strong><span className="text-muted"> · slabší strana tvoří {pct(shadow.dependencyRisk.weakerShare)} očekávání; bez jejího gólu má silnější tým šanci {pct(shadow.dependencyRisk.probabilityOverWithoutWeakerSide)} dát sám alespoň tři.</span></div>
+    <p className="mt-2 text-[10px] text-muted">Pokrytí vstupů {shadow.coverage.available}/{shadow.coverage.expected}. Heuristická v1 se nejprve sbírá pro chronologický backtest; není kalibrovanou pravděpodobností.</p>
+  </section>;
+}
+
+function MiniDatum({ label, value }: { label: string; value: string }) { return <div><dt className="text-[9px] uppercase tracking-wide text-muted">{label}</dt><dd className="mt-0.5 font-semibold text-foreground">{value}</dd></div>; }
 
 function teamName(summary: FixtureModelForecast["headToHead"], teamId: number, fallback: string) {
   const meeting = summary.meetings[0];

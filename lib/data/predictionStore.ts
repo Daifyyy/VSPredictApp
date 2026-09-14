@@ -133,6 +133,17 @@ function toRow(p: PredictionRowSource): PredictionRow {
 export async function upsertPrediction(row: PredictionUpsert): Promise<void> {
   const now = new Date();
   const existing = await prisma.fixturePrediction.findUnique({ where: { fixtureId: row.fixtureId } });
+  const existingInput = existing?.inputSnapshot && typeof existing.inputSnapshot === "object" && !Array.isArray(existing.inputSnapshot)
+    ? existing.inputSnapshot as Record<string, unknown>
+    : null;
+  const incomingInput = row.inputSnapshot && typeof row.inputSnapshot === "object"
+    ? row.inputSnapshot as NonNullable<PredictionRow["inputSnapshot"]>
+    : null;
+  // První shadow profil je prospektivní audit. Opravný predikční běh smí aktualizovat
+  // hlavní prognózu, ale nesmí podle pozdějších informací přepsat původní shadow vstupy.
+  const frozenInput = incomingInput
+    ? { ...incomingInput, performancePressure: existingInput?.performancePressure ?? incomingInput.performancePressure }
+    : null;
   // Prázdný fixture payload nesmí smazat ruční delegaci. Neprázdný údaj API je autoritativní.
   const preserveManual = existing?.refereeSource === "MANUAL" && !row.refereeName;
   // Politika 1X2 v1 je ukoncena. Nove vybery vznikaji az po porovnani s trhem
@@ -187,7 +198,7 @@ export async function upsertPrediction(row: PredictionUpsert): Promise<void> {
     sharpen: PREDICT_PARAMS.sharpen,
     calibA: PREDICT_PARAMS.calibA,
     calibB: PREDICT_PARAMS.calibB,
-    inputSnapshot: row.inputSnapshot == null ? Prisma.DbNull : row.inputSnapshot as unknown as Prisma.InputJsonValue,
+    inputSnapshot: frozenInput == null ? Prisma.DbNull : frozenInput as unknown as Prisma.InputJsonValue,
     predictedAt: new Date(),
   };
   await prisma.fixturePrediction.upsert({
