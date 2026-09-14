@@ -3,6 +3,22 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Workspace root je tento projekt (vedle něj je další lockfile v C:\Projekt).
   turbopack: { root: import.meta.dirname },
+  // Prisma Client běží v Node.js přes nativní query engine. Balíček ale exportuje
+  // také Edge/WASM enginy pro všechny databáze a NFT je kvůli dynamickým importům
+  // trasuje do každé funkce. Ponecháváme library runtime, schéma a nativní engine.
+  outputFileTracingExcludes: {
+    "/*": [
+      "node_modules/@prisma/client/runtime/query_compiler_bg.*",
+      "node_modules/@prisma/client/runtime/query_engine_bg.*",
+      "node_modules/@prisma/client/runtime/wasm-*.js",
+      "node_modules/@prisma/client/runtime/wasm-*.mjs",
+      "node_modules/.prisma/client/query_engine_bg.*",
+      "node_modules/.prisma/client/query_engine-*.tmp*",
+      "node_modules/.prisma/client/edge.*",
+      "node_modules/.prisma/client/wasm.*",
+      "node_modules/.prisma/client/wasm-*-loader.mjs",
+    ],
+  },
   images: {
     remotePatterns: [
       {
