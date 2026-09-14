@@ -21,7 +21,6 @@ name: Cron
 on:
   schedule:
     - cron: "2,12,22,32,42,52 * * * *" # live výzkum po 10 min; kratší interval nepřinášel úměrnou hodnotu
-    - cron: "13,43 * * * *" # prospektivní absence a sestavy; pokračovací dávky obsáhnou celé okno
     # Snímky kurzů – nejčastější úloha, kvůli zavírací linii u večerních zápasů.
     # HODINOVĚ (od 28. 7. 2026): `fixturesNeedingOdds` v posledních 3 h průběžně přepisuje
     # kandidáta na closing. Hodinová kadence dává typicky poslední bod 0–60 min před výkopem.
@@ -113,7 +112,6 @@ jobs:
           fi
           case "$SCHEDULE" in
             "2,12,22,32,42,52 * * * *") path="collect-live" ;;
-            "13,43 * * * *") path="personnel-shadow" ;;
             "20 * * * *") path="snapshot-odds" ;;
             "5,35,50 * * * *") path="snapshot-odds-priority" ;;
             "7,22,37,52 * * * *") path="send-notifications" ;;
