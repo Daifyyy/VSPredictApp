@@ -45,7 +45,7 @@ async function cachedSummary(context: ModelLabContext) {
   return STRATEGY_CATALOG.map((item) => {
     const stored = byKey.get(`${item.strategy}:${item.policyVersion}`)!;
     const card = stored.metrics as Record<string, unknown>;
-    return { ...card, currentCount: ["ONE_X_TWO", "OVER_25", "BTTS_YES", "CORNERS", "CARDS_REF"].includes(item.strategy) ? currentByKey.get(`${item.strategy}:${item.policyVersion}`) ?? 0 : null };
+    return { ...card, currentCount: ["ONE_X_TWO", "OVER_25", "BTTS_YES", "CORNERS", "CARDS_REF", "FOULS"].includes(item.strategy) ? currentByKey.get(`${item.strategy}:${item.policyVersion}`) ?? 0 : null };
   });
 }
 
@@ -82,17 +82,17 @@ export async function GET(request: Request) {
       select: { fixtureId: true, homeGoals: true, awayGoals: true, status: true },
     }) : [];
     const byFixture = new Map(results.map((row) => [row.fixtureId, row]));
-    const countTips = tips.filter((row) => row.market === "CORNERS" || row.market === "CARDS");
+    const countTips = tips.filter((row) => row.market === "CORNERS" || row.market === "CARDS" || row.market === "FOULS");
     const cornerStats = countTips.length ? await prisma.matchStatCache.findMany({
       where: { fixtureId: { in: countTips.map((row) => row.fixtureId) } },
-      select: { fixtureId: true, teamId: true, corners: true, yellowCards: true, redCards: true },
+      select: { fixtureId: true, teamId: true, corners: true, yellowCards: true, redCards: true, fouls: true },
     }) : [];
     const actualCounts = new Map<string, number>();
     for (const tip of countTips) {
       const home = cornerStats.find((row) => row.fixtureId === tip.fixtureId && row.teamId === tip.homeTeamId);
       const away = cornerStats.find((row) => row.fixtureId === tip.fixtureId && row.teamId === tip.awayTeamId);
-      const homeValue = tip.market === "CARDS" ? home?.yellowCards == null && home?.redCards == null ? null : (home?.yellowCards ?? 0) + (home?.redCards ?? 0) : home?.corners;
-      const awayValue = tip.market === "CARDS" ? away?.yellowCards == null && away?.redCards == null ? null : (away?.yellowCards ?? 0) + (away?.redCards ?? 0) : away?.corners;
+      const homeValue = tip.market === "CARDS" ? home?.yellowCards == null && home?.redCards == null ? null : (home?.yellowCards ?? 0) + (home?.redCards ?? 0) : tip.market === "FOULS" ? home?.fouls : home?.corners;
+      const awayValue = tip.market === "CARDS" ? away?.yellowCards == null && away?.redCards == null ? null : (away?.yellowCards ?? 0) + (away?.redCards ?? 0) : tip.market === "FOULS" ? away?.fouls : away?.corners;
       if (homeValue != null && awayValue != null) actualCounts.set(`${tip.fixtureId}:${tip.market}`, homeValue + awayValue);
     }
     const ledger: ModelLabLedgerRow[] = tips.map((row) => ({
@@ -136,7 +136,7 @@ export async function GET(request: Request) {
         modelVersion: override?.modelVersion ?? MODEL_VERSION,
         status: (override?.status as ModelLabStatus | undefined) ?? item.status,
         definitionId: override?.id ?? null,
-        currentCount: ["ONE_X_TWO", "OVER_25", "BTTS_YES", "CORNERS", "CARDS_REF"].includes(item.strategy)
+        currentCount: ["ONE_X_TWO", "OVER_25", "BTTS_YES", "CORNERS", "CARDS_REF", "FOULS"].includes(item.strategy)
           ? rows.filter((row) => row.kickoff >= liveFrom && !FINAL_STATUSES.has(byFixture.get(row.fixtureId)?.status ?? "") && binaryOutcome(row.market, row.side, row.homeGoals, row.awayGoals, row.line, row.actualCount ?? null) == null).length
           : null,
         summary: item.strategy === "FOULS" && foulResearch ? { ...summary, verdict: foulResearch.bias == null ? "Fauly zatím nemají skutečná data." : `MAE ${foulResearch.mae!.toFixed(2)} · bias ${foulResearch.bias >= 0 ? "+" : ""}${foulResearch.bias.toFixed(2)} faulu.` } : summary,

@@ -25,8 +25,8 @@ export async function GET(request: Request) {
   const parsed = querySchema.safeParse(Object.fromEntries(new URL(request.url).searchParams));
   if (!parsed.success) return NextResponse.json({ error: "Neplatný filtr" }, { status: 400 });
   const { strategy, context, policyVersion } = parsed.data;
-  if (!["ONE_X_TWO", "OVER_25", "BTTS_YES", "CORNERS"].includes(strategy)) {
-    return NextResponse.json({ kind: strategy === "FOULS" ? "unavailable" : "research", current: [], recent: [] }, { headers: { "Cache-Control": "private, no-store" } });
+  if (!["ONE_X_TWO", "OVER_25", "BTTS_YES", "CORNERS", "FOULS"].includes(strategy)) {
+    return NextResponse.json({ kind: "research", current: [], recent: [] }, { headers: { "Cache-Control": "private, no-store" } });
   }
 
   try {
@@ -41,14 +41,16 @@ export async function GET(request: Request) {
       select: { fixtureId: true, homeGoals: true, awayGoals: true, status: true },
     }) : [];
     const byFixture = new Map(results.map((row) => [row.fixtureId, row]));
-    const cornerStats = strategy === "CORNERS" && rows.length ? await prisma.matchStatCache.findMany({
+    const cornerStats = (strategy === "CORNERS" || strategy === "FOULS") && rows.length ? await prisma.matchStatCache.findMany({
       where: { fixtureId: { in: rows.map((row) => row.fixtureId) } },
-      select: { fixtureId: true, teamId: true, corners: true },
+      select: { fixtureId: true, teamId: true, corners: true, fouls: true },
     }) : [];
     const activityRows = rows.map((row) => {
       const result = byFixture.get(row.fixtureId);
-      const homeCorners = cornerStats.find((item) => item.fixtureId === row.fixtureId && item.teamId === row.homeTeamId)?.corners;
-      const awayCorners = cornerStats.find((item) => item.fixtureId === row.fixtureId && item.teamId === row.awayTeamId)?.corners;
+      const homeStat = cornerStats.find((item) => item.fixtureId === row.fixtureId && item.teamId === row.homeTeamId);
+      const awayStat = cornerStats.find((item) => item.fixtureId === row.fixtureId && item.teamId === row.awayTeamId);
+      const homeCorners = strategy === "FOULS" ? homeStat?.fouls : homeStat?.corners;
+      const awayCorners = strategy === "FOULS" ? awayStat?.fouls : awayStat?.corners;
       const actualCount = row.actualCount ?? (homeCorners != null && awayCorners != null ? homeCorners + awayCorners : null);
       const hit = row.hit ?? binaryOutcome(row.market, row.side, result?.homeGoals ?? null, result?.awayGoals ?? null, row.line, actualCount);
       const close = freshClosing(row.kickoff, row.closedAt, row.closingMarketProbability).close;

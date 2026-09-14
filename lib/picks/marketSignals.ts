@@ -9,7 +9,7 @@ export const MARKET_SIGNAL_POLICY_VERSION = 1;
 export const COUNT_MARKET_SIGNAL_POLICY_VERSION = 2;
 /** První politika týmových gólů s neměnně uloženou skutečnou cenou. */
 export const TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION = 3;
-export type SignalMarket = "1X2" | "OVER_25" | "BTTS" | "CORNERS" | "CARDS" | "TEAM_HOME_05" | "TEAM_HOME_15" | "TEAM_AWAY_05" | "TEAM_AWAY_15";
+export type SignalMarket = "1X2" | "OVER_25" | "BTTS" | "CORNERS" | "CARDS" | "FOULS" | "TEAM_HOME_05" | "TEAM_HOME_15" | "TEAM_AWAY_05" | "TEAM_AWAY_15";
 export type SignalSide = "HOME" | "DRAW" | "AWAY" | "OVER" | "UNDER";
 
 export interface FrozenMarketSignal {
@@ -23,7 +23,7 @@ export interface FrozenMarketSignal {
 
 export function marketSignalPolicyVersion(market: SignalMarket): number {
   if (market.startsWith("TEAM_")) return TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION;
-  return market === "CORNERS" || market === "CARDS"
+  return market === "CORNERS" || market === "CARDS" || market === "FOULS"
     ? COUNT_MARKET_SIGNAL_POLICY_VERSION
     : MARKET_SIGNAL_POLICY_VERSION;
 }
@@ -84,12 +84,12 @@ export function freezeMarketSignals(row: PredictionRow, books: BookOdds[]): Froz
     });
   }
 
-  for (const market of ["CORNERS", "CARDS"] as const) {
-    const lineMarket = market === "CORNERS" ? "corners" : "cards";
+  for (const market of ["CORNERS", "CARDS", "FOULS"] as const) {
+    const lineMarket = market === "CORNERS" ? "corners" : market === "CARDS" ? "cards" : "fouls";
     const line = mainHalfLine(books, lineMarket);
-    const home = market === "CORNERS" ? row.lambdaCornersHome : row.lambdaCardsHome;
-    const away = market === "CORNERS" ? row.lambdaCornersAway : row.lambdaCardsAway;
-    const variance = market === "CORNERS" ? row.cornerVarianceRatio : row.cardVarianceRatio;
+    const home = market === "CORNERS" ? row.lambdaCornersHome : market === "CARDS" ? row.lambdaCardsHome : row.lambdaFoulsHome;
+    const away = market === "CORNERS" ? row.lambdaCornersAway : market === "CARDS" ? row.lambdaCardsAway : row.lambdaFoulsAway;
+    const variance = market === "CORNERS" ? row.cornerVarianceRatio : market === "CARDS" ? row.cardVarianceRatio : 1.2;
     if (line == null || home == null || away == null) continue;
     const fair = sharpLineFair(books, lineMarket, line);
     if (!fair) continue;
@@ -185,7 +185,7 @@ export function marketProbabilityAt(
     return side === "OVER" ? best.yes : best.no;
   }
   if (line == null) return null;
-  const lineMarket = market === "CORNERS" ? "corners" : market === "CARDS" ? "cards" : market.startsWith("TEAM_HOME") ? "totalHome" : "totalAway";
+  const lineMarket = market === "CORNERS" ? "corners" : market === "CARDS" ? "cards" : market === "FOULS" ? "fouls" : market.startsWith("TEAM_HOME") ? "totalHome" : "totalAway";
   const fair = sharpLineFair(books, lineMarket, line);
   if (!fair) return null;
   return side === "OVER" ? fair.over : fair.under;

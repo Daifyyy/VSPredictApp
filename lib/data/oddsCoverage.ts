@@ -22,6 +22,7 @@ export type CoveredMarket =
   | "btts"
   | "corners"
   | "cards"
+  | "fouls"
   | "totalHome"
   | "totalAway";
 
@@ -34,6 +35,7 @@ export function emptyCoverage(): MarketCoverage {
     btts: 0,
     corners: 0,
     cards: 0,
+    fouls: 0,
     totalHome: 0,
     totalAway: 0,
   };
@@ -53,6 +55,7 @@ export function addFixtureCoverage(
   if (any((b) => b.btts !== null)) into.btts++;
   if (any((b) => (b.corners?.length ?? 0) > 0)) into.corners++;
   if (any((b) => (b.cards?.length ?? 0) > 0)) into.cards++;
+  if (any((b) => (b.fouls?.length ?? 0) > 0)) into.fouls++;
   if (any((b) => (b.totalHome?.length ?? 0) > 0)) into.totalHome++;
   if (any((b) => (b.totalAway?.length ?? 0) > 0)) into.totalAway++;
   return into;
@@ -84,7 +87,7 @@ export function coverageWarnings(
   const out: CoveredMarket[] = [];
   if (withBooks >= MIN_SAMPLE_MAIN && coverage.main === 0) out.push("main");
   if (withBooks < MIN_SAMPLE_SECONDARY) return out;
-  for (const m of ["over25", "btts", "corners", "cards", "totalHome", "totalAway"] as const) {
+  for (const m of ["over25", "btts", "corners", "cards", "fouls", "totalHome", "totalAway"] as const) {
     if (coverage[m] === 0) out.push(m);
   }
   return out;

@@ -52,6 +52,7 @@ export function parseBooks(value: unknown): BookOdds[] {
     const num = (k: string) => (typeof b[k] === "number" && b[k] > 1 ? (b[k] as number) : null);
     const corners = parseLines(b.corners);
     const cards = parseLines(b.cards);
+    const fouls = parseLines(b.fouls);
     const totalHome = parseLines(b.totalHome);
     const totalAway = parseLines(b.totalAway);
     const resultTotals = parseResultTotals(b.resultTotals);
@@ -70,6 +71,7 @@ export function parseBooks(value: unknown): BookOdds[] {
       ...(matchTotals.length ? { matchTotals } : {}),
       ...(corners.length ? { corners } : {}),
       ...(cards.length ? { cards } : {}),
+      ...(fouls.length ? { fouls } : {}),
       ...(totalHome.length ? { totalHome } : {}),
       ...(totalAway.length ? { totalAway } : {}),
     });
@@ -198,7 +200,7 @@ export function sharpFair(
  * Trh s linkami. `totalHome`/`totalAway` = kolik gólů dá jeden tým, `cards` = karty
  * celkem (žluté + červené; booking points ani „jen žluté" se nesnímají – viz `isCardBet`).
  */
-export type LineMarket = "corners" | "cards" | "totalHome" | "totalAway" | "matchTotals";
+export type LineMarket = "corners" | "cards" | "fouls" | "totalHome" | "totalAway" | "matchTotals";
 
 const linesOf = (b: BookOdds, market: LineMarket): LineOdds[] => b[market] ?? [];
 

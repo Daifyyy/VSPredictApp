@@ -26,7 +26,7 @@ export const STRATEGY_HUB_CATALOG: StrategyHubDefinition[] = [
   { id: "TEAM_GOALS", title: "Týmové góly", shortTitle: "Týmové góly", description: "Konzervativně vybrané týmové hranice 0,5 a 1,5 gólu s hratelnou přímou cenou.", status: "RESEARCH", policyVersion: TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION, minimumSample: 200, accumulator: false },
   { id: "CORNERS", title: "Rohy Over / Under", shortTitle: "Rohy", description: "Výzkumné samostatné výběry nad modelem počtu rohů.", status: "RESEARCH", policyVersion: 1, minimumSample: 200, accumulator: false },
   { id: "CARDS_REF", title: "Karty s rozhodčím", shortTitle: "Karty", description: "Výzkumný model karet, který auditně zohledňuje dostupného rozhodčího.", status: "RESEARCH", policyVersion: 1, minimumSample: 200, accumulator: false },
-  { id: "FOULS", title: "Prognóza faulů", shortTitle: "Fauly", description: "Početní prognóza bez dostupného sázkového trhu; ROI se nepočítá.", status: "NO_MARKET", policyVersion: 1, minimumSample: 150, accumulator: false },
+  { id: "FOULS", title: "Fauly Over / Under", shortTitle: "Fauly", description: "Výzkumné samostatné výběry na celkový počet faulů s přímou cenou.", status: "RESEARCH", policyVersion: 1, minimumSample: 200, accumulator: false },
 ];
 
 export function isStrategyHubId(value: string | null): value is StrategyHubId {

@@ -36,7 +36,7 @@ export async function openMarketSignals(
   const row = await getPredictionByFixture(fixtureId);
   if (!row) return;
   const signals = freezeMarketSignals(row, books).filter((signal) =>
-    (options.includeCounts !== false || (signal.market !== "CORNERS" && signal.market !== "CARDS")) &&
+    (options.includeCounts !== false || !["CORNERS", "CARDS", "FOULS"].includes(signal.market)) &&
     (options.includeTeamGoals !== false || !signal.market.startsWith("TEAM_"))
   );
   await Promise.all(signals.map((signal) => prisma.marketSignalSnapshot.upsert({
@@ -55,7 +55,7 @@ export async function openMarketSignals(
       modelContext: row.modelContext ?? (isEuroCupLeague(row.leagueId) ? "EURO_CUP" : "LEAGUE"),
       modelVersion: row.modelVersion,
       contextVersion: row.contextVersion ?? 1,
-      countModelVersion: signal.market === "CORNERS" || signal.market === "CARDS" ? row.countModelVersion : null,
+      countModelVersion: signal.market === "FOULS" ? row.foulModelVersion : signal.market === "CORNERS" || signal.market === "CARDS" ? row.countModelVersion : null,
       policyVersion: marketSignalPolicyVersion(signal.market),
       publishedTip: signal.publishedTip,
       openedAt: at,
@@ -73,7 +73,7 @@ export async function openMarketSignals(
 export async function appendMarketSignalPoints(fixtureId: number, books: BookOdds[], at: Date): Promise<void> {
   const rows = await prisma.marketSignalSnapshot.findMany({ where: { fixtureId, OR: [
     { market: { in: ["1X2", "OVER_25", "BTTS"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
-    { market: { in: ["CORNERS", "CARDS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
+    { market: { in: ["CORNERS", "CARDS", "FOULS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
     { market: { in: [...TEAM_MARKETS] }, policyVersion: TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION },
   ] } });
   for (const row of rows) {
@@ -100,7 +100,7 @@ export async function appendMarketSignalPoints(fixtureId: number, books: BookOdd
 export async function closeMarketSignals(fixtureId: number, books: BookOdds[], at: Date): Promise<void> {
   const rows = await prisma.marketSignalSnapshot.findMany({ where: { fixtureId, OR: [
     { market: { in: ["1X2", "OVER_25", "BTTS"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
-    { market: { in: ["CORNERS", "CARDS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
+    { market: { in: ["CORNERS", "CARDS", "FOULS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
     { market: { in: [...TEAM_MARKETS] }, policyVersion: TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION },
   ] } });
   for (const row of rows) {

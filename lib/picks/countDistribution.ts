@@ -110,6 +110,8 @@ export function mainHalfLine(books: BookOdds[], market: LineMarket): number | nu
     ? { min: 6.5, max: 14.5 }
     : market === "cards"
       ? { min: 1.5, max: 8.5 }
+      : market === "fouls"
+        ? { min: 15.5, max: 35.5 }
       : null;
   return marketLines(books, market)
     .filter(({ line }) => isHalfLine(line))

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bookOddsOf, isCardBet, isCornerBet, oddsSchema, teamTotalSide } from "./apiFootball";
+import { bookOddsOf, isCardBet, isCornerBet, isFoulBet, oddsSchema, teamTotalSide } from "./apiFootball";
 
 /**
  * Regrese: `/odds` vrací u některých trhů (Exact Score, handicapy) `value` jako **číslo**.
@@ -98,6 +98,17 @@ describe("matchery trhů", () => {
     expect(isCornerBet(bet("Corner Handicap"))).toBe(false);
   });
 
+  it("fauly přijme jen jako total celého zápasu", () => {
+    expect(isFoulBet(bet("Fouls. Total"))).toBe(true);
+    expect(isFoulBet(bet("Total Fouls"))).toBe(true);
+    expect(isFoulBet(bet("Fouls Over/Under"))).toBe(true);
+    expect(isFoulBet(bet("Home Team Total Fouls"))).toBe(false);
+    expect(isFoulBet(bet("Player Fouls Committed"))).toBe(false);
+    expect(isFoulBet(bet("Fouls Odd/Even"))).toBe(false);
+    expect(isFoulBet(bet("Fouls Handicap"))).toBe(false);
+    expect(isFoulBet(bet("Fouls 1X2"))).toBe(false);
+  });
+
   it("tři matchery se VZÁJEMNĚ VYLUČUJÍ", () => {
     // Kdyby se překrývaly, model by porovnal gólovou λ s cenou na rohy a nic by
     // nekřičelo – proto je to invariant, ne detail.
@@ -174,6 +185,14 @@ describe("bookOddsOf – trhy z jedné odpovědi", () => {
         ],
       },
       {
+        id: 173,
+        name: "Fouls. Total",
+        values: [
+          { value: "Over 24.5", odd: "1.80" },
+          { value: "Under 24.5", odd: "1.95" },
+        ],
+      },
+      {
         // Jiná jednotka – nesmí se dostat mezi karty.
         id: 81,
         name: "Booking Points Over/Under",
@@ -212,6 +231,7 @@ describe("bookOddsOf – trhy z jedné odpovědi", () => {
     expect(parsed.home).toBe(2.1);
     expect(parsed.over25).toBe(1.9);
     expect(parsed.corners).toEqual([{ line: 10.5, over: 2.05, under: 1.8 }]);
+    expect(parsed.fouls).toEqual([{ line: 24.5, over: 1.8, under: 1.95 }]);
     expect(parsed.totalHome).toEqual([{ line: 1.5, over: 2, under: 1.85 }]);
     expect(parsed.totalAway).toBeUndefined();
   });

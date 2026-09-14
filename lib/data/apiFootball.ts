@@ -693,6 +693,8 @@ export interface BookOdds {
    * než λ modelu. Filtruje `isCardBet`.
    */
   cards?: LineOdds[];
+  /** Match-total fouls only; team, player and derived foul markets are excluded. */
+  fouls?: LineOdds[];
 }
 
 /** Kurz Over/Under na JEDNÉ konkrétní lince (rohy, týmové totaly…). */
@@ -803,6 +805,7 @@ export async function fetchOdds(
         b.matchTotals?.length ||
         b.corners?.length ||
         b.cards?.length ||
+        b.fouls?.length ||
         b.totalHome?.length ||
         b.totalAway?.length
     ),
@@ -815,7 +818,7 @@ export async function fetchOdds(
     out.btts == null &&
     !out.books?.some((b) => b.resultTotals?.length || b.matchTotals?.length) &&
     !out.books?.some(
-      (b) => b.corners?.length || b.cards?.length || b.totalHome?.length || b.totalAway?.length
+      (b) => b.corners?.length || b.cards?.length || b.fouls?.length || b.totalHome?.length || b.totalAway?.length
     )
   ) {
     return null;
@@ -956,6 +959,16 @@ function lineOddsOf(
   return [...byLine.values()].sort((a, b) => a.line - b.line);
 }
 
+/** Only direct Over/Under on total fouls in the whole match. */
+export function isFoulBet(bet: { id: number; name?: string }): boolean {
+  const n = bet.name;
+  if (!n || !/fouls?/i.test(n)) return false;
+  if (/player|home|away|team|committed|drawn/i.test(n)) return false;
+  if (/half|1st|2nd|first|second|time|minute|interval/i.test(n)) return false;
+  if (/handicap|odd|even|1x2|winner|double chance/i.test(n)) return false;
+  return /total|over\s*\/\s*under|over.?under/i.test(n);
+}
+
 function resultTotalOddsOf(
   bets: { id: number; name?: string; values: { value: string; odd: string }[] }[]
 ): ResultTotalOdds[] {
@@ -993,6 +1006,7 @@ export function bookOddsOf(book: {
   const btts = betValues(8);
   const corners = lineOddsOf(book.bets, isCornerBet);
   const cards = lineOddsOf(book.bets, isCardBet);
+  const fouls = lineOddsOf(book.bets, isFoulBet);
   const totalHome = lineOddsOf(book.bets, (b) => teamTotalSide(b) === "home");
   const totalAway = lineOddsOf(book.bets, (b) => teamTotalSide(b) === "away");
   const resultTotals = resultTotalOddsOf(book.bets);
@@ -1011,6 +1025,7 @@ export function bookOddsOf(book: {
     ...(matchTotals.length ? { matchTotals } : {}),
     ...(corners.length ? { corners } : {}),
     ...(cards.length ? { cards } : {}),
+    ...(fouls.length ? { fouls } : {}),
     ...(totalHome.length ? { totalHome } : {}),
     ...(totalAway.length ? { totalAway } : {}),
   };

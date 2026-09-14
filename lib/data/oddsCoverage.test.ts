@@ -80,7 +80,7 @@ describe("coverageWarnings", () => {
     const cov = runOf(Array.from({ length: 20 }, () => [book()]));
     const warn = coverageWarnings(cov, 20);
     expect(warn).toEqual(
-      expect.arrayContaining(["corners", "cards", "totalHome", "totalAway"])
+      expect.arrayContaining(["corners", "cards", "fouls", "totalHome", "totalAway"])
     );
     expect(warn).not.toContain("main"); // 1X2 se chytá, ten je v pořádku
     expect(warn).not.toContain("over25");
@@ -90,6 +90,7 @@ describe("coverageWarnings", () => {
     const full = book({
       corners: [{ line: 10.5, over: 1.9, under: 1.9 }],
       cards: [{ line: 4.5, over: 1.85, under: 1.85 }],
+      fouls: [{ line: 24.5, over: 1.85, under: 1.95 }],
       totalHome: [{ line: 1.5, over: 1.7, under: 2.1 }],
       totalAway: [{ line: 1.5, over: 2.2, under: 1.65 }],
     });
@@ -101,6 +102,7 @@ describe("coverageWarnings", () => {
     // Když se rozbije jen jeden matcher, hlášení musí ukázat na něj, ne na celý sběr.
     const noCards = book({
       corners: [{ line: 10.5, over: 1.9, under: 1.9 }],
+      fouls: [{ line: 24.5, over: 1.85, under: 1.95 }],
       totalHome: [{ line: 1.5, over: 1.7, under: 2.1 }],
       totalAway: [{ line: 1.5, over: 2.2, under: 1.65 }],
     });
