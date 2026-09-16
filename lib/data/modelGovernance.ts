@@ -119,8 +119,10 @@ export async function getModelGovernanceDashboard(now = new Date()) {
   const pressureCohort = pressureRows.flatMap((row) => {
     const snapshot = row.inputSnapshot as { performancePressure?: PerformancePressureShadow } | null;
     const pressure = snapshot?.performancePressure;
-    return pressure?.version === 2 ? [{ ...row, pressure }] : [];
+    return pressure?.version === 3 ? [{ ...row, pressure }] : [];
   }).reverse();
+  const legacyPressure=pressureRows.flatMap((row)=>{const pressure=(row.inputSnapshot as {performancePressure?:{version?:number;opennessScore?:number;expectedMatchShape?:{home?:{shots?:{value?:number}};away?:{shots?:{value?:number}}}}}|null)?.performancePressure;return pressure?.version===2?[pressure]:[]});
+  const legacyPressureCount=legacyPressure.length;
   const settledPressure = pressureCohort.filter((row) => row.homeGoals != null && row.awayGoals != null && row.pressure.shadowOver25 != null);
   const binaryMetrics = (rows: typeof settledPressure, candidate: "current" | "shadow") => {
     if (!rows.length) return { n: 0, brier: null as number | null, logLoss: null as number | null };
@@ -141,7 +143,9 @@ export async function getModelGovernanceDashboard(now = new Date()) {
   });
   const pressureDeltaRows = pressureCohort.filter((row) => row.pressure.over25Delta != null);
   const performancePressure = {
-    version: 2,
+    version: 3,
+    legacyV2: legacyPressureCount,
+    legacyV2Diagnostics:{opennessAt100:legacyPressureCount?legacyPressure.filter((row)=>row.opennessScore===100).length/legacyPressureCount:0,shotSidesAbove25:legacyPressure.reduce((sum,row)=>sum+Number((row.expectedMatchShape?.home?.shots?.value??0)>25)+Number((row.expectedMatchShape?.away?.shots?.value??0)>25),0)},
     captured: pressureCohort.length,
     settled: settledPressure.length,
     minimumDecisionSample: 200,
@@ -153,12 +157,16 @@ export async function getModelGovernanceDashboard(now = new Date()) {
     development: pressureCheckpoints,
     recent: pressureCohort.slice(-12).reverse().map((row) => ({ fixtureId: row.fixtureId, kickoff: row.kickoff, homeName: row.homeName, awayName: row.awayName, opennessScore: row.pressure.opennessScore, currentOver25: row.pressure.currentOver25, shadowOver25: row.pressure.shadowOver25, over25Delta: row.pressure.over25Delta, coverage: row.pressure.coverage.ratio, dependencyRisk: row.pressure.dependencyRisk.level, homePressure: row.pressure.home.expectedPressure, awayPressure: row.pressure.away.expectedPressure })),
   };
-  const flowRows = await prisma.matchFlowEvaluationSnapshot.findMany({ where: { pressureVersion: 2, evaluationVersion: MATCH_FLOW_EVALUATION_VERSION, status: "SETTLED" }, orderBy: { kickoff: "desc" }, take: 500 });
+  const flowRows = await prisma.matchFlowEvaluationSnapshot.findMany({ where: { pressureVersion: 3, evaluationVersion: MATCH_FLOW_EVALUATION_VERSION, status: "SETTLED" }, orderBy: { kickoff: "desc" }, take: 500 });
   const flowEvaluations = flowRows.flatMap((row) => row.evaluation ? [{ row, evaluation: row.evaluation as unknown as MatchFlowEvaluation }] : []);
   const flowCounts = { TREFENO: 0, CASTECNE: 0, NETREFENO: 0, NEDOSTATEK_DAT: 0 };
   for (const item of flowEvaluations) flowCounts[item.evaluation.verdict]++;
   const diagnosisCounts = Object.fromEntries((["FLOW_CONFIRMED","CORRECT_FLOW_BAD_FINISHING","WRONG_DOMINANCE","WRONG_PACE","CHANCE_CREATION_MISS","WEAKER_SIDE_ABSENT","STRUCTURAL_CHANGE","PARTIAL_MATCH","INSUFFICIENT_DATA"] satisfies MatchFlowDiagnosisCode[]).map((code)=>[code,flowEvaluations.filter((item)=>item.evaluation.diagnosis.code===code).length])) as Record<MatchFlowDiagnosisCode,number>;
   const flowComponents = flowEvaluations.flatMap((item) => item.evaluation.components);
+  const paceComponents=flowComponents.filter((item)=>item.key==="PACE"&&item.expected!=null&&item.actual!=null);
+  const paceMae=paceComponents.length?paceComponents.reduce((sum,item)=>sum+Math.abs(item.actual!-item.expected!),0)/paceComponents.length:null;
+  const pacePoissonDeviance=paceComponents.length?paceComponents.reduce((sum,item)=>{const y=item.actual!,mu=Math.max(.01,item.expected!);return sum+2*(y===0?mu:y*Math.log(y/mu)-(y-mu))},0)/paceComponents.length:null;
+  const intervalCoverage=paceComponents.length?paceComponents.filter((item)=>item.verdict==="TREFENO").length/paceComponents.length:null;
   const componentSummary = (["DOMINANCE", "PACE", "CHANCE_CREATION", "WEAKER_SIDE"] as const).map((key) => { const rows = flowComponents.filter((row) => row.key === key), errors = rows.filter((row) => row.difference != null); return { key, n: rows.length, hitRate: rows.length ? rows.filter((row) => row.verdict === "TREFENO").length / rows.length : 0, averageError: errors.length ? errors.reduce((sum, row) => sum + Math.abs(row.difference!), 0) / errors.length : null }; });
   const segment = (label:string,rows:typeof flowEvaluations) => ({label,n:rows.length,hitRate:rows.length?rows.filter((item)=>item.evaluation.verdict==="TREFENO").length/rows.length:0});
   const expectedOf=(item:typeof flowEvaluations[number])=>(item.row.expectation as unknown as {shape?:ExpectedMatchShape;dependencyRisk?:{level?:string}});
@@ -171,7 +179,9 @@ export async function getModelGovernanceDashboard(now = new Date()) {
   const oddsSegments=["Favorit ≤1,60","Favorit 1,61–2,20","Favorit >2,20","Bez openingu"].map((bucket)=>segment(bucket,flowEvaluations.filter((item)=>oddsBucket(item)===bucket)));
   const venueSegments=["HOME","AWAY","BALANCED"].map((role)=>segment(role==="HOME"?"Domácí očekávaně silnější":role==="AWAY"?"Hosté očekávaně silnější":"Vyrovnané",flowEvaluations.filter((item)=>roleOf(item)===role)));
   const pressureByFixture=new Map(pressureCohort.map((row)=>[row.fixtureId,row]));
-  const matchFlow = { version: MATCH_FLOW_EVALUATION_VERSION, pressureVersion: 2, total: flowEvaluations.length, counts: flowCounts, diagnosisCounts, averageCoverage: flowEvaluations.length ? flowEvaluations.reduce((sum,item)=>sum+item.evaluation.coverage,0)/flowEvaluations.length : 0, structurallyChanged: flowEvaluations.filter((item)=>item.evaluation.structurallyChanged).length, components: componentSummary,segments:{role:roleSegments,dependency:dependencySegments,league:leagueSegments,odds:oddsSegments,venue:venueSegments},recent:flowEvaluations.slice(0,20).map((item)=>{const fixture=pressureByFixture.get(item.row.fixtureId);return{fixtureId:item.row.fixtureId,kickoff:item.row.kickoff,homeName:fixture?.homeName??`Fixture ${item.row.fixtureId}`,awayName:fixture?.awayName??"",diagnosis:item.evaluation.diagnosis,verdict:item.evaluation.verdict,coverage:item.evaluation.coverage}}) };
+  const opennessDistribution=pressureCohort.reduce((acc,row)=>{const key=row.pressure.expectedMatchShape.opennessLabel;acc[key]=(acc[key]??0)+1;return acc},{} as Record<string,number>);
+  const clippedSides=pressureCohort.reduce((sum,row)=>sum+Number(row.pressure.home.expectedPressure!=null&&row.pressure.expectedMatchShape.home.shots.warnings?.includes("CLIPPED_OUTLIER"))+Number(row.pressure.away.expectedPressure!=null&&row.pressure.expectedMatchShape.away.shots.warnings?.includes("CLIPPED_OUTLIER")),0);
+  const matchFlow = { version: MATCH_FLOW_EVALUATION_VERSION, pressureVersion: 3, total: flowEvaluations.length, counts: flowCounts, diagnosisCounts, averageCoverage: flowEvaluations.length ? flowEvaluations.reduce((sum,item)=>sum+item.evaluation.coverage,0)/flowEvaluations.length : 0, structurallyChanged: flowEvaluations.filter((item)=>item.evaluation.structurallyChanged).length, components: componentSummary,paceMae,pacePoissonDeviance,intervalCoverage,opennessDistribution,clippedSides,segments:{role:roleSegments,dependency:dependencySegments,league:leagueSegments,odds:oddsSegments,venue:venueSegments},recent:flowEvaluations.slice(0,20).map((item)=>{const fixture=pressureByFixture.get(item.row.fixtureId);return{fixtureId:item.row.fixtureId,kickoff:item.row.kickoff,homeName:fixture?.homeName??`Fixture ${item.row.fixtureId}`,awayName:fixture?.awayName??"",diagnosis:item.evaluation.diagnosis,verdict:item.evaluation.verdict,coverage:item.evaluation.coverage}}) };
   const definitionsByKey = new Map(definitions.map((row) => [`${row.strategy}:${row.policyVersion}:${row.modelContext}`, row]));
   const finishedFixtures = new Set(predictions.map((row) => row.fixtureId));
   const samplesByKey = new Map<string, number>();

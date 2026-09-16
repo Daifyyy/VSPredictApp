@@ -132,10 +132,10 @@ function toRow(p: PredictionRowSource): PredictionRow {
 /** Upsert predikce (přepíše predikční pole, výsledek nechá být). */
 type VersionedShadow = { version?: unknown } | null | undefined;
 
-/** v1 smí před výkopem jednou přejít na v2; uložená v2 a historie jsou neměnné. */
+/** Starší shadow smí před výkopem jednou přejít na aktuální verzi; aktuální snapshot je neměnný. */
 export function frozenPerformancePressure(existing: VersionedShadow, incoming: VersionedShadow, canUpgrade: boolean) {
   if (!existing) return incoming;
-  return canUpgrade && Number(existing.version) === 1 && Number(incoming?.version) === 2 ? incoming : existing;
+  return canUpgrade && Number(existing.version) < Number(incoming?.version) ? incoming : existing;
 }
 
 export async function upsertPrediction(row: PredictionUpsert): Promise<void> {

@@ -21,7 +21,7 @@ export async function getResultModelReviews(fixtureIds: number[], options: { pro
     prisma.matchStatCache.findMany({ where: { fixtureId: { in: ids } }, select: { fixtureId: true, teamId: true, context: true, corners: true, fouls: true, yellowCards: true, redCards: true } }),
     prisma.autonomousTipSnapshot.findMany({ where: { fixtureId: { in: ids }, status: "candidate" } }),
     prisma.marketSignalSnapshot.findMany({ where: { fixtureId: { in: ids } }, orderBy: { openedAt: "asc" } }),
-    prisma.matchFlowEvaluationSnapshot.findMany({ where: { fixtureId: { in: ids }, evaluationVersion: 2, status: "SETTLED" }, orderBy: { evaluationVersion: "desc" } }),
+    prisma.matchFlowEvaluationSnapshot.findMany({ where: { fixtureId: { in: ids }, evaluationVersion: 3, status: "SETTLED" }, orderBy: { evaluationVersion: "desc" } }),
   ]);
   const flowMap = new Map(flowRows.map((row) => [row.fixtureId, row.evaluation as unknown as MatchFlowEvaluation]));
   const statMap = new Map<number, typeof stats>();
@@ -68,7 +68,7 @@ export async function getResultModelReviews(fixtureIds: number[], options: { pro
     });
     const matchFlow=flowMap.get(p.fixtureId)??null;
     const pressure=(p.inputSnapshot as {performancePressure?:PerformancePressureShadow}|null)?.performancePressure;
-    const fullMatchInsight=matchFlow&&pressure?.version===2?buildMatchInsight({pressure,evaluation:matchFlow,phase:"FINAL",capturedAt:pressure.capturedAt}):null;
+    const fullMatchInsight=matchFlow&&pressure?.version===3?buildMatchInsight({pressure,evaluation:matchFlow,phase:"FINAL",capturedAt:pressure.capturedAt}):null;
     const matchInsight=fullMatchInsight&&(options.pro!==true)?publicMatchInsight(fullMatchInsight):fullMatchInsight;
     reviews.set(p.fixtureId, { chips, probabilities: { home: p.homeWin, draw: p.draw, away: p.awayWin, over25: p.over25, bttsYes: p.bttsYes }, expectedScore: { home: p.lambdaHome, away: p.lambdaAway }, counts: { corners, cards, fouls }, modelVersion: p.modelVersion, countModelVersion: p.countModelVersion, foulModelVersion: p.foulModelVersion, context: p.modelContext, readinessSample: p.readinessSample, lowConfidence: p.lowConfidence, referee: { name: p.refereeName, factor: p.refereeFactor, sample: p.refereeSample }, market, portfolio, matchFlow, matchInsight });
   }

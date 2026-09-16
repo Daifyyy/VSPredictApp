@@ -37,6 +37,7 @@
     "resettle": "node --env-file=.env --import tsx scripts/resettleFullTime.ts",
     "reprice": "node --env-file=.env --import tsx scripts/reprice.ts",
     "backtest": "node --env-file=.env --import tsx scripts/backtest.ts",
+    "backtest:pressure-v3": "node --env-file=.env --import tsx scripts/backtestPressureV3.ts",
     "refresh-elo": "node --env-file=.env --import tsx scripts/refreshElo.ts",
     "backfill-elo": "node --env-file=.env --import tsx scripts/backfillClubElo.ts",
     "backtest:elo": "node --env-file=.env --import tsx scripts/backtestClubElo.ts",

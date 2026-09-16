@@ -75,7 +75,7 @@ export async function GET(req: Request) {
     const row = await getFixturePredictionRow(fixtureId);
     if (!row || !row.available) return NextResponse.json({ forecast: null });
     const pressure = row.inputSnapshot?.performancePressure as PerformancePressureShadow | null | undefined;
-    const matchInsight = pressure?.version === 2 ? buildMatchInsight({ pressure, phase: "PREMATCH" }) : null;
+    const matchInsight = pressure?.version === 3 ? buildMatchInsight({ pressure, phase: "PREMATCH" }) : null;
     if (locked) {
       const headToHead = await getHeadToHead(row.homeTeamId, row.awayTeamId);
       return NextResponse.json({ locked: true, headToHead, matchInsight: matchInsight ? publicMatchInsight(matchInsight) : null });

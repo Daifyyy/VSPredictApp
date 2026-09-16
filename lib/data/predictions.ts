@@ -403,6 +403,7 @@ export async function runPredictUpcoming(
           currentLambdaHome: p.lambdaHomeBase,
           currentLambdaAway: p.lambdaAwayBase,
           currentOver25: p.over25,
+          context: modelContext,
         });
         // λ ROHŮ A KARET vedle gólové – **čistá matematika nad zápasy, které už máme
         // v ruce, tedy 0 volání API navíc**. Do teď tyhle modely v produkci nikdy

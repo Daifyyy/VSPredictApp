@@ -8,7 +8,7 @@ import { buildMatchInsight, type MatchInsight } from "@/lib/picks/matchInsight";
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 function pressureOf(input: Prisma.JsonValue | null): PerformancePressureShadow | null {
   const pressure = (input as { performancePressure?: PerformancePressureShadow } | null)?.performancePressure;
-  return pressure?.version === 2 && pressure.expectedMatchShape ? pressure : null;
+  return pressure?.version === 3 && pressure.expectedMatchShape ? pressure : null;
 }
 function stats(row: { xg:number|null;shots:number|null;shotsOnTarget:number|null;shotsInsideBox:number|null;corners:number|null;possession:number|null } | null): FlowStats {
   if (!row) return {};
@@ -40,6 +40,6 @@ export async function liveMatchInsight(fixtureId:number,input:{minute:number;sta
 }
 
 export async function pendingMatchFlowFixtureIds(limit=20):Promise<number[]>{
-  const rows=await prisma.matchFlowEvaluationSnapshot.findMany({where:{pressureVersion:2,evaluationVersion:MATCH_FLOW_EVALUATION_VERSION,status:"PENDING"},orderBy:{kickoff:"asc"},take:limit,select:{fixtureId:true}});
+  const rows=await prisma.matchFlowEvaluationSnapshot.findMany({where:{pressureVersion:3,evaluationVersion:MATCH_FLOW_EVALUATION_VERSION,status:"PENDING"},orderBy:{kickoff:"asc"},take:limit,select:{fixtureId:true}});
   return rows.map((row)=>row.fixtureId);
 }
