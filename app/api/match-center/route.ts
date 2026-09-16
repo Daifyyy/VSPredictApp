@@ -5,6 +5,10 @@ import { captureLiveFixture, liveCenterFromCache, settleLiveCandidates } from "@
 import { prisma } from "@/lib/db";
 import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
 import { logError } from "@/lib/logError";
+import { liveMatchInsight } from "@/lib/data/matchFlowStore";
+import type { FlowStats } from "@/lib/picks/matchFlowEvaluation";
+import { publicMatchInsight } from "@/lib/picks/matchInsight";
+import { isAdminEmail } from "@/lib/entitlements";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +17,18 @@ type CachedVenue = { name: string | null; address: string | null; city: string |
 function sameVenue(left: string | null | undefined, right: string | null | undefined) {
   const normalize = (value: string | null | undefined) => value?.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/gi, "").toLowerCase() ?? "";
   return Boolean(normalize(left)) && normalize(left) === normalize(right);
+}
+
+function flowStats(value: unknown): FlowStats {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const row = value as Record<string, unknown>;
+  const number = (key: string) => typeof row[key] === "number" ? row[key] : undefined;
+  return { XG: number("XG"), SHOTS: number("SHOTS"), SHOTS_ON_TARGET: number("SHOTS_ON_TARGET"), SHOTS_INSIDE_BOX: number("SHOTS_INSIDE_BOX"), CORNERS: number("CORNERS"), POSSESSION: number("POSSESSION") };
+}
+
+function redCardCount(value: unknown) {
+  if (!Array.isArray(value)) return 0;
+  return value.filter((event) => event && typeof event === "object" && !Array.isArray(event) && (event as Record<string, unknown>).kind === "red").length;
 }
 
 async function cachedHomeVenue(homeTeamId: number, venueName: string | null): Promise<CachedVenue | null> {
@@ -75,13 +91,24 @@ export async function GET(req: Request) {
     ]);
     const venue = venueById ?? await cachedHomeVenue(refreshed?.homeTeamId ?? 0, refreshed?.venueName ?? null);
     const latestLineups = [...new Map(lineupRows.map((row) => [row.teamId, row])).values()];
-    const isPro = user?.tier === "PRO";
+    const isPro = user?.tier === "PRO" || isAdminEmail(user?.email);
+    const matchInsight = data.match
+      ? await liveMatchInsight(fixtureId, {
+          minute: data.match.minute ?? 0,
+          status: data.match.status,
+          home: flowStats(data.match.homeStats),
+          away: flowStats(data.match.awayStats),
+          goals: data.match.homeGoals != null && data.match.awayGoals != null ? { home: data.match.homeGoals, away: data.match.awayGoals } : null,
+          redCards: redCardCount(data.match.events),
+        })
+      : null;
     return NextResponse.json({
       match: data.match,
       venue,
       model: isPro ? data.model : null,
       odds: isPro ? data.odds : [],
       candidates: isPro ? data.candidates : [],
+      matchInsight: matchInsight && !isPro ? publicMatchInsight(matchInsight) : matchInsight,
       lineups: latestLineups.map((row) => ({
         teamId: row.teamId,
         status: row.status,

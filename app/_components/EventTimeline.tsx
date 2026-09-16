@@ -8,7 +8,7 @@ import {
 /**
  * Průběh zápasu: góly, karty a střídání na časové ose.
  *
- * Sdílí ji **dohraný** (`MatchReportPanel`) i **živý** zápas (`LiveReportPanel`) – je to
+ * Sdílí ji **dohraný** report i **živý** zápas v Match Centeru – je to
  * týž seznam, jen u živého roste. Druhá kopie by se rozešla přesně jako u rozměrů
  * přehledu, kde je proto `buildMatchDimensions` jediná.
  *

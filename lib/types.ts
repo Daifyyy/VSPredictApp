@@ -347,6 +347,7 @@ export interface PlayedModelReview {
     policyVersion: number;
   }>;
   matchFlow?: import("@/lib/picks/matchFlowEvaluation").MatchFlowEvaluation | null;
+  matchInsight?: import("@/lib/picks/matchInsight").MatchInsight | null;
 }
 
 /**

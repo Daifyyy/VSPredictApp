@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { getFixturesByDates } from "@/lib/data/repository";
 import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
-import { publicCache } from "@/lib/cacheHeaders";
 import { logError } from "@/lib/logError";
 import { pragueDay } from "@/lib/data/fixtures";
+import { getResultModelReviews, mergeResultModelReviews } from "@/lib/data/resultModelReviews";
+import { getCurrentUser } from "@/lib/authUser";
+import { isAdminEmail } from "@/lib/entitlements";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -17,7 +19,12 @@ export async function GET(request: Request) {
     .slice(0, 7);
   if (!dates.length) return NextResponse.json({ error: "Chybi platne datum" }, { status: 400 });
   try {
-    return NextResponse.json({ days: await getFixturesByDates(dates) }, { headers: publicCache(300, 86_400) });
+    const user = await getCurrentUser();
+    const pro = user?.tier === "PRO" || isAdminEmail(user?.email);
+    const days = await getFixturesByDates(dates);
+    const fixtureIds = days.flatMap((day) => day.played.map((fixture) => fixture.fixtureId));
+    const enriched = mergeResultModelReviews(days, await getResultModelReviews(fixtureIds, { pro }));
+    return NextResponse.json({ days: enriched }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     logError("api/fixtures/results", error, { dates });
     return NextResponse.json({ error: "Vysledky se nepodarilo obnovit" }, { status: 502 });

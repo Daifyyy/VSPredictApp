@@ -39,7 +39,7 @@ on:
     - cron: "30 4 * * *" # predict-upcoming
     - cron: "30 16 * * *" # predict-upcoming (večerní opravný průchod)
     - cron: "0 5 * * *" # refresh-transfers
-    # 09:00 Europe/Prague: oba UTC sloty kvuli DST; endpoint mimo lokalni 09:00 udela no-op.
+    # 09:00 Europe/Prague: oba UTC sloty kvuli DST; endpoint prijima zpozdeny ranni beh do 10:59.
     # Dva pokusy mimo celou hodinu chrani pred best-effort vypadkem GitHub scheduleru;
     # databazova idempotence zaruci, ze kanal presto dostane jen jednu serii zprav.
     - cron: "11,41 7,8 * * *" # telegram-digest

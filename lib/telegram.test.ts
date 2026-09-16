@@ -5,7 +5,7 @@ vi.mock("@/lib/db", () => ({ prisma: { telegramCommandCursor: { findUnique: mock
 vi.mock("@/lib/operations", () => ({ upsertIncident: vi.fn() }));
 vi.mock("@/lib/data/strategyHubStore", () => ({ strategyHubData: mocks.strategyData }));
 
-import { formatTips, handleTelegramCommand, isTelegramDateAllowed, pragueClock, shiftDateKey, splitTelegramBlocks, telegramConfig, telegramStrategyAlias, type TelegramDay } from "./telegram";
+import { formatResults, formatTips, handleTelegramCommand, isTelegramDateAllowed, pragueClock, shiftDateKey, splitTelegramBlocks, telegramConfig, telegramStrategyAlias, type TelegramDay } from "./telegram";
 
 const emptyMetrics = { all: {}, recent: {}, selectionAccuracy: null, unit: "SELECTIONS" };
 function day(): TelegramDay {
@@ -24,9 +24,19 @@ describe("telegram formatting", () => {
     expect(pragueClock(new Date("2026-07-10T07:00:00Z"))).toEqual({ date: "2026-07-10", hour: 9 });
     expect(pragueClock(new Date("2026-12-10T08:00:00Z"))).toEqual({ date: "2026-12-10", hour: 9 });
   });
+  it("keeps the publication idempotency window open for delayed schedulers", () => {
+    expect(pragueClock(new Date("2026-09-13T07:15:00Z")).hour).toBe(9);
+    expect(pragueClock(new Date("2026-09-13T08:55:00Z")).hour).toBe(10);
+  });
   it("shows a compact top three, marks estimates and escapes HTML", () => {
     const text = formatTips(day()).join("\n");
     expect(text).toContain("1.82 <i>(odhad)</i>"); expect(text).toContain("A &lt; B"); expect(text).toContain("⏳"); expect(text).not.toContain("EV"); expect(text).not.toContain("Model"); expect(text).not.toContain("Domácí 3");
+  });
+  it("adds one immutable flow diagnosis only to a result payload", () => {
+    const payload=day();
+    payload.strategies[0].data.opportunities[0].outcome="WON";
+    (payload.strategies[0].data.opportunities[0] as typeof payload.strategies[0]["data"]["opportunities"][number] & {flowDiagnosis:{code:string;label:string;summary:string}}).flowDiagnosis={code:"CORRECT_FLOW_BAD_FINISHING",label:"Průběh správně, rozhodlo zakončení",summary:""};
+    expect(formatResults(payload).join("\n")).toContain("🧭 Průběh správně, rozhodlo zakončení");
   });
   it("splits messages under the Telegram safety limit", () => {
     const chunks = splitTelegramBlocks(["a".repeat(2000), "b".repeat(2000)], 3000);

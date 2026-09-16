@@ -17,6 +17,8 @@ import { COUNT_MARKET_SIGNAL_POLICY_VERSION, MARKET_SIGNAL_POLICY_VERSION, TEAM_
 import { getRefereeProfile } from "@/lib/data/refereeStore";
 import { getHeadToHead } from "@/lib/data/h2h";
 import { teamTotalProb } from "@/lib/picks/teamTotals";
+import { buildMatchInsight, publicMatchInsight } from "@/lib/picks/matchInsight";
+import type { PerformancePressureShadow } from "@/lib/picks/performancePressureShadow";
 
 const countSamples = unstable_cache(async () => {
   if (!isRealDataConfigured()) return {};
@@ -72,9 +74,11 @@ export async function GET(req: Request) {
   try {
     const row = await getFixturePredictionRow(fixtureId);
     if (!row || !row.available) return NextResponse.json({ forecast: null });
+    const pressure = row.inputSnapshot?.performancePressure as PerformancePressureShadow | null | undefined;
+    const matchInsight = pressure?.version === 2 ? buildMatchInsight({ pressure, phase: "PREMATCH" }) : null;
     if (locked) {
       const headToHead = await getHeadToHead(row.homeTeamId, row.awayTeamId);
-      return NextResponse.json({ locked: true, headToHead });
+      return NextResponse.json({ locked: true, headToHead, matchInsight: matchInsight ? publicMatchInsight(matchInsight) : null });
     }
     const books = parseBooks(row.oddsBooks);
     const closeBooks = parseBooks(row.oddsCloseBooks);
@@ -223,7 +227,7 @@ export async function GET(req: Request) {
       headToHead,
       performancePressure: row.inputSnapshot?.performancePressure ?? null,
     };
-    return NextResponse.json({ forecast });
+    return NextResponse.json({ forecast, matchInsight });
   } catch (error) {
     logError("api/predictions/fixture", error, { fixtureId });
     return NextResponse.json({ error: "Predikci se nepodařilo načíst" }, { status: 502 });

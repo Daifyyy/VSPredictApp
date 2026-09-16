@@ -133,6 +133,7 @@ model MatchFlowEvaluationSnapshot {
   evaluationVersion Int
   status            String   @default("PENDING")
   verdict           String?
+  diagnosisCode     String?
   coverage          Float    @default(0)
   structurallyChanged Boolean @default(false)
   expectation       Json
@@ -145,6 +146,7 @@ model MatchFlowEvaluationSnapshot {
 
   @@unique([fixtureId, pressureVersion, evaluationVersion])
   @@index([pressureVersion, evaluationVersion, status])
+  @@index([evaluationVersion, status, diagnosisCode])
   @@index([leagueId, kickoff])
 }
 

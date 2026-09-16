@@ -1,10 +1,12 @@
 import type { ExpectedMatchShape, ExpectedMetric, PerformancePressureShadow } from "./performancePressureShadow";
 
-export const MATCH_FLOW_EVALUATION_VERSION = 1;
+export const MATCH_FLOW_EVALUATION_VERSION = 2;
 export type MatchFlowVerdict = "TREFENO" | "CASTECNE" | "NETREFENO" | "NEDOSTATEK_DAT";
+export type MatchFlowDiagnosisCode = "FLOW_CONFIRMED" | "CORRECT_FLOW_BAD_FINISHING" | "WRONG_DOMINANCE" | "WRONG_PACE" | "CHANCE_CREATION_MISS" | "WEAKER_SIDE_ABSENT" | "STRUCTURAL_CHANGE" | "PARTIAL_MATCH" | "INSUFFICIENT_DATA";
 export type FlowStats = Partial<Record<"XG"|"SHOTS"|"SHOTS_ON_TARGET"|"SHOTS_INSIDE_BOX"|"CORNERS"|"POSSESSION",number>>;
 export interface MatchFlowComponent { key:"DOMINANCE"|"PACE"|"CHANCE_CREATION"|"WEAKER_SIDE"|"FINISHING"; verdict:MatchFlowVerdict; label:string; detail:string; expected:number|null; actual:number|null; difference:number|null; source:string|null }
-export interface MatchFlowEvaluation { version:1; pressureVersion:number; minute:number; final:boolean; verdict:MatchFlowVerdict; headline:string; strongestMatch:string|null; largestMiss:string|null; coverage:number; structurallyChanged:boolean; warnings:string[]; components:MatchFlowComponent[] }
+export interface MatchFlowDiagnosis { code:MatchFlowDiagnosisCode; label:string; summary:string }
+export interface MatchFlowEvaluation { version:2; pressureVersion:number; minute:number; final:boolean; verdict:MatchFlowVerdict; headline:string; diagnosis:MatchFlowDiagnosis; strongestMatch:string|null; largestMiss:string|null; coverage:number; structurallyChanged:boolean; warnings:string[]; components:MatchFlowComponent[] }
 type MetricKey="xg"|"shots"|"shotsOnTarget"|"shotsInsideBox"|"corners"|"possession";
 const fields={xg:"XG",shots:"SHOTS",shotsOnTarget:"SHOTS_ON_TARGET",shotsInsideBox:"SHOTS_INSIDE_BOX",corners:"CORNERS",possession:"POSSESSION"} as const;
 const clamp=(v:number,min=0,max=1)=>Math.min(max,Math.max(min,v)),round=(v:number,d=2)=>Number(v.toFixed(d));
@@ -13,6 +15,33 @@ const total=(a:number|null,b:number|null)=>a==null&&b==null?null:(a??0)+(b??0);
 const share=(a:number|null,b:number|null)=>{const t=total(a,b);return t!=null&&t>0?(a??0)/t:null};
 const grade=(error:number,good:number,partial:number):MatchFlowVerdict=>error<=good?"TREFENO":error<=partial?"CASTECNE":"NETREFENO";
 const expected=(shape:ExpectedMatchShape,side:"home"|"away",key:Exclude<MetricKey,"possession">):ExpectedMetric=>shape[side][key];
+
+const DIAGNOSIS_COPY:Record<MatchFlowDiagnosisCode,{label:string;summary:string}>={
+  FLOW_CONFIRMED:{label:"Průběh potvrzen",summary:"Zápas se vyvíjel v souladu s předzápasovým očekáváním."},
+  CORRECT_FLOW_BAD_FINISHING:{label:"Průběh správně, rozhodlo zakončení",summary:"Tvorba hry odpovídala očekávání, ale góly neodpovídaly vytvořeným šancím."},
+  WRONG_DOMINANCE:{label:"Obrácená dominance",summary:"Nebezpečnější byl jiný tým nebo byl poměr sil výrazně jiný, než model čekal."},
+  WRONG_PACE:{label:"Chybně odhadnuté tempo",summary:"Objem tvorby šancí byl výrazně vyšší nebo nižší než předzápasové očekávání."},
+  CHANCE_CREATION_MISS:{label:"Jiná tvorba šancí",summary:"Střely, xG nebo zakončení z vápna se významně odchýlily od očekávání."},
+  WEAKER_SIDE_ABSENT:{label:"Slabší tým se nezapojil",summary:"Slabší strana vytvořila podstatně menší díl nebezpečí, než model očekával."},
+  STRUCTURAL_CHANGE:{label:"Zápas změnila mimořádná událost",summary:"Červená karta nebo přerušení zásadně změnily podmínky pro původní predikci."},
+  PARTIAL_MATCH:{label:"Průběh odpovídal jen částečně",summary:"Část očekávaného obrazu se potvrdila, jiné důležité složky nikoli."},
+  INSUFFICIENT_DATA:{label:"Nedostatek dat",summary:"Pro spolehlivé posouzení očekávaného průběhu chybí dostatek živých nebo finálních statistik."},
+};
+
+export function diagnoseMatchFlow(input:{verdict:MatchFlowVerdict;structurallyChanged:boolean;components:MatchFlowComponent[]}):MatchFlowDiagnosis{
+  const component=(key:MatchFlowComponent["key"])=>input.components.find((item)=>item.key===key);
+  let code:MatchFlowDiagnosisCode;
+  if(input.structurallyChanged)code="STRUCTURAL_CHANGE";
+  else if(input.verdict==="NEDOSTATEK_DAT")code="INSUFFICIENT_DATA";
+  else if(input.verdict!=="NETREFENO"&&component("FINISHING")?.verdict==="NETREFENO")code="CORRECT_FLOW_BAD_FINISHING";
+  else if(component("DOMINANCE")?.verdict==="NETREFENO")code="WRONG_DOMINANCE";
+  else if(component("PACE")?.verdict==="NETREFENO")code="WRONG_PACE";
+  else if(component("WEAKER_SIDE")?.verdict==="NETREFENO"&&(component("WEAKER_SIDE")?.difference??0)<0)code="WEAKER_SIDE_ABSENT";
+  else if(component("CHANCE_CREATION")?.verdict==="NETREFENO")code="CHANCE_CREATION_MISS";
+  else if(input.verdict==="TREFENO")code="FLOW_CONFIRMED";
+  else code="PARTIAL_MATCH";
+  return{code,...DIAGNOSIS_COPY[code]};
+}
 
 export function evaluateMatchFlow(input:{pressure:PerformancePressureShadow;minute:number;status?:string;home:FlowStats;away:FlowStats;goals?:{home:number;away:number}|null;redCards?:number;interrupted?:boolean;final?:boolean}):MatchFlowEvaluation{
   const shape=input.pressure.expectedMatchShape,minute=Math.min(90,Math.max(0,input.minute)),final=input.final===true||["FT","AET","PEN"].includes(input.status??""),warnings:string[]=[],structurallyChanged=(input.redCards??0)>0||input.interrupted===true;
@@ -30,5 +59,6 @@ export function evaluateMatchFlow(input:{pressure:PerformancePressureShadow;minu
   const actualXg=total(value(input.home,"xg"),value(input.away,"xg")),goals=input.goals?input.goals.home+input.goals.away:null;if(goals!=null&&actualXg!=null&&(final||minute>=70)){const error=Math.abs(goals-actualXg);components.push({key:"FINISHING",label:"Zakončení",verdict:grade(error,.75,1.5),detail:`${goals} gólů z ${actualXg.toFixed(2)} xG; zakončení je oddělené od průběhu.`,expected:round(actualXg),actual:goals,difference:round(goals-actualXg),source:"góly proti xG"})}
   const evaluable=components.filter(c=>c.key!=="FINISHING");let verdict:MatchFlowVerdict="NEDOSTATEK_DAT";if(minute>=15&&evaluable.length>=2){const avg=evaluable.reduce((sum,c)=>sum+(c.verdict==="TREFENO"?0:c.verdict==="CASTECNE"?1:2),0)/evaluable.length;verdict=avg<=.5?"TREFENO":avg<=1.25?"CASTECNE":"NETREFENO"}
   const rank=(v:MatchFlowVerdict)=>({TREFENO:0,CASTECNE:1,NETREFENO:2,NEDOSTATEK_DAT:3}[v]),sorted=[...evaluable].sort((a,b)=>rank(a.verdict)-rank(b.verdict)),headlines={TREFENO:"Předpokládaný průběh se potvrzuje.",CASTECNE:"Průběh odpovídá očekávání jen částečně.",NETREFENO:"Skutečný obraz zápasu je výrazně jiný než očekávání.",NEDOSTATEK_DAT:"Na spolehlivé porovnání zatím není dost dat."};
-  return{version:1,pressureVersion:input.pressure.version,minute,final,verdict,headline:headlines[verdict],strongestMatch:sorted.find(c=>c.verdict==="TREFENO")?.label??null,largestMiss:[...evaluable].reverse().find(c=>c.verdict==="NETREFENO")?.label??null,coverage:round(evaluable.length/4),structurallyChanged,warnings,components};
+  const diagnosis=diagnoseMatchFlow({verdict,structurallyChanged,components});
+  return{version:2,pressureVersion:input.pressure.version,minute,final,verdict,headline:headlines[verdict],diagnosis,strongestMatch:sorted.find(c=>c.verdict==="TREFENO")?.label??null,largestMiss:[...evaluable].reverse().find(c=>c.verdict==="NETREFENO")?.label??null,coverage:round(evaluable.length/4),structurallyChanged,warnings,components};
 }

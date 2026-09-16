@@ -10,7 +10,7 @@ import { quickOverviewCaptureAudit } from "./quickOverviewAudit";
 import { MAIN_MODEL_SHADOW_METHOD, MAIN_MODEL_SHADOW_VERSION } from "@/lib/picks/mainModelShadow";
 import { evaluateModelRows, type ModelEvaluationRow } from "@/lib/picks/modelEvaluation";
 import type { PerformancePressureShadow } from "@/lib/picks/performancePressureShadow";
-import type { MatchFlowEvaluation } from "@/lib/picks/matchFlowEvaluation";
+import { MATCH_FLOW_EVALUATION_VERSION, type MatchFlowDiagnosisCode, type MatchFlowEvaluation } from "@/lib/picks/matchFlowEvaluation";
 import type { ExpectedMatchShape } from "@/lib/picks/performancePressureShadow";
 
 const FINISHED = ["FT", "AET", "PEN"];
@@ -153,10 +153,11 @@ export async function getModelGovernanceDashboard(now = new Date()) {
     development: pressureCheckpoints,
     recent: pressureCohort.slice(-12).reverse().map((row) => ({ fixtureId: row.fixtureId, kickoff: row.kickoff, homeName: row.homeName, awayName: row.awayName, opennessScore: row.pressure.opennessScore, currentOver25: row.pressure.currentOver25, shadowOver25: row.pressure.shadowOver25, over25Delta: row.pressure.over25Delta, coverage: row.pressure.coverage.ratio, dependencyRisk: row.pressure.dependencyRisk.level, homePressure: row.pressure.home.expectedPressure, awayPressure: row.pressure.away.expectedPressure })),
   };
-  const flowRows = await prisma.matchFlowEvaluationSnapshot.findMany({ where: { pressureVersion: 2, evaluationVersion: 1, status: "SETTLED" }, orderBy: { kickoff: "desc" }, take: 500 });
+  const flowRows = await prisma.matchFlowEvaluationSnapshot.findMany({ where: { pressureVersion: 2, evaluationVersion: MATCH_FLOW_EVALUATION_VERSION, status: "SETTLED" }, orderBy: { kickoff: "desc" }, take: 500 });
   const flowEvaluations = flowRows.flatMap((row) => row.evaluation ? [{ row, evaluation: row.evaluation as unknown as MatchFlowEvaluation }] : []);
   const flowCounts = { TREFENO: 0, CASTECNE: 0, NETREFENO: 0, NEDOSTATEK_DAT: 0 };
   for (const item of flowEvaluations) flowCounts[item.evaluation.verdict]++;
+  const diagnosisCounts = Object.fromEntries((["FLOW_CONFIRMED","CORRECT_FLOW_BAD_FINISHING","WRONG_DOMINANCE","WRONG_PACE","CHANCE_CREATION_MISS","WEAKER_SIDE_ABSENT","STRUCTURAL_CHANGE","PARTIAL_MATCH","INSUFFICIENT_DATA"] satisfies MatchFlowDiagnosisCode[]).map((code)=>[code,flowEvaluations.filter((item)=>item.evaluation.diagnosis.code===code).length])) as Record<MatchFlowDiagnosisCode,number>;
   const flowComponents = flowEvaluations.flatMap((item) => item.evaluation.components);
   const componentSummary = (["DOMINANCE", "PACE", "CHANCE_CREATION", "WEAKER_SIDE"] as const).map((key) => { const rows = flowComponents.filter((row) => row.key === key), errors = rows.filter((row) => row.difference != null); return { key, n: rows.length, hitRate: rows.length ? rows.filter((row) => row.verdict === "TREFENO").length / rows.length : 0, averageError: errors.length ? errors.reduce((sum, row) => sum + Math.abs(row.difference!), 0) / errors.length : null }; });
   const segment = (label:string,rows:typeof flowEvaluations) => ({label,n:rows.length,hitRate:rows.length?rows.filter((item)=>item.evaluation.verdict==="TREFENO").length/rows.length:0});
@@ -165,7 +166,12 @@ export async function getModelGovernanceDashboard(now = new Date()) {
   const roleSegments=["HOME","AWAY","BALANCED"].map((role)=>segment(role,flowEvaluations.filter((item)=>roleOf(item)===role)));
   const dependencySegments=["LOW","MEDIUM","HIGH"].map((level)=>segment(level,flowEvaluations.filter((item)=>expectedOf(item).dependencyRisk?.level===level)));
   const leagueSegments=[...new Set(flowEvaluations.map((item)=>item.row.leagueId))].map((leagueId)=>segment(PUBLIC_CLUB_LEAGUES.find((league)=>league.id===leagueId)?.name??String(leagueId),flowEvaluations.filter((item)=>item.row.leagueId===leagueId))).sort((a,b)=>b.n-a.n).slice(0,10);
-  const matchFlow = { version: 1, pressureVersion: 2, total: flowEvaluations.length, counts: flowCounts, averageCoverage: flowEvaluations.length ? flowEvaluations.reduce((sum,item)=>sum+item.evaluation.coverage,0)/flowEvaluations.length : 0, structurallyChanged: flowEvaluations.filter((item)=>item.evaluation.structurallyChanged).length, components: componentSummary,segments:{role:roleSegments,dependency:dependencySegments,league:leagueSegments} };
+  const predictionByFixture=new Map(predictions.map((row)=>[row.fixtureId,row]));
+  const oddsBucket=(item:typeof flowEvaluations[number])=>{const row=predictionByFixture.get(item.row.fixtureId),favorite=Math.min(row?.oddsHome??99,row?.oddsAway??99);return favorite<=1.6?"Favorit ≤1,60":favorite<=2.2?"Favorit 1,61–2,20":favorite<99?"Favorit >2,20":"Bez openingu"};
+  const oddsSegments=["Favorit ≤1,60","Favorit 1,61–2,20","Favorit >2,20","Bez openingu"].map((bucket)=>segment(bucket,flowEvaluations.filter((item)=>oddsBucket(item)===bucket)));
+  const venueSegments=["HOME","AWAY","BALANCED"].map((role)=>segment(role==="HOME"?"Domácí očekávaně silnější":role==="AWAY"?"Hosté očekávaně silnější":"Vyrovnané",flowEvaluations.filter((item)=>roleOf(item)===role)));
+  const pressureByFixture=new Map(pressureCohort.map((row)=>[row.fixtureId,row]));
+  const matchFlow = { version: MATCH_FLOW_EVALUATION_VERSION, pressureVersion: 2, total: flowEvaluations.length, counts: flowCounts, diagnosisCounts, averageCoverage: flowEvaluations.length ? flowEvaluations.reduce((sum,item)=>sum+item.evaluation.coverage,0)/flowEvaluations.length : 0, structurallyChanged: flowEvaluations.filter((item)=>item.evaluation.structurallyChanged).length, components: componentSummary,segments:{role:roleSegments,dependency:dependencySegments,league:leagueSegments,odds:oddsSegments,venue:venueSegments},recent:flowEvaluations.slice(0,20).map((item)=>{const fixture=pressureByFixture.get(item.row.fixtureId);return{fixtureId:item.row.fixtureId,kickoff:item.row.kickoff,homeName:fixture?.homeName??`Fixture ${item.row.fixtureId}`,awayName:fixture?.awayName??"",diagnosis:item.evaluation.diagnosis,verdict:item.evaluation.verdict,coverage:item.evaluation.coverage}}) };
   const definitionsByKey = new Map(definitions.map((row) => [`${row.strategy}:${row.policyVersion}:${row.modelContext}`, row]));
   const finishedFixtures = new Set(predictions.map((row) => row.fixtureId));
   const samplesByKey = new Map<string, number>();
@@ -192,6 +198,7 @@ export async function getModelGovernanceDashboard(now = new Date()) {
     ...checkpoints.filter((item) => item.pendingCount >= 5).map((item) => ({ priority: "NOW", title: `Zkontrolovat nový kalibrační report ${item.modelContext}`, reason: `${item.pendingCount} nových výsledků naplnilo bezpečný přepočet`, due: "po nejbližším běhu cronu" })),
     ...strategies.filter((item) => item.nextMilestone != null && item.remaining <= 10).map((item) => ({ priority: "SOON", title: `Vyhodnotit ${item.title} při ${item.nextMilestone} výsledcích`, reason: `Do milníku zbývá ${item.remaining}`, due: `při n=${item.nextMilestone}` })),
     ...leagues.filter((item) => item.status === "REVIEW").map((item) => ({ priority: "WATCH", title: `Prověřit kohortu ${item.name}`, reason: `Modelový log-loss je o ${((item.modelLogLoss! - item.marketLogLoss!) * 100).toFixed(1)} bodu horší než trh (n=${item.n})`, due: "před změnou modelu" })),
+    ...(matchFlow.total >= 200 ? [{ priority: "SOON", title: "Ručně vyhodnotit tlakový model při n=200", reason: "Prospektivní kohorta dosáhla rozhodovacího minima; automatické povýšení zůstává vypnuté.", due: "před jakýmkoli zapojením do tipů" }] : []),
   ];
   const shadow = Object.fromEntries(shadowCounts.map((row) => [row.status, row._count]));
   return { asOf: now, modelVersion: MODEL_VERSION, tasks, strategies, leagues, checkpoints, personnel, quickOverview, mainModelShadow, performancePressure, matchFlow, shadow: { total: Object.values(shadow).reduce((sum, value) => sum + value, 0), candidates: shadow.candidate ?? 0, watch: shadow.watch ?? 0 } };

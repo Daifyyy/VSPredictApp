@@ -5,12 +5,14 @@ import { strategyHubData, type StrategyHubMetrics, type StrategyHubOpportunity, 
 import { prisma } from "@/lib/db";
 import { upsertIncident } from "@/lib/operations";
 import { STRATEGY_HUB_CATALOG, STRATEGY_HUB_IDS, isDateKey, type StrategyHubId } from "@/lib/picks/strategyHub";
+import { MATCH_FLOW_EVALUATION_VERSION, type MatchFlowDiagnosis } from "@/lib/picks/matchFlowEvaluation";
 
 export const TELEGRAM_TOP_LIMIT = 3;
 export const TELEGRAM_PAGE_SIZE = 5;
 const TEXT_LIMIT = 3900;
 type Kind = "RESULTS" | "TICKETS" | "STRATEGIES";
-type HubData = { opportunities: StrategyHubOpportunity[]; tickets: StrategyHubTicket[]; metrics: StrategyHubMetrics; coverage: { candidates: number; priced: number; tickets: number }; emptyReason: string | null };
+type TelegramOpportunity = StrategyHubOpportunity & { flowDiagnosis?: MatchFlowDiagnosis | null };
+type HubData = { opportunities: TelegramOpportunity[]; tickets: StrategyHubTicket[]; metrics: StrategyHubMetrics; coverage: { candidates: number; priced: number; tickets: number }; emptyReason: string | null };
 export type TelegramDay = { date: string; generatedAt: string; strategies: Array<{ strategy: StrategyHubId; data: HubData }> };
 const asJson = (value: unknown) => value as Prisma.InputJsonValue;
 const esc = (value: unknown) => String(value ?? "").slice(0, 900).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
@@ -34,9 +36,10 @@ const strategyIcon = (id: StrategyHubId) => ({ VALUE: "💎", ELO_INTUITION: "�
 const outcomeIcon = (value: StrategyHubOpportunity["outcome"]) => value === "PENDING" ? "⏳" : value === "WON" ? "✅" : value === "LOST" ? "❌" : "↩️";
 const ticketOutcomeIcon = (value: StrategyHubTicket["outcome"]) => value === "PENDING" ? "⏳" : value === "WON" ? "✅" : value === "LOST" ? "❌" : "↩️";
 
-function opportunity(item: StrategyHubOpportunity) {
+function opportunity(item: TelegramOpportunity) {
   const price = item.priceKind === "SYNTHETIC" ? `${odd(item.odds)} <i>(odhad)</i>` : item.priceKind === "NONE" ? "bez kurzu" : odd(item.odds);
-  return `${outcomeIcon(item.outcome)} <b>${esc(item.homeName)} – ${esc(item.awayName)}</b>\n   🎯 ${esc(item.selection)}\n   💰 ${price}`;
+  const diagnosis = item.flowDiagnosis ? `\n   🧭 ${esc(item.flowDiagnosis.label)}` : "";
+  return `${outcomeIcon(item.outcome)} <b>${esc(item.homeName)} – ${esc(item.awayName)}</b>\n   🎯 ${esc(item.selection)}\n   💰 ${price}${diagnosis}`;
 }
 function empty(id: StrategyHubId) { return `${strategyIcon(id)} <b>${esc(title(id))}</b>\n   Dnes bez výběru.`; }
 
@@ -97,11 +100,15 @@ async function publishedResults(date: string, channelId: string) {
       if (publication.kind === "TICKETS" && (row.strategy === "VALUE" || row.strategy === "ELO_INTUITION")) { const ticketSlots = new Set(row.data.tickets.map((item) => item.slot)); slots.set(row.strategy, ticketSlots); ids.set(row.strategy, new Set(row.data.opportunities.filter((item) => item.ticketSlots.some((slot) => ticketSlots.has(slot))).map((item) => item.id))); }
     }
   }
-  return { ...current, strategies: current.strategies.map((row) => ({ ...row, data: { ...row.data, opportunities: row.data.opportunities.filter((item) => ids.get(row.strategy)?.has(item.id)), tickets: row.data.tickets.filter((item) => slots.get(row.strategy)?.has(item.slot)) } })) };
+  const filtered = { ...current, strategies: current.strategies.map((row) => ({ ...row, data: { ...row.data, opportunities: row.data.opportunities.filter((item) => ids.get(row.strategy)?.has(item.id)), tickets: row.data.tickets.filter((item) => slots.get(row.strategy)?.has(item.slot)) } })) };
+  const fixtureIds = [...new Set(filtered.strategies.flatMap((row) => row.data.opportunities.map((item) => item.fixtureId)))];
+  const flows = fixtureIds.length ? await prisma.matchFlowEvaluationSnapshot.findMany({ where: { fixtureId: { in: fixtureIds }, evaluationVersion: MATCH_FLOW_EVALUATION_VERSION, status: "SETTLED" }, select: { fixtureId: true, evaluation: true } }) : [];
+  const diagnoses = new Map(flows.flatMap((row) => { const diagnosis = (row.evaluation as unknown as { diagnosis?: MatchFlowDiagnosis } | null)?.diagnosis; return diagnosis ? [[row.fixtureId, diagnosis] as const] : []; }));
+  return { ...filtered, strategies: filtered.strategies.map((row) => ({ ...row, data: { ...row.data, opportunities: row.data.opportunities.map((item) => ({ ...item, flowDiagnosis: diagnoses.get(item.fixtureId) ?? null })) } })) };
 }
 
 export async function publishTelegramMorning(now = new Date(), options: { dryRun?: boolean; force?: boolean } = {}) {
-  const config = telegramConfig(); const clock = pragueClock(now); if (!options.force && clock.hour !== 9) return { skipped: "OUTSIDE_PRAGUE_09", date: clock.date };
+  const config = telegramConfig(); const clock = pragueClock(now); if (!options.force && (clock.hour < 9 || clock.hour > 10)) return { skipped: "OUTSIDE_PRAGUE_MORNING_WINDOW", date: clock.date };
   await Promise.all([
     prisma.telegramPublication.updateMany({ where: { status: "SENDING", updatedAt: { lt: new Date(now.getTime() - 15 * 60_000) } }, data: { status: "FAILED", lastError: "Obnova po přerušeném odesílání" } }),
     prisma.telegramCommandCursor.deleteMany({ where: { updatedAt: { lt: new Date(now.getTime() - 30 * 86400_000) } } }),

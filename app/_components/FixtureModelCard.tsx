@@ -5,13 +5,15 @@ import type { FixtureModelForecast } from "@/lib/types";
 import { COUNT_MARKET_PRESENTATION } from "@/lib/picks/countPresentation";
 import { useCurrentUser } from "./useCurrentUser";
 import { HeadToHeadCard } from "./HeadToHeadCard";
+import type { MatchInsight } from "@/lib/picks/matchInsight";
+import { MatchInsightCard } from "./MatchInsightCard";
 
 type State =
   | { state: "loading" }
-  | { state: "locked"; headToHead?: FixtureModelForecast["headToHead"] }
+  | { state: "locked"; headToHead?: FixtureModelForecast["headToHead"]; matchInsight?: MatchInsight | null }
   | { state: "empty" }
   | { state: "error" }
-  | { state: "ready"; forecast: FixtureModelForecast };
+  | { state: "ready"; forecast: FixtureModelForecast; matchInsight: MatchInsight | null };
 
 export function FixtureModelCard({
   fixtureId,
@@ -32,15 +34,16 @@ export function FixtureModelCard({
           locked?: boolean;
           headToHead?: FixtureModelForecast["headToHead"];
           forecast?: FixtureModelForecast | null;
+          matchInsight?: MatchInsight | null;
         }>;
       })
       .then((result) => {
         if (!active) return;
         setData(
           result.locked
-            ? { state: "locked", headToHead: result.headToHead }
+            ? { state: "locked", headToHead: result.headToHead, matchInsight: result.matchInsight }
             : result.forecast
-              ? { state: "ready", forecast: result.forecast }
+              ? { state: "ready", forecast: result.forecast, matchInsight: result.matchInsight ?? null }
               : { state: "empty" }
         );
       })
@@ -56,6 +59,7 @@ export function FixtureModelCard({
 
   if (data.state === "loading") return <Message text="Načítám model…" />;
   if (data.state === "locked") return <div className="space-y-3">
+    {data.matchInsight && <MatchInsightCard insight={data.matchInsight} variant="summary" />}
     <Message text="Kompletní model zápasu je součástí PRO." />
     {data.headToHead && <HeadToHeadCard summary={data.headToHead} teamAName={teamName(data.headToHead, data.headToHead.teamAId, "Domácí")} teamBName={teamName(data.headToHead, data.headToHead.teamBId, "Hosté")} compact />}
   </div>;
@@ -64,6 +68,7 @@ export function FixtureModelCard({
 
   const f = data.forecast;
   if (countsOnly) return <div id={`model-${fixtureId}`} className="scroll-mt-20 space-y-3 rounded-xl border border-border bg-background/55 p-3 text-xs">
+    {data.matchInsight && <MatchInsightCard insight={data.matchInsight} variant="detail" pro />}
     <TempoDiscipline corners={f.corners} fouls={f.fouls} cards={f.cards} referee={f.refereeProfile} />
     <RefereeProfile profile={f.refereeProfile} fixtureId={fixtureId} canEdit={user?.isAdmin === true} onAssigned={() => setRevision((value) => value + 1)} />
   </div>;
@@ -77,7 +82,7 @@ export function FixtureModelCard({
         </div>
       </div>
       <ExpectedMatch forecast={f} />
-      <PerformancePressure forecast={f} />
+      {data.matchInsight ? <MatchInsightCard insight={data.matchInsight} variant="detail" pro /> : <PerformancePressure forecast={f} />}
       <TempoDiscipline corners={f.corners} fouls={f.fouls} cards={f.cards} referee={f.refereeProfile} />
       <TechnicalDetails forecast={f} fixtureId={fixtureId} canEditReferee={user?.isAdmin === true} onRefereeAssigned={() => setRevision((value) => value + 1)} />
     </div>
@@ -100,6 +105,11 @@ function PerformancePressure({ forecast }: { forecast: FixtureModelForecast }) {
   const shadow = forecast.performancePressure;
   if (!shadow) return <section className="rounded-xl border border-border bg-surface p-3"><div className="flex items-center justify-between gap-2"><strong className="text-foreground">Tlak a tvorba šancí</strong><Badge>Shadow</Badge></div><p className="mt-2 text-muted">Profil vznikne při příštím přepočtu predikce. Ostrý model ani tipy neovlivňuje.</p></section>;
   const risk = shadow.dependencyRisk.level === "HIGH" ? "Vysoká" : shadow.dependencyRisk.level === "MEDIUM" ? "Střední" : "Nízká";
+  const shape = shadow.expectedMatchShape;
+  const homeShare = shape?.home.chanceShare.value ?? null;
+  const dominantSide = homeShare == null ? null : homeShare >= .6 ? "Domácí by měli vytvářet většinu nebezpečí" : homeShare <= .4 ? "Hosté by měli vytvářet většinu nebezpečí" : "Tvorba šancí by měla být poměrně vyrovnaná";
+  const tempo = shadow.opennessScore == null ? null : shadow.opennessScore >= 70 ? "profil čeká otevřenější zápas s vyšším objemem akcí" : shadow.opennessScore <= 45 ? "profil čeká spíše sevřený zápas s nižším tempem" : "profil čeká střední tempo";
+  const interpretation = [dominantSide, tempo].filter(Boolean).join("; ");
   const value = (input: number | null, digits: number, suffix = "") => input == null ? "—" : `${input.toFixed(digits)}${suffix}`;
   const side = (label: string, data: typeof shadow.home, expected?: typeof shadow.expectedMatchShape.home) => <div className="rounded-lg bg-background px-3 py-3"><strong className="text-foreground">{label}</strong><dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 tabular-nums"><MiniDatum label="Index oček. tlaku" value={value(data.expectedPressure, 0)} /><MiniDatum label={expected ? "Očekávané xG" : "Historické xG"} value={value(expected?.xg.value ?? data.xg, 2)} /><MiniDatum label={expected ? "Oček. střely" : "Historické střely"} value={value(expected?.shots.value ?? data.shots, 1)} /><MiniDatum label="Oček. na branku" value={value(expected?.shotsOnTarget.value ?? data.shotsOnTarget, 1)} /><MiniDatum label="Oček. z vápna" value={value(expected?.shotsInsideBox.value ?? data.shotsInsideBox, 1)} /><MiniDatum label="Podíl šancí" value={pct(expected?.chanceShare.value ?? null)} /></dl></div>;
   return <section className="rounded-xl border border-border bg-surface p-3" aria-label="Shadow model tlaku a tvorby šancí">
@@ -107,6 +117,8 @@ function PerformancePressure({ forecast }: { forecast: FixtureModelForecast }) {
     <div className="mt-3 grid gap-2 sm:grid-cols-2">{side("Domácí", shadow.home, shadow.expectedMatchShape?.home)}{side("Hosté", shadow.away, shadow.expectedMatchShape?.away)}</div>
     <div className="mt-2 grid gap-2 sm:grid-cols-4"><Metric label="Otevřenost zápasu" value={value(shadow.opennessScore, 0, "/100")} /><Metric label="Současné λ" value={shadow.currentTotalLambda.toFixed(2)} /><Metric label="Shot shadow λ" value={value(shadow.shotTotalLambda, 2)} /><Metric label="Over 2,5" value={`${pct(shadow.currentOver25)} → ${pct(shadow.shadowOver25)}`} /></div>
     <div className="mt-2 rounded-lg border border-border bg-background px-3 py-2 text-[11px] leading-5"><strong className="text-foreground">Závislost Overu: {risk}</strong><span className="text-muted"> · slabší strana tvoří {pct(shadow.dependencyRisk.weakerShare)} očekávání; bez jejího gólu má silnější tým šanci {pct(shadow.dependencyRisk.probabilityOverWithoutWeakerSide)} dát sám alespoň tři.</span></div>
+    {interpretation ? <div className="mt-2 rounded-lg border border-accent-strong/20 bg-accent/10 px-3 py-2 text-[11px] leading-5"><strong className="text-foreground">Výklad pro tento zápas:</strong> <span className="text-muted">{interpretation}. Očekávané střely popisují objem zakončení, zatímco xG jejich celkovou kvalitu. Podíl šancí říká, jakou část nebezpečí by měl vytvořit daný tým.</span></div> : null}
+    <details className="mt-2 rounded-lg border border-border bg-background px-3 py-2 text-[11px]"><summary className="cursor-pointer font-semibold text-foreground">Jak čísla číst</summary><ul className="mt-2 space-y-1 text-muted"><li><strong>Index tlaku</strong> je relativní síla matchupu; 100 není pravděpodobnost, ale velmi příznivé podmínky.</li><li><strong>Očekávané střely</strong> jsou odhad množství pokusů, nikoli jejich kvality.</li><li><strong>Očekávané xG</strong> spojuje množství a kvalitu šancí do odhadu gólového potenciálu.</li><li><strong>Podíl šancí</strong> rozděluje očekávanou tvorbu mezi oba týmy; dohromady dává 100 %.</li><li><strong>Otevřenost</strong> odhaduje tempo a oboustrannou aktivitu, ne jistotu vysokého počtu gólů.</li></ul></details>
     <p className="mt-2 text-[10px] text-muted">Index očekávaného tlaku: 100 znamená velmi silný tlak, hodnoty nad 100 extrémně příznivý matchup. Pokrytí vstupů {shadow.coverage.available}/{shadow.coverage.expected}. Heuristická v{shadow.version} se nejprve sbírá pro chronologický backtest; není kalibrovanou pravděpodobností.</p>
   </section>;
 }

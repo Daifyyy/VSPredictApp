@@ -7,7 +7,6 @@ import type {
   FixtureDay,
   LiveScore,
   PlayedFixture,
-  PlayedModelReview,
   UpcomingFixture,
 } from "@/lib/types";
 import { TeamLogo } from "./TeamLogo";
@@ -17,7 +16,6 @@ import { RankBadge } from "./RankBadge";
 import { buildCompareHref } from "./compareHref";
 import { MatchReportPanel } from "./MatchReportPanel";
 import { ViewTabs } from "./ViewTabs";
-import { LiveReportPanel } from "./LiveReportPanel";
 import { buildTipHref } from "./tipHref";
 import { useCurrentUser } from "./useCurrentUser";
 import { InstallLink } from "./InstallLink";
@@ -29,6 +27,7 @@ import { StrategyHubSummary } from "./StrategyHubSummary";
 import { chooseFeaturedFixture } from "@/lib/homeFeaturedFixture";
 import { competitionGroupLabel, groupCompetitionFixtures, localDateKey } from "@/lib/competitionGrouping";
 import { MatchCenter } from "./MatchCenter";
+import { MatchInsightCard } from "./MatchInsightCard";
 import type { CompetitionGroup } from "@/lib/data/catalog";
 import { ActionLink, Badge, Button, buttonClass } from "./ui/primitives";
 
@@ -115,7 +114,7 @@ export function mergeHistoricalSnapshot(served: FixtureDay | undefined, fresh: F
     ...fresh,
     played: fresh.played.map((fixture) => {
       const old = oldPlayed.get(fixture.fixtureId);
-      return old ? { ...fixture, tip: old.tip, modelReview: old.modelReview } : fixture;
+      return old ? { ...fixture, tip: old.tip ?? fixture.tip, modelReview: fixture.modelReview ?? old.modelReview } : fixture;
     }),
   };
 }
@@ -765,7 +764,7 @@ export function ZapasyApp({
           />
           <QuickMatchOverview date={activePast?.date ?? null} user={user} compact historical />
           {activePast && activePast.played.length > 0 ? (
-            <ResultsList played={activePast.played} />
+            <ResultsList played={activePast.played} isPro={isPro} />
           ) : (
             <Empty>
               Na tento den nemáme ve sledovaných ligách odehraný zápas. Zkus jiný den –
@@ -1318,7 +1317,6 @@ function FixtureRow({
             {modelOpen && <FixtureModelCard fixtureId={fixture.fixtureId} />}
           </div>
         )}
-        {fixture.live && <LiveReportToggle fixture={fixture} />}
       </div>
       {!fixture.live && (
         <Link
@@ -1344,28 +1342,7 @@ function FixtureRow({
  * navigoval do Porovnání místo rozbalení (stejný důvod jako u „Přehled zápasu" ve
  * Výsledcích). Sbalením se panel odmontuje, takže se zastaví i jeho poll.
  */
-function LiveReportToggle({ fixture }: { fixture: UpcomingFixture }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="mt-1">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        className="px-1 text-[11px] font-medium text-muted transition hover:text-foreground"
-      >
-        {open ? "▾" : "▸"} Průběh zápasu
-      </button>
-      {open && (
-        <div className="mt-1.5">
-          <LiveReportPanel fixture={fixture} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ResultsList({ played }: { played: PlayedFixture[] }) {
+function ResultsList({ played, isPro }: { played: PlayedFixture[]; isPro: boolean }) {
   // Jmenovatel tvoří jen před výkopem publikované tipy. Pravděpodobnostní
   // prognóza bez uloženého výběru se zde nikdy zpětně nevydává za tip.
   const tipped = played.filter((p) => p.tip);
@@ -1394,6 +1371,7 @@ function ResultsList({ played }: { played: PlayedFixture[] }) {
           <PlayedLeagueContainer
             key={g.leagueId}
             group={g}
+            isPro={isPro}
             open={expanded.has(g.leagueId)}
             onToggleOpen={() =>
               setExpanded((prev) => {
@@ -1433,10 +1411,12 @@ function PublishedTipSummary({
  */
 function PlayedLeagueContainer({
   group,
+  isPro,
   open,
   onToggleOpen,
 }: {
   group: LeagueGroupOf<PlayedFixture>;
+  isPro: boolean;
   open: boolean;
   onToggleOpen: () => void;
 }) {
@@ -1475,7 +1455,7 @@ function PlayedLeagueContainer({
       {open && (
         <ul className="space-y-2 px-3 pb-3">
           {group.fixtures.map((f) => (
-            <PlayedRow key={f.fixtureId} fixture={f} />
+            <PlayedRow key={f.fixtureId} fixture={f} isPro={isPro} />
           ))}
         </ul>
       )}
@@ -1489,7 +1469,7 @@ const SIDE_LABELS: Record<"home" | "draw" | "away", string> = {
   away: "Hosté",
 };
 
-function PlayedRow({ fixture }: { fixture: PlayedFixture }) {
+function PlayedRow({ fixture, isPro }: { fixture: PlayedFixture; isPro: boolean }) {
   const [open, setOpen] = useState(false);
   const time = new Date(fixture.kickoff).toLocaleTimeString("cs-CZ", {
     hour: "2-digit",
@@ -1568,6 +1548,7 @@ function PlayedRow({ fixture }: { fixture: PlayedFixture }) {
           ))}
         </div>
       )}
+      {fixture.modelReview?.matchInsight && <div className="mt-2"><MatchInsightCard insight={fixture.modelReview.matchInsight} variant="summary" /></div>}
       <KnockoutResult fixture={fixture} />
     </>
   );
@@ -1594,7 +1575,7 @@ function PlayedRow({ fixture }: { fixture: PlayedFixture }) {
       {/* Panel se montuje až po otevření → fetch se pustí jen na vyžádání. */}
       {open && (
         <div className="space-y-2">
-          {fixture.modelReview && <ResultModelAudit fixture={fixture} />}
+          {fixture.modelReview && <ResultModelAudit fixture={fixture} isPro={isPro} />}
           <MatchReportPanel match={fixture} />
         </div>
       )}
@@ -1602,7 +1583,7 @@ function PlayedRow({ fixture }: { fixture: PlayedFixture }) {
   );
 }
 
-function ResultModelAudit({ fixture }: { fixture: PlayedFixture }) {
+function ResultModelAudit({ fixture, isPro }: { fixture: PlayedFixture; isPro: boolean }) {
   const review = fixture.modelReview!;
   const pct = (value: number) => `${(value * 100).toFixed(1)} %`;
   const countRows = [["Rohy", review.counts.corners], ["Karty", review.counts.cards], ["Fauly", review.counts.fouls]] as const;
@@ -1620,7 +1601,7 @@ function ResultModelAudit({ fixture }: { fixture: PlayedFixture }) {
       <div className="mt-2 grid gap-2 sm:grid-cols-3">
         {countRows.map(([label, item]) => <AuditMetric key={label} label={label} value={item.expected == null ? "model nebyl dostupný" : `model ${item.expected.toFixed(1)} · skutečnost ${item.actual?.toFixed(0) ?? "—"} · chyba ${item.error?.toFixed(1) ?? "—"}`} />)}
       </div>
-      {review.matchFlow ? <MatchFlowResult evaluation={review.matchFlow} /> : <p className="mt-3 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted">Audit průběhu nebyl pro tento starší zápas zachycen.</p>}
+      {review.matchInsight ? <div className="mt-3"><MatchInsightCard insight={review.matchInsight} variant="detail" pro={isPro} /></div> : <p className="mt-3 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted">Audit průběhu nebyl pro tento starší zápas zachycen.</p>}
       {review.market.length > 0 && (
         <details className="mt-3 rounded-lg border border-border bg-background">
           <summary className="cursor-pointer px-3 py-2 text-xs font-semibold text-foreground">Trh a CLV ({review.market.length})</summary>
@@ -1639,11 +1620,6 @@ function ResultModelAudit({ fixture }: { fixture: PlayedFixture }) {
       <p className="mt-3 text-[10px] leading-4 text-muted">Běžná prognóza není publikovaný tip. Barva pouze porovnává tehdejší modelový výstup se skutečností; u početních modelů je zelená tolerance ±1.</p>
     </section>
   );
-}
-
-function MatchFlowResult({ evaluation }: { evaluation: NonNullable<PlayedModelReview["matchFlow"]> }) {
-  const labels = { TREFENO: "Trefeno", CASTECNE: "Částečně", NETREFENO: "Netrefeno", NEDOSTATEK_DAT: "Málo dat" } as const;
-  return <section className="mt-3 rounded-lg border border-border bg-background px-3 py-3"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="section-kicker">Jak model trefil průběh</p><p className="mt-1 text-xs font-medium">{evaluation.headline}</p></div><strong className="text-xs">{labels[evaluation.verdict]}</strong></div><div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{evaluation.components.map((component) => <AuditMetric key={component.key} label={`${component.label} · ${labels[component.verdict]}`} value={component.detail} />)}</div>{evaluation.warnings.map((warning) => <p key={warning} className="mt-2 text-xs text-warning">⚠ {warning}</p>)}<p className="mt-2 text-[10px] text-muted">Shadow v{evaluation.pressureVersion} · metodika {evaluation.version} · pokrytí {Math.round(evaluation.coverage * 100)} %</p></section>;
 }
 
 function AuditMetric({ label, value }: { label: string; value: string }) {

@@ -6,11 +6,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { UpcomingFixture } from "@/lib/types";
 import type { MatchEvent } from "@/lib/stats/matchEvents";
 import type { LiveProbabilities } from "@/lib/picks/liveModel";
+import type { MatchInsight } from "@/lib/picks/matchInsight";
 import { TeamLogo } from "./TeamLogo";
 import { EventTimeline } from "./EventTimeline";
 import { buildCompareHref } from "./compareHref";
 import type { SessionUser } from "./sessionUser";
 import { Tabs } from "./ui/primitives";
+import { MatchInsightCard } from "./MatchInsightCard";
 
 type Stats = Partial<Record<"XG" | "SHOTS" | "SHOTS_ON_TARGET" | "POSSESSION" | "PASSES_TOTAL" | "CORNERS" | "FOULS" | "YELLOW_CARDS" | "RED_CARDS", number>>;
 type LineupPlayer = { playerId: number | null; name: string; number: number | null; position: string | null };
@@ -21,6 +23,7 @@ type Payload = {
   model: null | { probabilities: LiveProbabilities; lowConfidence: boolean; remainingLambdaHome: number; remainingLambdaAway: number };
   odds: Array<{ id: string; observedAt: string; market: string; side: string; line: number | null; decimalOdds: number; bookmaker: string; main: boolean; blocked: boolean; stopped: boolean }>;
   candidates: Array<{ id: string; market: string; side: string; line: number | null; modelProbability: number; marketProbability: number; edge: number; expectedValue: number; decimalOdds: number; bookmaker: string; minute: number; reason: string }>;
+  matchInsight: MatchInsight | null;
   lineups: Lineup[];
   pro: boolean;
   updatedAt: string | null;
@@ -142,6 +145,7 @@ function MatchCenterDetail({ fixture, state, watching, canWatch, onWatch }: { fi
       </div>
     </div>
     <div className="border-t border-border bg-surface px-3 py-2 sm:px-4"><Tabs<DetailTab> label="Část Match Centeru" value={detailTab} onChange={setDetailTab} items={[{ value: "overview", label: "Přehled" }, { value: "events", label: "Průběh", badge: events.length }, { value: "lineups", label: "Sestavy", badge: payload?.lineups?.length ?? 0 }, { value: "stats", label: "Statistiky" }, { value: "model", label: "Model" }]} /></div>
+    {payload?.matchInsight && (detailTab === "overview" || detailTab === "model") ? <div className="mx-4 mt-4"><MatchInsightCard insight={payload.matchInsight} variant={payload.pro ? "detail" : "summary"} pro={payload.pro} /></div> : null}
     {state.loading && !payload ? <p className="p-6 text-center text-sm text-muted">Načítám živý průběh…</p> : state.error && !payload ? <p className="p-6 text-center text-sm text-negative">Match Center se nepodařilo obnovit.</p> : <div className={detailTab === "overview" ? "grid gap-4 p-4 lg:grid-cols-[1.1fr_.9fr]" : "p-4"}>
       {(detailTab === "overview" || detailTab === "events" || detailTab === "stats" || detailTab === "lineups") ? <div className="space-y-4">
         {(detailTab === "overview" || detailTab === "events") && <section className="rounded-xl border border-border bg-background p-3"><div className="flex items-center justify-between"><h3 className="text-sm font-bold">Živý průběh</h3>{newest ? <span className="text-[10px] font-semibold text-negative">Poslední událost {newest.minute}&apos;</span> : null}</div>{events.length ? <EventTimeline events={detailTab === "overview" ? events.slice(-4) : events} homeTeamId={fixture.home.id} newestFirst /> : <p className="mt-3 text-xs text-muted">Zatím bez zaznamenané události.</p>}</section>}

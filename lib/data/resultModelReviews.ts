@@ -3,11 +3,13 @@ import { isRealDataConfigured, prisma } from "@/lib/db";
 import type { FixtureDay, ModelReviewChip, PlayedModelReview } from "@/lib/types";
 import { binaryOutcome, countTone, freshClosing, portfolioProfit } from "@/lib/picks/evaluation";
 import type { MatchFlowEvaluation } from "@/lib/picks/matchFlowEvaluation";
+import { buildMatchInsight, publicMatchInsight } from "@/lib/picks/matchInsight";
+import type { PerformancePressureShadow } from "@/lib/picks/performancePressureShadow";
 
 const pct = (value: number) => `${Math.round(value * 100)} %`;
 const one = (value: number) => value.toFixed(1).replace(".", ",");
 
-export async function getResultModelReviews(fixtureIds: number[]): Promise<Map<number, PlayedModelReview>> {
+export async function getResultModelReviews(fixtureIds: number[], options: { pro?: boolean } = {}): Promise<Map<number, PlayedModelReview>> {
   // Offline/mock E2E must be hermetic. Model reviews are an optional enrichment;
   // reaching a configured production DATABASE_URL from DATA_SOURCE=mock made UI
   // tests flaky and could accidentally read production data from a preview run.
@@ -19,7 +21,7 @@ export async function getResultModelReviews(fixtureIds: number[]): Promise<Map<n
     prisma.matchStatCache.findMany({ where: { fixtureId: { in: ids } }, select: { fixtureId: true, teamId: true, context: true, corners: true, fouls: true, yellowCards: true, redCards: true } }),
     prisma.autonomousTipSnapshot.findMany({ where: { fixtureId: { in: ids }, status: "candidate" } }),
     prisma.marketSignalSnapshot.findMany({ where: { fixtureId: { in: ids } }, orderBy: { openedAt: "asc" } }),
-    prisma.matchFlowEvaluationSnapshot.findMany({ where: { fixtureId: { in: ids }, status: "SETTLED" }, orderBy: { evaluationVersion: "desc" } }),
+    prisma.matchFlowEvaluationSnapshot.findMany({ where: { fixtureId: { in: ids }, evaluationVersion: 2, status: "SETTLED" }, orderBy: { evaluationVersion: "desc" } }),
   ]);
   const flowMap = new Map(flowRows.map((row) => [row.fixtureId, row.evaluation as unknown as MatchFlowEvaluation]));
   const statMap = new Map<number, typeof stats>();
@@ -64,7 +66,11 @@ export async function getResultModelReviews(fixtureIds: number[]): Promise<Map<n
       const hit = binaryOutcome(row.market, row.side, p.homeGoals, p.awayGoals);
       return { strategy: row.strategy, side: row.side, odds: row.decimalOdds, hit, profit: portfolioProfit(hit, row.decimalOdds, row.stake), policyVersion: row.policyVersion };
     });
-    reviews.set(p.fixtureId, { chips, probabilities: { home: p.homeWin, draw: p.draw, away: p.awayWin, over25: p.over25, bttsYes: p.bttsYes }, expectedScore: { home: p.lambdaHome, away: p.lambdaAway }, counts: { corners, cards, fouls }, modelVersion: p.modelVersion, countModelVersion: p.countModelVersion, foulModelVersion: p.foulModelVersion, context: p.modelContext, readinessSample: p.readinessSample, lowConfidence: p.lowConfidence, referee: { name: p.refereeName, factor: p.refereeFactor, sample: p.refereeSample }, market, portfolio, matchFlow: flowMap.get(p.fixtureId) ?? null });
+    const matchFlow=flowMap.get(p.fixtureId)??null;
+    const pressure=(p.inputSnapshot as {performancePressure?:PerformancePressureShadow}|null)?.performancePressure;
+    const fullMatchInsight=matchFlow&&pressure?.version===2?buildMatchInsight({pressure,evaluation:matchFlow,phase:"FINAL",capturedAt:pressure.capturedAt}):null;
+    const matchInsight=fullMatchInsight&&(options.pro!==true)?publicMatchInsight(fullMatchInsight):fullMatchInsight;
+    reviews.set(p.fixtureId, { chips, probabilities: { home: p.homeWin, draw: p.draw, away: p.awayWin, over25: p.over25, bttsYes: p.bttsYes }, expectedScore: { home: p.lambdaHome, away: p.lambdaAway }, counts: { corners, cards, fouls }, modelVersion: p.modelVersion, countModelVersion: p.countModelVersion, foulModelVersion: p.foulModelVersion, context: p.modelContext, readinessSample: p.readinessSample, lowConfidence: p.lowConfidence, referee: { name: p.refereeName, factor: p.refereeFactor, sample: p.refereeSample }, market, portfolio, matchFlow, matchInsight });
   }
   return reviews;
 }

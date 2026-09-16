@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { evaluateMatchFlow, MATCH_FLOW_EVALUATION_VERSION, type FlowStats, type MatchFlowEvaluation } from "@/lib/picks/matchFlowEvaluation";
 import type { PerformancePressureShadow } from "@/lib/picks/performancePressureShadow";
+import { buildMatchInsight, type MatchInsight } from "@/lib/picks/matchInsight";
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 function pressureOf(input: Prisma.JsonValue | null): PerformancePressureShadow | null {
@@ -22,13 +23,20 @@ export async function settleMatchFlowEvaluation(fixtureId:number,now=new Date())
   if(!homeRow||!awayRow||prediction.homeGoals==null||prediction.awayGoals==null){await prisma.matchFlowEvaluationSnapshot.upsert({where:{fixtureId_pressureVersion_evaluationVersion:{fixtureId,pressureVersion:pressure.version,evaluationVersion:MATCH_FLOW_EVALUATION_VERSION}},create:pending,update:{halftime:pending.halftime}});return"PENDING"}
   const redCards=(homeRow.redCards??0)+(awayRow.redCards??0),evaluation=evaluateMatchFlow({pressure,minute:90,status:prediction.status,home:stats(homeRow),away:stats(awayRow),goals:{home:prediction.homeGoals,away:prediction.awayGoals},redCards,final:true});
   const actual={home:stats(homeRow),away:stats(awayRow),goals:{home:prediction.homeGoals,away:prediction.awayGoals},redCards};
-  await prisma.matchFlowEvaluationSnapshot.upsert({where:{fixtureId_pressureVersion_evaluationVersion:{fixtureId,pressureVersion:pressure.version,evaluationVersion:MATCH_FLOW_EVALUATION_VERSION}},create:{...pending,status:"SETTLED",verdict:evaluation.verdict,coverage:evaluation.coverage,structurallyChanged:evaluation.structurallyChanged,actual:json(actual),evaluation:json(evaluation),evaluatedAt:now},update:{status:"SETTLED",verdict:evaluation.verdict,coverage:evaluation.coverage,structurallyChanged:evaluation.structurallyChanged,halftime:pending.halftime,actual:json(actual),evaluation:json(evaluation),evaluatedAt:now}});
+  await prisma.matchFlowEvaluationSnapshot.upsert({where:{fixtureId_pressureVersion_evaluationVersion:{fixtureId,pressureVersion:pressure.version,evaluationVersion:MATCH_FLOW_EVALUATION_VERSION}},create:{...pending,status:"SETTLED",verdict:evaluation.verdict,diagnosisCode:evaluation.diagnosis.code,coverage:evaluation.coverage,structurallyChanged:evaluation.structurallyChanged,actual:json(actual),evaluation:json(evaluation),evaluatedAt:now},update:{status:"SETTLED",verdict:evaluation.verdict,diagnosisCode:evaluation.diagnosis.code,coverage:evaluation.coverage,structurallyChanged:evaluation.structurallyChanged,halftime:pending.halftime,actual:json(actual),evaluation:json(evaluation),evaluatedAt:now}});
   return"SETTLED";
 }
 
 export async function liveMatchFlowEvaluation(fixtureId:number,input:{minute:number;status:string;home:FlowStats;away:FlowStats;goals:{home:number;away:number}|null;redCards:number;interrupted?:boolean}):Promise<MatchFlowEvaluation|null>{
   const row=await prisma.fixturePrediction.findUnique({where:{fixtureId},select:{inputSnapshot:true}}),pressure=row?pressureOf(row.inputSnapshot):null;
   return pressure?evaluateMatchFlow({pressure,...input}):null;
+}
+
+export async function liveMatchInsight(fixtureId:number,input:{minute:number;status:string;home:FlowStats;away:FlowStats;goals:{home:number;away:number}|null;redCards:number;interrupted?:boolean}):Promise<MatchInsight|null>{
+  const row=await prisma.fixturePrediction.findUnique({where:{fixtureId},select:{inputSnapshot:true}}),pressure=row?pressureOf(row.inputSnapshot):null;
+  if(!pressure)return null;
+  const evaluation=evaluateMatchFlow({pressure,...input});
+  return buildMatchInsight({pressure,evaluation,phase:evaluation.final?"FINAL":"LIVE",capturedAt:new Date().toISOString()});
 }
 
 export async function pendingMatchFlowFixtureIds(limit=20):Promise<number[]>{

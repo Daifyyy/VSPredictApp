@@ -2,7 +2,7 @@ import type { MatchDimension } from "@/lib/stats/matchReport";
 
 /**
  * Vizuální primitivy sdílené přehledem **dohraného** (`MatchReportPanel`) a
- * **probíhajícího** (`LiveReportPanel`) zápasu.
+ * **probíhajícího** zápasu v jednotném Match Centeru.
  *
  * Sdílí se jen kreslení, ne interpretace – přesně stejná dělící čára jako v `lib/stats`,
  * kde oba reporty berou rozměry z jedné funkce (`buildMatchDimensions`), ale prahy a věty
