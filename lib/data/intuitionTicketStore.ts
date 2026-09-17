@@ -140,6 +140,15 @@ export async function captureIntuitionTickets(fixtureId: number, at: Date): Prom
   const trigger = await prisma.fixturePrediction.findUnique({ where: { fixtureId }, select: { kickoff: true } });
   if (!trigger || trigger.kickoff <= at) return 0;
   const windowKey = localDateKey(trigger.kickoff);
+  return captureIntuitionWindow(windowKey, at);
+}
+
+/**
+ * Zmrazí denní VALUE/ELO návrh. Běžný kurzový cron čeká do dvou hodin před první
+ * nohou; ranní Telegram publikace používá `force`, aby tiket, který už uživatelé
+ * ráno viděli, nemohl během dne zmizet po změně ceny nebo pořadí kandidátů.
+ */
+export async function captureIntuitionWindow(windowKey: string, at: Date, force = false): Promise<number> {
   const rows = await sources(windowKey, false, at);
   const divergences = rankEloDivergences(rows);
   if (divergences.length) await prisma.clubEloDivergence.createMany({
@@ -153,7 +162,7 @@ export async function captureIntuitionTickets(fixtureId: number, at: Date): Prom
     let tickets = strategy === "VALUE" ? buildIntuitionTickets(rows, windowKey) : buildEloIntuitionTickets(rows, windowKey);
     if (!tickets.length) continue;
     const firstKickoff = Math.min(...tickets.flatMap((ticket) => ticket.legs.map((leg) => leg.kickoff.getTime())));
-    if (!isTicketLockable(new Date(firstKickoff), at, LOCK_MINUTES)) continue;
+    if (!force && !isTicketLockable(new Date(firstKickoff), at, LOCK_MINUTES)) continue;
     lockedRows ??= await sources(windowKey, true, at);
     tickets = strategy === "VALUE" ? buildIntuitionTickets(lockedRows, windowKey) : buildEloIntuitionTickets(lockedRows, windowKey);
     if (!tickets.length) continue;

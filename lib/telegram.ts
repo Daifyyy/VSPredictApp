@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { upsertIncident } from "@/lib/operations";
 import { STRATEGY_HUB_CATALOG, STRATEGY_HUB_IDS, isDateKey, type StrategyHubId } from "@/lib/picks/strategyHub";
 import { MATCH_FLOW_EVALUATION_VERSION, type MatchFlowDiagnosis } from "@/lib/picks/matchFlowEvaluation";
+import { captureIntuitionWindow } from "@/lib/data/intuitionTicketStore";
 
 export const TELEGRAM_TOP_LIMIT = 3;
 export const TELEGRAM_PAGE_SIZE = 5;
@@ -71,7 +72,10 @@ export function formatTickets(payload: TelegramDay, requested?: "VALUE" | "ELO_I
   for (const id of (requested ? [requested] : ["VALUE", "ELO_INTUITION"]) as Array<"VALUE" | "ELO_INTUITION">) {
     const data = payload.strategies.find((row) => row.strategy === id)?.data;
     if (!data?.tickets.length) { blocks.push(data ? empty(id) : `${strategyIcon(id)} <b>${title(id)}</b>\n   Data nejsou dostupná.`); continue; }
-    blocks.push(`${strategyIcon(id)} <b>${esc(title(id))}</b>`, ...data.tickets.map((ticket) => `${ticketOutcomeIcon(ticket.outcome)} <b>Tiket ${ticket.slot === 0 ? "A" : "B"}</b>\n   🎯 ${ticket.fixtureIds.length} výběry\n   💰 kurz ${odd(ticket.odds)}`));
+    blocks.push(`${strategyIcon(id)} <b>${esc(title(id))}</b>`, ...data.tickets.flatMap((ticket) => {
+      const legs = data.opportunities.filter((item) => item.ticketSlots.includes(ticket.slot));
+      return [`${ticketOutcomeIcon(ticket.outcome)} <b>Tiket ${ticket.slot === 1 ? "A" : "B"}</b> · kurz ${odd(ticket.odds)}`, ...legs.map((item, index) => `${index + 1}. ${opportunity(item)}`)];
+    }));
     const reserves = includeReserves ? data.opportunities.filter((item) => !item.ticketSlots.length).slice(0, 5) : [];
     if (reserves.length) blocks.push("➕ <b>Další vybrané příležitosti</b>", ...reserves.map(opportunity));
   }
@@ -81,7 +85,7 @@ export function formatResults(payload: TelegramDay) {
   const blocks = [`📊 <b>Výsledky za ${payload.date}</b>`];
   for (const { strategy, data } of payload.strategies) {
     const settled = data.opportunities.filter((item) => item.outcome !== "PENDING"); const tickets = data.tickets.filter((item) => item.outcome !== "PENDING");
-    if (settled.length || tickets.length) blocks.push(`${strategyIcon(strategy)} <b>${esc(title(strategy))}</b>`, ...settled.map(opportunity), ...tickets.map((ticket) => `${ticketOutcomeIcon(ticket.outcome)} <b>Tiket ${ticket.slot === 0 ? "A" : "B"}</b> · kurz ${odd(ticket.odds)}`));
+    if (settled.length || tickets.length) blocks.push(`${strategyIcon(strategy)} <b>${esc(title(strategy))}</b>`, ...settled.map(opportunity), ...tickets.map((ticket) => `${ticketOutcomeIcon(ticket.outcome)} <b>Tiket ${ticket.slot === 1 ? "A" : "B"}</b> · kurz ${odd(ticket.odds)}`));
   }
   if (blocks.length === 1) blocks.push("Zatím není uzavřen žádný publikovaný výběr."); return splitTelegramBlocks(blocks);
 }
@@ -119,6 +123,7 @@ export async function publishTelegramMorning(now = new Date(), options: { dryRun
     prisma.telegramCommandCursor.deleteMany({ where: { updatedAt: { lt: new Date(now.getTime() - 30 * 86400_000) } } }),
     prisma.telegramUpdateReceipt.deleteMany({ where: { createdAt: { lt: new Date(now.getTime() - 30 * 86400_000) } } }),
   ]);
+  await captureIntuitionWindow(clock.date, now, true);
   const today = await loadTelegramDay(clock.date); const entries: Array<{ kind: Kind; payload: TelegramDay }> = [{ kind: "RESULTS", payload: await publishedResults(shiftDateKey(clock.date, -1), config.channelId) }, { kind: "TICKETS", payload: today }, { kind: "STRATEGIES", payload: today }];
   if (options.dryRun || !config.enabled) return { dryRun: true, date: clock.date, messages: entries.flatMap((entry) => messagesFor(entry.kind, entry.payload)) };
   if (!config.channelId || !config.token) throw new Error("Telegram kanál nebo token není nakonfigurován"); const sent: string[] = [];

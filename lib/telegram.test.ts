@@ -1,11 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ strategyData: vi.fn(), cursorFind: vi.fn(), cursorUpsert: vi.fn() }));
+const mocks = vi.hoisted(() => ({ strategyData: vi.fn(), cursorFind: vi.fn(), cursorUpsert: vi.fn(), captureWindow: vi.fn() }));
 vi.mock("@/lib/db", () => ({ prisma: { telegramCommandCursor: { findUnique: mocks.cursorFind, upsert: mocks.cursorUpsert } } }));
 vi.mock("@/lib/operations", () => ({ upsertIncident: vi.fn() }));
 vi.mock("@/lib/data/strategyHubStore", () => ({ strategyHubData: mocks.strategyData }));
+vi.mock("@/lib/data/intuitionTicketStore", () => ({ captureIntuitionWindow: mocks.captureWindow }));
 
-import { formatResults, formatTips, handleTelegramCommand, isTelegramDateAllowed, pragueClock, shiftDateKey, splitTelegramBlocks, telegramConfig, telegramStrategyAlias, type TelegramDay } from "./telegram";
+import { formatResults, formatTickets, formatTips, handleTelegramCommand, isTelegramDateAllowed, pragueClock, shiftDateKey, splitTelegramBlocks, telegramConfig, telegramStrategyAlias, type TelegramDay } from "./telegram";
 
 const emptyMetrics = { all: {}, recent: {}, selectionAccuracy: null, unit: "SELECTIONS" };
 function day(): TelegramDay {
@@ -37,6 +38,12 @@ describe("telegram formatting", () => {
     payload.strategies[0].data.opportunities[0].outcome="WON";
     (payload.strategies[0].data.opportunities[0] as typeof payload.strategies[0]["data"]["opportunities"][number] & {flowDiagnosis:{code:string;label:string;summary:string}}).flowDiagnosis={code:"CORRECT_FLOW_BAD_FINISHING",label:"Průběh správně, rozhodlo zakončení",summary:""};
     expect(formatResults(payload).join("\n")).toContain("🧭 Průběh správně, rozhodlo zakončení");
+  });
+  it("lists every leg of a VALUE or ELO ticket", () => {
+    const payload=day();
+    payload.strategies=[{strategy:"VALUE",data:{...payload.strategies[0].data,opportunities:payload.strategies[0].data.opportunities.slice(0,2).map(item=>({...item,ticketSlots:[1]})),tickets:[{slot:1,odds:3.31,estimatedPriceCount:0,outcome:"PENDING",profit:null,fixtureIds:[0,1]}]}}];
+    const text=formatTickets(payload,"VALUE").join("\n");
+    expect(text).toContain("Tiket A");expect(text).toContain("kurz 3.31");expect(text).toContain("A &lt; B");expect(text).toContain("Domácí 1");
   });
   it("splits messages under the Telegram safety limit", () => {
     const chunks = splitTelegramBlocks(["a".repeat(2000), "b".repeat(2000)], 3000);

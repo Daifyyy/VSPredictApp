@@ -18,7 +18,6 @@ import { MatchReportPanel } from "./MatchReportPanel";
 import { ViewTabs } from "./ViewTabs";
 import { buildTipHref } from "./tipHref";
 import { useCurrentUser } from "./useCurrentUser";
-import { InstallLink } from "./InstallLink";
 import { preferredProgramDayIndex } from "@/lib/homeDashboard";
 import { FixtureModelCard } from "./FixtureModelCard";
 import { QuickMatchOverview } from "./QuickMatchOverview";
@@ -515,7 +514,9 @@ export function ZapasyApp({
   }, []);
 
   const todaySnapshot = useTodaySnapshot(clientToday);
-  const historicalSnapshots = useHistoricalResultSnapshots(view === "results", clientToday, resultDays);
+  // Načti finální stav minulých dnů hned. Jinak může ISR HTML po ranním otevření
+  // držet v Programu včerejší utkání jako živé až do přepnutí na Výsledky.
+  const historicalSnapshots = useHistoricalResultSnapshots(true, clientToday, resultDays);
   const syncedDays = useMemo(() => {
     const byDate = new Map(days.map((day) => [day.date, day]));
     for (const fresh of historicalSnapshots) {
@@ -773,7 +774,6 @@ export function ZapasyApp({
           )}
         </>
       )}
-      <QuickActions />
     </main>
   );
 }
@@ -839,34 +839,6 @@ function SmartEmptyProgram({ days, activeIndex, onSelect }: { days: FixtureDay[]
 
 function matchWord(count: number): string {
   return count === 1 ? "zápas" : count >= 2 && count <= 4 ? "zápasy" : "zápasů";
-}
-
-function QuickActions() {
-  const actions = [
-    { href: "/porovnani", eyebrow: "Tým proti týmu", label: "Porovnat dva týmy" },
-    { href: "/tabulky", eyebrow: "Aktuální pořadí", label: "Ligové tabulky" },
-    { href: "/tipovacka", eyebrow: "Tvůj přehled", label: "Zapsat vlastní tip" },
-  ];
-  return (
-    <section className="mt-5 border-t border-border pt-5">
-      <div className="flex items-center justify-between gap-3"><p className="page-kicker text-muted">Rychlé nástroje</p><div className="text-xs text-muted"><InstallLink /></div></div>
-    <nav aria-label="Rychlé volby" className="mt-3 grid gap-2 sm:grid-cols-3">
-      {actions.map((action) => (
-        <Link
-          key={action.href}
-          href={action.href}
-          className="group flex min-h-14 items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2.5 transition hover:border-accent-strong/40 hover:bg-accent/10"
-        >
-          <span>
-            <span className="block text-[11px] font-medium text-muted">{action.eyebrow}</span>
-            <span className="block text-sm font-semibold text-foreground">{action.label}</span>
-          </span>
-          <span aria-hidden className="text-muted transition group-hover:translate-x-0.5 group-hover:text-foreground">→</span>
-        </Link>
-      ))}
-    </nav>
-    </section>
-  );
 }
 
 function FavoriteToggle({
@@ -1074,12 +1046,12 @@ function LeagueGroups({
   // Seskup dle ligy; pořadí lig dle nejbližšího výkopu (fixtures jsou už dle času).
   const groups = useMemo<LeagueGroup[]>(() => groupByLeague(fixtures), [fixtures]);
 
-  // Rozbalené ligy (výchozí: vše sbaleno, bez auto-rozbalení).
-  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  // Rozpis je navigační jádro stránky, proto jsou ligy při otevření dne rozbalené.
+  const [expanded, setExpanded] = useState<Set<number>>(() => new Set(groups.map((group) => group.leagueId)));
   useEffect(() => {
     const leagueId = Number(new URLSearchParams(window.location.search).get("league"));
-    if (leagueId > 0) queueMicrotask(() => setExpanded(new Set([leagueId])));
-  }, []);
+    queueMicrotask(() => setExpanded(leagueId > 0 ? new Set([leagueId]) : new Set(groups.map((group) => group.leagueId))));
+  }, [groups]);
 
   return (
     <div className="mt-4 space-y-3 stagger-in">
@@ -1293,7 +1265,7 @@ function FixtureRow({
     </div>
   );
   return (
-    <li className="flex items-center gap-1.5">
+    <li className="flex flex-wrap items-center gap-1.5">
       <div className="min-w-0 flex-1">
         {href != null ? (
           <Link href={href} className={`${cardClass} transition hover:border-foreground/30`}>
@@ -1302,22 +1274,19 @@ function FixtureRow({
         ) : (
           <div className={cardClass}>{inner}</div>
         )}
-        {!fixture.live && (
-          <div className="mt-1">
-            <Button
-              type="button"
-              aria-expanded={modelOpen}
-              onClick={() => setModelOpen((open) => !open)}
-              variant="ghost"
-              size="sm"
-              className="text-muted"
-            >
-              {modelOpen ? "Skrýt model" : "Model před zápasem"}
-            </Button>
-            {modelOpen && <FixtureModelCard fixtureId={fixture.fixtureId} />}
-          </div>
-        )}
       </div>
+      {!fixture.live && (
+        <button
+          type="button"
+          aria-label={modelOpen ? "Skrýt model před zápasem" : "Zobrazit model před zápasem"}
+          title={modelOpen ? "Skrýt model" : "Model před zápasem"}
+          aria-expanded={modelOpen}
+          onClick={() => setModelOpen((open) => !open)}
+          className={`grid min-h-11 min-w-11 shrink-0 place-items-center rounded-xl border text-muted transition hover:bg-background hover:text-foreground ${modelOpen ? "border-accent-strong bg-accent/10 text-foreground" : "border-transparent"}`}
+        >
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-5 w-5" aria-hidden><path d="M3 16.5h14M5 14V9m5 5V4m5 10v-7"/><circle cx="5" cy="8" r="1"/><circle cx="10" cy="3" r="1"/><circle cx="15" cy="6" r="1"/></svg>
+        </button>
+      )}
       {!fixture.live && (
         <Link
           href={buildTipHref(fixture)}
@@ -1333,6 +1302,7 @@ function FixtureRow({
         onClick={() => onToggleFavorite(!isFavorite)}
         label={isFavorite ? "Odebrat zápas z oblíbených" : "Přidat zápas do oblíbených; výsledková upozornění lze zapnout v nastavení"}
       />
+      {modelOpen && !fixture.live ? <div className="w-full pl-0 sm:pl-12"><FixtureModelCard fixtureId={fixture.fixtureId} /></div> : null}
     </li>
   );
 }
