@@ -29,7 +29,7 @@ export function compareTeams(
   lambdaWindows: WindowOptions = { crossSeasonForm: true }
 ): CompareResult {
   const entityType = home.entityType;
-  const metrics = METRICS_BY_ENTITY[entityType];
+  const metrics: import("@/lib/types").Metric[] = [...METRICS_BY_ENTITY[entityType], "SHOTS_AGAINST", "SHOTS_ON_TARGET_AGAINST", "SHOTS_INSIDE_BOX_AGAINST"];
   const resolved = resolveSource(home, away);
 
   const valuesFor = (

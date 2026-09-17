@@ -24,7 +24,7 @@ export async function GET(request: Request) {
 
   try {
     if (summary) return NextResponse.json({ date, catalog, locked: false, summary: await strategyHubDailySummary(date) }, { headers: { "Cache-Control": "private, no-store" } });
-    return NextResponse.json({ date, strategy, catalog, locked: false, data: await strategyHubData(strategy as StrategyHubId, date) }, { headers: { "Cache-Control": "private, no-store" } });
+    return NextResponse.json({ date, strategy, catalog, locked: false, data: await strategyHubData(strategy as StrategyHubId, date) }, { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=120" } });
   } catch (error) {
     logError("api/picks/strategies", error, { date, strategy, summary });
     return NextResponse.json({ error: "Přehled strategií se nepodařilo načíst." }, { status: 502 });

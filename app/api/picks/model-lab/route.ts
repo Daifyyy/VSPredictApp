@@ -12,6 +12,7 @@ import { binaryOutcome, FINAL_STATUSES } from "@/lib/picks/evaluation";
 import { requestDiagnostics } from "@/lib/httpDiagnostics";
 import { teamGoalOpportunityDecision } from "@/lib/picks/marketSignals";
 import { FOUL_MODEL_VERSION } from "@/lib/picks/fouls";
+import { PRESSURE_FLOW_V5_POLICY_VERSION } from "@/lib/picks/pressureFlowV5";
 
 const querySchema = z.object({
   context: z.enum(["LEAGUE", "EURO_CUP", "NATIONAL"]).default("LEAGUE"),
@@ -67,16 +68,17 @@ export async function GET(request: Request) {
       if (cards) return diagnostic.json({ context, cards, snapshot: true }, { headers: publicCache(300, 900) });
     }
     const teamMarkets = ["TEAM_HOME_05", "TEAM_HOME_15", "TEAM_AWAY_05", "TEAM_AWAY_15"];
-    const [tips, teamSignals, overrides, foulPredictions] = await Promise.all([
+    const [tips, teamSignals, pressureSignals, overrides, foulPredictions] = await Promise.all([
       prisma.autonomousTipSnapshot.findMany({
         where: { status: "candidate", modelContext: context, ...(parsed.data.strategy ? { strategy: parsed.data.strategy } : {}) },
         orderBy: { qualifiedAt: "asc" },
       }),
       parsed.data.strategy && parsed.data.strategy !== "TEAM_GOALS" ? Promise.resolve([]) : prisma.marketSignalSnapshot.findMany({ where: { modelContext: context, market: { in: teamMarkets } }, orderBy: { openedAt: "asc" } }),
+      parsed.data.strategy && parsed.data.strategy !== "PRESSURE_FLOW_V5" ? Promise.resolve([]) : prisma.marketSignalSnapshot.findMany({ where: { modelContext: context, policyVersion: PRESSURE_FLOW_V5_POLICY_VERSION }, orderBy: { openedAt: "asc" } }),
       prisma.modelStrategyDefinition.findMany({ where: { modelContext: context } }),
       context !== "LEAGUE" || (parsed.data.strategy && parsed.data.strategy !== "FOULS") ? Promise.resolve([]) : prisma.fixturePrediction.findMany({ where: { modelContext: context, foulModelVersion: FOUL_MODEL_VERSION, homeGoals: { not: null }, awayGoals: { not: null }, lambdaFoulsHome: { not: null }, lambdaFoulsAway: { not: null } }, select: { fixtureId: true, homeTeamId: true, awayTeamId: true, lambdaFoulsHome: true, lambdaFoulsAway: true, foulModelVersion: true } }),
     ]);
-    const fixtureIds = [...new Set([...tips.map((row) => row.fixtureId), ...teamSignals.map((row) => row.fixtureId)])];
+    const fixtureIds = [...new Set([...tips.map((row) => row.fixtureId), ...teamSignals.map((row) => row.fixtureId), ...pressureSignals.map((row) => row.fixtureId)])];
     const results = fixtureIds.length ? await prisma.fixturePrediction.findMany({
       where: { fixtureId: { in: fixtureIds } },
       select: { fixtureId: true, homeGoals: true, awayGoals: true, status: true },
@@ -117,6 +119,10 @@ export async function GET(request: Request) {
       const probability = signal.policyVersion >= 3 ? currentTeamSignals.get(signal.fixtureId)?.probability ?? signal.modelProbability : signal.modelProbability;
       ledger.push({ id: signal.id, fixtureId: signal.fixtureId, leagueId: signal.leagueId, kickoff: signal.kickoff, strategy: "TEAM_GOALS", policyVersion: signal.policyVersion, market: signal.market, side: signal.side, line: signal.line, modelProbability: probability, marketProbability: signal.openMarketProbability, decimalOdds: signal.policyVersion >= 2 ? signal.decimalOdds : null, stake: 1, modelContext: signal.modelContext, modelVersion: signal.modelVersion, qualifiedAt: signal.openedAt, closingMarketProbability: signal.closeMarketProbability, closedAt: signal.closedAt, homeGoals: prediction?.homeGoals ?? null, awayGoals: prediction?.awayGoals ?? null });
     }
+    for (const signal of pressureSignals) {
+      const prediction = byFixture.get(signal.fixtureId);
+      ledger.push({ id: signal.id, fixtureId: signal.fixtureId, leagueId: signal.leagueId, kickoff: signal.kickoff, strategy: "PRESSURE_FLOW_V5", policyVersion: signal.policyVersion, market: signal.market, side: signal.side, line: signal.line, modelProbability: signal.modelProbability, marketProbability: signal.openMarketProbability, decimalOdds: signal.decimalOdds, stake: 1, modelContext: signal.modelContext, modelVersion: signal.modelVersion, qualifiedAt: signal.openedAt, closingMarketProbability: signal.closeMarketProbability, closedAt: signal.closedAt, homeGoals: prediction?.homeGoals ?? null, awayGoals: prediction?.awayGoals ?? null });
+    }
     let foulResearch: { n: number; mae: number | null; bias: number | null; version: number | null } | null = null;
     if (foulPredictions.length) {
       const stats = await prisma.matchStatCache.findMany({ where: { fixtureId: { in: foulPredictions.map((row) => row.fixtureId) } }, select: { fixtureId: true, teamId: true, fouls: true } });
@@ -136,7 +142,7 @@ export async function GET(request: Request) {
         modelVersion: override?.modelVersion ?? MODEL_VERSION,
         status: (override?.status as ModelLabStatus | undefined) ?? item.status,
         definitionId: override?.id ?? null,
-        currentCount: ["ONE_X_TWO", "OVER_25", "BTTS_YES", "CORNERS", "CARDS_REF", "FOULS"].includes(item.strategy)
+        currentCount: ["PRESSURE_FLOW_V5", "ONE_X_TWO", "OVER_25", "BTTS_YES", "CORNERS", "CARDS_REF", "FOULS"].includes(item.strategy)
           ? rows.filter((row) => row.kickoff >= liveFrom && !FINAL_STATUSES.has(byFixture.get(row.fixtureId)?.status ?? "") && binaryOutcome(row.market, row.side, row.homeGoals, row.awayGoals, row.line, row.actualCount ?? null) == null).length
           : null,
         summary: item.strategy === "FOULS" && foulResearch ? { ...summary, verdict: foulResearch.bias == null ? "Fauly zatím nemají skutečná data." : `MAE ${foulResearch.mae!.toFixed(2)} · bias ${foulResearch.bias >= 0 ? "+" : ""}${foulResearch.bias.toFixed(2)} faulu.` } : summary,

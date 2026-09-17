@@ -24,7 +24,7 @@ export interface TeamProfileCore {
 
 export function buildTeamProfileCore(team: Team, now: Date = new Date()): TeamProfileCore {
   const matches = team.leagueMatches;
-  const metrics = [...METRICS_BY_ENTITY[team.entityType], "XG_AGAINST"] as const;
+  const metrics = [...METRICS_BY_ENTITY[team.entityType], "XG_AGAINST", "SHOTS_AGAINST", "SHOTS_ON_TARGET_AGAINST", "SHOTS_INSIDE_BOX_AGAINST"] as const;
   const values = computeAllValues(matches, metrics, team.entityType, now);
   return {
     team: {

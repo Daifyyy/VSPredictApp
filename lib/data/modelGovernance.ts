@@ -12,6 +12,7 @@ import { evaluateModelRows, type ModelEvaluationRow } from "@/lib/picks/modelEva
 import type { PerformancePressureShadow } from "@/lib/picks/performancePressureShadow";
 import { MATCH_FLOW_EVALUATION_VERSION, type MatchFlowDiagnosisCode, type MatchFlowEvaluation } from "@/lib/picks/matchFlowEvaluation";
 import type { ExpectedMatchShape } from "@/lib/picks/performancePressureShadow";
+import { PRESSURE_REPLAY_CACHE_KEY, PRESSURE_V4_REPLAY_CACHE_KEY, PRESSURE_V5_REPLAY_CACHE_KEY, type PressureReplayReport } from "@/lib/picks/pressureReplay";
 
 const FINISHED = ["FT", "AET", "PEN"];
 const EPS = 1e-9;
@@ -56,6 +57,14 @@ export async function getModelGovernanceDashboard(now = new Date()) {
     where: { shadowVersion: MAIN_MODEL_SHADOW_VERSION, method: MAIN_MODEL_SHADOW_METHOD, modelContext: "LEAGUE" },
     orderBy: { kickoff: "asc" },
   });
+  const [pressureReplayRow, pressureV4ReplayRow, pressureV5ReplayRow] = await Promise.all([
+    prisma.apiCache.findUnique({ where: { key: PRESSURE_REPLAY_CACHE_KEY }, select: { payload: true, updatedAt: true } }),
+    prisma.apiCache.findUnique({ where: { key: PRESSURE_V4_REPLAY_CACHE_KEY }, select: { payload: true, updatedAt: true } }),
+    prisma.apiCache.findUnique({ where: { key: PRESSURE_V5_REPLAY_CACHE_KEY }, select: { payload: true, updatedAt: true } }),
+  ]);
+  const pressureReplay = pressureReplayRow ? { ...(pressureReplayRow.payload as unknown as PressureReplayReport), storedAt: pressureReplayRow.updatedAt } : null;
+  const pressureV4Replay = pressureV4ReplayRow ? { ...(pressureV4ReplayRow.payload as unknown as {pressureVersion:4;activated:boolean;verdict:"PASS"|"REVIEW";gates:Record<string,boolean>;full:{n:number;v3ShotsMae:number|null;v4ShotsMae:number|null;v3Dominance:number|null;v4Dominance:number|null;shotsCoverage80:number|null;correlation:number|null;quartileDifference:number|null}}), storedAt: pressureV4ReplayRow.updatedAt } : null;
+  const pressureV5Replay = pressureV5ReplayRow ? { ...(pressureV5ReplayRow.payload as unknown as {pressureVersion:5;activated:boolean;verdict:"PASS"|"REVIEW";gates:Record<string,boolean>;full:{n:number;v3ShotsMae:number|null;candidateShotsMae:number|null;v3Dominance:number|null;candidateDominance:number|null;shotsCoverage80:number|null;correlation:number|null;quartileDifference:number|null};goalMarketBenchmarks?:{over25:{main:{n:number;logLoss:number|null;brier:number|null;ece:number|null};v3:{n:number;logLoss:number|null;brier:number|null;ece:number|null};v5:{n:number;logLoss:number|null;brier:number|null;ece:number|null}};btts:{main:{n:number;logLoss:number|null;brier:number|null;ece:number|null};v5:{n:number;logLoss:number|null;brier:number|null;ece:number|null}}}}), storedAt: pressureV5ReplayRow.updatedAt } : null;
   const pressureRows = await prisma.fixturePrediction.findMany({
     where: { modelVersion: MODEL_VERSION, modelContext: "LEAGUE", inputSnapshot: { not: Prisma.DbNull } },
     orderBy: { kickoff: "desc" },
@@ -119,7 +128,7 @@ export async function getModelGovernanceDashboard(now = new Date()) {
   const pressureCohort = pressureRows.flatMap((row) => {
     const snapshot = row.inputSnapshot as { performancePressure?: PerformancePressureShadow } | null;
     const pressure = snapshot?.performancePressure;
-    return pressure?.version === 3 ? [{ ...row, pressure }] : [];
+    return pressure?.version === 5 ? [{ ...row, pressure }] : [];
   }).reverse();
   const legacyPressure=pressureRows.flatMap((row)=>{const pressure=(row.inputSnapshot as {performancePressure?:{version?:number;opennessScore?:number;expectedMatchShape?:{home?:{shots?:{value?:number}};away?:{shots?:{value?:number}}}}}|null)?.performancePressure;return pressure?.version===2?[pressure]:[]});
   const legacyPressureCount=legacyPressure.length;
@@ -143,7 +152,7 @@ export async function getModelGovernanceDashboard(now = new Date()) {
   });
   const pressureDeltaRows = pressureCohort.filter((row) => row.pressure.over25Delta != null);
   const performancePressure = {
-    version: 3,
+    version: 5,
     legacyV2: legacyPressureCount,
     legacyV2Diagnostics:{opennessAt100:legacyPressureCount?legacyPressure.filter((row)=>row.opennessScore===100).length/legacyPressureCount:0,shotSidesAbove25:legacyPressure.reduce((sum,row)=>sum+Number((row.expectedMatchShape?.home?.shots?.value??0)>25)+Number((row.expectedMatchShape?.away?.shots?.value??0)>25),0)},
     captured: pressureCohort.length,
@@ -211,5 +220,5 @@ export async function getModelGovernanceDashboard(now = new Date()) {
     ...(matchFlow.total >= 200 ? [{ priority: "SOON", title: "Ručně vyhodnotit tlakový model při n=200", reason: "Prospektivní kohorta dosáhla rozhodovacího minima; automatické povýšení zůstává vypnuté.", due: "před jakýmkoli zapojením do tipů" }] : []),
   ];
   const shadow = Object.fromEntries(shadowCounts.map((row) => [row.status, row._count]));
-  return { asOf: now, modelVersion: MODEL_VERSION, tasks, strategies, leagues, checkpoints, personnel, quickOverview, mainModelShadow, performancePressure, matchFlow, shadow: { total: Object.values(shadow).reduce((sum, value) => sum + value, 0), candidates: shadow.candidate ?? 0, watch: shadow.watch ?? 0 } };
+  return { asOf: now, modelVersion: MODEL_VERSION, tasks, strategies, leagues, checkpoints, personnel, quickOverview, mainModelShadow, performancePressure, pressureReplay, pressureV4Replay, pressureV5Replay, matchFlow, shadow: { total: Object.values(shadow).reduce((sum, value) => sum + value, 0), candidates: shadow.candidate ?? 0, watch: shadow.watch ?? 0 } };
 }

@@ -18,6 +18,7 @@ export interface StrategyCatalogItem {
 }
 
 export const STRATEGY_CATALOG: StrategyCatalogItem[] = [
+  { strategy: "PRESSURE_FLOW_V5", policyVersion: 501, market: "GOAL_FLOW", title: "Průběh v5", status: "RESEARCH", minimumSample: 200, rules: "Přímý kurz 1,50–3,50 · coverage 75 % · pravděpodobnost 55 % · edge 4 p. b. · EV 3 %", decision: "Oddělená kalibrace Over 2,5, BTTS a týmových gólů na prospektivní kohortě" },
   { strategy: "ONE_X_TWO", policyVersion: 2, market: "1X2", title: "1X2 v2", status: "LIVE_TEST", minimumSample: 200, rules: "58 % · náskok 10 p. b. · edge 4 p. b. · EV 2 %", decision: "ROI, closing benchmark a kalibrace na stejné kohortě" },
   { strategy: "OVER_25", policyVersion: 1, market: "OVER_25", title: "Over 2,5 v1", status: "LIVE_TEST", minimumSample: 200, rules: "60 % · edge 4 p. b. · EV 2 %", decision: "Časový holdout, kladné CLV a stabilní kalibrace" },
   { strategy: "BTTS_YES", policyVersion: 1, market: "BTTS", title: "BTTS Ano v1", status: "LIVE_TEST", minimumSample: 200, rules: "60 % · edge 2 p. b. · EV 2 %", decision: "Časový holdout, kladné CLV a stabilita napříč ligami" },

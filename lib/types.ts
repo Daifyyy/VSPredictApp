@@ -37,6 +37,9 @@ export type Metric =
    * odpovědi). Mimo `ALL_METRICS` → v UI se nezobrazuje.
    */
   | "XG_AGAINST"
+  | "SHOTS_AGAINST"
+  | "SHOTS_ON_TARGET_AGAINST"
+  | "SHOTS_INSIDE_BOX_AGAINST"
   /**
    * Rohy, které tým **inkasoval** (= rohy soupeře v tom zápase) – obranný protějšek
    * `CORNERS`, přesně jako `XG_AGAINST` u xG. Model rohů (`lib/picks/corners.ts`) ho
@@ -163,6 +166,9 @@ export const METRIC_LABELS: Record<Metric, string> = {
   SCORED: "Skóroval (podíl zápasů)",
   CLEAN_SHEET: "Čisté konto (podíl zápasů)",
   XG_AGAINST: "Inkasované xG",
+  SHOTS_AGAINST: "Dovolené střely",
+  SHOTS_ON_TARGET_AGAINST: "Dovolené střely na branku",
+  SHOTS_INSIDE_BOX_AGAINST: "Dovolené střely z vápna",
   CORNERS_AGAINST: "Inkasované rohy",
   CARDS: "Karty celkem",
   CARDS_AGAINST: "Karty soupeře",
@@ -483,7 +489,7 @@ export interface FixtureModelForecast {
   refereeProfile: RefereeProfileForecast | null;
   headToHead: import("@/lib/h2h").HeadToHeadSummary;
   /** Point-in-time shadow diagnostika střel, tlaku a závislosti gólového overu. */
-  performancePressure?: import("@/lib/picks/performancePressureShadow").PerformancePressureShadow | null;
+  performancePressure?: import("@/lib/picks/performancePressureShadow").PerformancePressureShadow | import("@/lib/picks/performancePressureShadowV5").PerformancePressureShadowV5 | null;
 }
 
 export interface TeamGoalForecast {
@@ -1027,7 +1033,7 @@ export interface PredictionRow {
     source: string;
     capturedAt: string;
     /** Paralelní diagnostika tvorby šancí; nikdy nemění ostrou predikci. */
-    performancePressure?: import("@/lib/picks/performancePressureShadow").PerformancePressureShadow;
+    performancePressure?: import("@/lib/picks/performancePressureShadow").PerformancePressureShadow | import("@/lib/picks/performancePressureShadowV5").PerformancePressureShadowV5;
   } | null;
   status: string; // "NS" | "FT" | "AET" | "PEN" | …
   homeGoals: number | null;

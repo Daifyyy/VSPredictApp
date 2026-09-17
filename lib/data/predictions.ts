@@ -95,6 +95,7 @@ import { invalidateCachedJson } from "./cache";
 import { captureCalibrationShadows } from "./calibrationShadowStore";
 import { captureMainModelShadow } from "./mainModelShadowStore";
 import { captureIntuitionTickets, settleIntuitionTickets } from "./intuitionTicketStore";
+import { buildPerformancePressureShadowV5 } from "@/lib/picks/performancePressureShadowV5";
 import { buildPerformancePressureShadow } from "@/lib/picks/performancePressureShadow";
 
 /**
@@ -319,6 +320,8 @@ export async function runPredictUpcoming(
   let errors = 0;
   let eligible24h = 0;
   let ready24h = 0;
+  let pressureV5SpentMs = 0;
+  const pressureV5BudgetMs = Math.min(12_000, Math.max(500, budgetMs * .2));
   for (const leagueId of queue) {
     if (Date.now() >= deadline) {
       stopped = true;
@@ -397,14 +400,18 @@ export async function runPredictUpcoming(
         });
         const p = result.prediction;
         if (!p) continue;
-        const performancePressure = buildPerformancePressureShadow({
+        const pressureInput = {
           homeValues: result.home.values,
           awayValues: result.away.values,
           currentLambdaHome: p.lambdaHomeBase,
           currentLambdaAway: p.lambdaAwayBase,
           currentOver25: p.over25,
           context: modelContext,
-        });
+        };
+        const v5Allowed = process.env.PRESSURE_V5_ENABLED !== "false" && pressureV5SpentMs < pressureV5BudgetMs;
+        const pressureStarted = Date.now();
+        const performancePressure = v5Allowed ? buildPerformancePressureShadowV5(pressureInput) : buildPerformancePressureShadow(pressureInput);
+        if (v5Allowed) pressureV5SpentMs += Date.now() - pressureStarted;
         // λ ROHŮ A KARET vedle gólové – **čistá matematika nad zápasy, které už máme
         // v ruce, tedy 0 volání API navíc**. Do teď tyhle modely v produkci nikdy
         // neběžely (volal je jen backtest), takže jsme na oba trhy sbírali kurzy

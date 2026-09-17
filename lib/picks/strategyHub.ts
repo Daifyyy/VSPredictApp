@@ -1,7 +1,7 @@
 import { INTUITION_POLICY_VERSION } from "./intuitionTickets";
 import { TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION } from "./marketSignals";
 
-export const STRATEGY_HUB_IDS = ["VALUE", "ELO_INTUITION", "ONE_X_TWO", "OVER_25", "BTTS_YES", "TEAM_GOALS", "CORNERS", "CARDS_REF", "FOULS"] as const;
+export const STRATEGY_HUB_IDS = ["VALUE", "ELO_INTUITION", "PRESSURE_FLOW_V5", "ONE_X_TWO", "OVER_25", "BTTS_YES", "TEAM_GOALS", "CORNERS", "CARDS_REF", "FOULS"] as const;
 export type StrategyHubId = typeof STRATEGY_HUB_IDS[number];
 
 export type StrategyHubStatus = "LIVE_TEST" | "RESEARCH" | "NO_MARKET";
@@ -20,6 +20,7 @@ export interface StrategyHubDefinition {
 export const STRATEGY_HUB_CATALOG: StrategyHubDefinition[] = [
   { id: "VALUE", title: "Přísná VALUE", shortTitle: "VALUE", description: "Kombinace vítěze a gólů, které překonají tržní cenu podle hlavního modelu.", status: "LIVE_TEST", policyVersion: INTUITION_POLICY_VERSION, minimumSample: 50, accumulator: true },
   { id: "ELO_INTUITION", title: "ELO / INTUICE", shortTitle: "ELO", description: "Výsledkové Elo doplněné formou, prostředím, pedigree a dostupným lidským kontextem.", status: "RESEARCH", policyVersion: INTUITION_POLICY_VERSION, minimumSample: 50, accumulator: true },
+  { id: "PRESSURE_FLOW_V5", title: "Průběh v5", shortTitle: "Průběh v5", description: "Výzkumný model očekávaného tempa, dominance a tvorby šancí pro gólové trhy.", status: "RESEARCH", policyVersion: 501, minimumSample: 200, accumulator: false },
   { id: "ONE_X_TWO", title: "Výsledek zápasu 1X2", shortTitle: "1X2", description: "Samostatné výběry na vítěze s náskokem modelu proti trhu.", status: "LIVE_TEST", policyVersion: 2, minimumSample: 200, accumulator: false },
   { id: "OVER_25", title: "Více než 2,5 gólu", shortTitle: "Over 2,5", description: "Samostatné gólové výběry s pravděpodobností a cenou zmrazenou při kvalifikaci.", status: "LIVE_TEST", policyVersion: 1, minimumSample: 200, accumulator: false },
   { id: "BTTS_YES", title: "Oba týmy skórují", shortTitle: "BTTS", description: "Výběry, u kterých model očekává gól na obou stranách a překonává trh.", status: "LIVE_TEST", policyVersion: 1, minimumSample: 200, accumulator: false },

@@ -1461,8 +1461,12 @@ function buildMatchStat(
   const metrics: Partial<Record<Metric, number>> = {
     ...statsToMetrics(statsTeam),
   };
-  const xgAgainst = statsToMetrics(statsOpponent).XG;
+  const opponentMetrics = statsToMetrics(statsOpponent);
+  const xgAgainst = opponentMetrics.XG;
   if (xgAgainst != null) metrics.XG_AGAINST = xgAgainst;
+  if (opponentMetrics.SHOTS != null) metrics.SHOTS_AGAINST = opponentMetrics.SHOTS;
+  if (opponentMetrics.SHOTS_ON_TARGET != null) metrics.SHOTS_ON_TARGET_AGAINST = opponentMetrics.SHOTS_ON_TARGET;
+  if (opponentMetrics.SHOTS_INSIDE_BOX != null) metrics.SHOTS_INSIDE_BOX_AGAINST = opponentMetrics.SHOTS_INSIDE_BOX;
   if (gf != null) metrics.GOALS_FOR = gf;
   if (ga != null) metrics.GOALS_AGAINST = ga;
 

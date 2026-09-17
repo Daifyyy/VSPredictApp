@@ -14,6 +14,8 @@ import { isEuroCupLeague } from "./catalog";
 import { referenceLineQuote } from "@/lib/picks/books";
 import { PINNACLE_FIRST_BOOKMAKERS } from "./apiFootball";
 import { CLV_METHOD_VERSION, clvV2, comparableMarketQuote, type ComparableMarket } from "@/lib/picks/comparableMarketQuote";
+import { PRESSURE_FLOW_V5_POLICY_VERSION, pressureFlowCandidates } from "@/lib/picks/pressureFlowV5";
+import type { PerformancePressureShadowV5 } from "@/lib/picks/performancePressureShadowV5";
 
 const TEAM_MARKETS = ["TEAM_HOME_05", "TEAM_HOME_15", "TEAM_AWAY_05", "TEAM_AWAY_15"] as const;
 
@@ -91,6 +93,27 @@ export async function openMarketSignals(
     }; })(),
     update: {},
   })));
+  if (process.env.PRESSURE_V5_OPPORTUNITIES_ENABLED === "true") {
+    const pressure = row.inputSnapshot?.performancePressure as PerformancePressureShadowV5 | null | undefined;
+    if (pressure?.version === 5) {
+      const research = pressureFlowCandidates(pressure, books, at);
+      await Promise.all(research.map((signal) => prisma.marketSignalSnapshot.upsert({
+        where: { fixtureId_market_policyVersion: { fixtureId, market: signal.market, policyVersion: PRESSURE_FLOW_V5_POLICY_VERSION } },
+        create: {
+          fixtureId, leagueId: row.leagueId, kickoff: new Date(row.kickoff), market: signal.market, side: signal.side, line: signal.line,
+          modelProbability: signal.modelProbability, openMarketProbability: signal.marketProbability,
+          modelContext: row.modelContext ?? (isEuroCupLeague(row.leagueId) ? "EURO_CUP" : "LEAGUE"), modelVersion: 5, contextVersion: row.contextVersion ?? 1,
+          policyVersion: PRESSURE_FLOW_V5_POLICY_VERSION, publishedTip: false, openedAt: at,
+          decimalOdds: signal.decimalOdds, bookmaker: signal.bookmaker, openingBookmakerId: signal.bookmakerId,
+          openingBookmaker: signal.bookmaker, openingDecimalOdds: signal.decimalOdds, openingOppositeOdds: signal.oppositeOdds,
+          openingLine: signal.line, openingBenchmarkQuality: signal.benchmarkQuality,
+          openingBenchmarkProbability: signal.marketProbability, clvMethodVersion: CLV_METHOD_VERSION,
+          quotedAt: at, series: [{ t: Math.max(0, Math.round((new Date(row.kickoff).getTime() - at.getTime()) / 60_000)), p: signal.marketProbability }],
+        },
+        update: {},
+      })));
+    }
+  }
 }
 
 export async function appendMarketSignalPoints(fixtureId: number, books: BookOdds[], at: Date): Promise<void> {
@@ -98,6 +121,7 @@ export async function appendMarketSignalPoints(fixtureId: number, books: BookOdd
     { market: { in: ["1X2", "OVER_25", "BTTS"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
     { market: { in: ["CORNERS", "CARDS", "FOULS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
     { market: { in: [...TEAM_MARKETS] }, policyVersion: TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION },
+    { policyVersion: PRESSURE_FLOW_V5_POLICY_VERSION },
   ] } });
   for (const row of rows) {
     const probability = row.market.startsWith("TEAM_")
@@ -125,6 +149,7 @@ export async function closeMarketSignals(fixtureId: number, books: BookOdds[], a
     { market: { in: ["1X2", "OVER_25", "BTTS"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
     { market: { in: ["CORNERS", "CARDS", "FOULS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
     { market: { in: [...TEAM_MARKETS] }, policyVersion: TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION },
+    { policyVersion: PRESSURE_FLOW_V5_POLICY_VERSION },
   ] } });
   for (const row of rows) {
     if (at >= row.kickoff) continue;

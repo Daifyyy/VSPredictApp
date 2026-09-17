@@ -154,6 +154,15 @@ function rowToMatchStat(r: Row): MatchStat {
   };
 }
 
+function addAllowedVolume(target: MatchStat, opponent: MatchStat | undefined): MatchStat {
+  if (!opponent) return target;
+  const metrics = { ...target.metrics };
+  if (opponent.metrics.SHOTS != null) metrics.SHOTS_AGAINST = opponent.metrics.SHOTS;
+  if (opponent.metrics.SHOTS_ON_TARGET != null) metrics.SHOTS_ON_TARGET_AGAINST = opponent.metrics.SHOTS_ON_TARGET;
+  if (opponent.metrics.SHOTS_INSIDE_BOX != null) metrics.SHOTS_INSIDE_BOX_AGAINST = opponent.metrics.SHOTS_INSIDE_BOX;
+  return { ...target, metrics };
+}
+
 /** Načte všechny cachované zápasy týmu v daném kontextu jako mapu dle fixtureId. */
 export async function getCachedMatchStats(
   teamId: number,
@@ -166,7 +175,16 @@ export async function getCachedMatchStats(
       schemaVersion: { gte: MIN_READABLE_CACHE_VERSION },
     },
   });
-  return new Map(rows.map((r) => [r.fixtureId, rowToMatchStat(r)]));
+  const opponents = rows.length ? await prisma.matchStatCache.findMany({
+    where: { fixtureId: { in: rows.map((row) => row.fixtureId) }, teamId: { not: teamId }, schemaVersion: { gte: MIN_READABLE_CACHE_VERSION } },
+    orderBy: { schemaVersion: "desc" },
+  }) : [];
+  const opponentByFixture = new Map<number, MatchStat>();
+  for (const row of opponents) if (!opponentByFixture.has(row.fixtureId)) opponentByFixture.set(row.fixtureId, rowToMatchStat(row));
+  return new Map(rows.map((r) => {
+    const own = rowToMatchStat(r);
+    return [r.fixtureId, addAllowedVolume(own, opponentByFixture.get(r.fixtureId))];
+  }));
 }
 
 /**

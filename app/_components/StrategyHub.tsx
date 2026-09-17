@@ -4,12 +4,13 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { useEffect, useMemo, useState } from "react";
 import { isStrategyHubId, type StrategyHubDefinition, type StrategyHubId } from "@/lib/picks/strategyHub";
-import type { StrategyHubMetrics, StrategyHubOpportunity, StrategyHubTicket } from "@/lib/data/strategyHubStore";
+import type { StrategyHubMetrics, StrategyHubOpportunity, StrategyHubPrediction, StrategyHubTicket } from "@/lib/data/strategyHubStore";
 import { AppHeader } from "./AppHeader";
 import { useCurrentUser } from "./useCurrentUser";
+import { PressureFlowPredictions, type PressureFlowView } from "./PressureFlowPredictions";
 
 type CatalogItem = StrategyHubDefinition & { statusLabel: string };
-type Payload = { date: string; strategy: StrategyHubId; catalog: CatalogItem[]; locked: boolean; data?: { opportunities: StrategyHubOpportunity[]; tickets: StrategyHubTicket[]; metrics: StrategyHubMetrics; coverage: { candidates: number; priced: number; tickets: number }; emptyReason: string | null } };
+type Payload = { date: string; strategy: StrategyHubId; catalog: CatalogItem[]; locked: boolean; data?: { opportunities: StrategyHubOpportunity[]; predictions?: StrategyHubPrediction[]; tickets: StrategyHubTicket[]; metrics: StrategyHubMetrics; coverage: { candidates: number; priced: number; tickets: number }; emptyReason: string | null } };
 
 const emptyLabels: Record<string, string> = {
   NOT_ENOUGH_VALUE_LEGS: "Pro tento den nevznikly alespoň tři samostatně kvalitní VALUE nohy.",
@@ -89,11 +90,13 @@ export function StrategyHub() {
   const requestedDate = params.get("date");
   const minDate = shiftDate(today, -1), maxDate = shiftDate(today, 7);
   const date = requestedDate && requestedDate >= minDate && requestedDate <= maxDate ? requestedDate : today;
+  const requestedMarket = params.get("market");
+  const pressureView: PressureFlowView = requestedMarket === "over25" || requestedMarket === "btts" || requestedMarket === "team" ? requestedMarket : "all";
   const [payload, setPayload] = useState<Payload | null>(null);
   const [error, setError] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   useEffect(() => { const controller = new AbortController(); queueMicrotask(() => { setPayload(null); setError(false); }); fetch(`/api/picks/strategies?strategy=${strategy}&date=${date}`, { signal: controller.signal }).then(async (response) => { if (!response.ok) throw new Error(); return response.json() as Promise<Payload>; }).then(setPayload).catch((reason) => { if (reason?.name !== "AbortError") setError(true); }); return () => controller.abort(); }, [strategy, date]);
-  const navigate = (nextStrategy: StrategyHubId, nextDate = date) => { const query = new URLSearchParams(); if (nextStrategy !== "VALUE") query.set("strategy", nextStrategy); if (nextDate !== today) query.set("date", nextDate); router.push(`${pathname}${query.size ? `?${query}` : ""}`); };
+  const navigate = (nextStrategy: StrategyHubId, nextDate = date, nextMarket: PressureFlowView = nextStrategy === strategy ? pressureView : "all") => { const query = new URLSearchParams(); if (nextStrategy !== "VALUE") query.set("strategy", nextStrategy); if (nextDate !== today) query.set("date", nextDate); if (nextStrategy === "PRESSURE_FLOW_V5" && nextMarket !== "all") query.set("market", nextMarket); router.push(`${pathname}${query.size ? `?${query}` : ""}`); };
   const unlock = async () => {
     if (!user) { await signIn("google", { callbackUrl: window.location.href }); return; }
     setCheckoutLoading(true);
@@ -107,6 +110,7 @@ export function StrategyHub() {
   const catalog = payload?.catalog ?? [];
   const definition = catalog.find((item) => item.id === strategy);
   const data = payload?.data;
+  const displayedOpportunities = data?.opportunities.filter((item) => strategy !== "PRESSURE_FLOW_V5" || pressureView === "all" || pressureView === "over25" && item.market === "OVER_25" || pressureView === "btts" && item.market === "BTTS" || pressureView === "team" && item.market?.startsWith("TEAM_")) ?? [];
   const locked = payload?.locked ?? false;
   return <><AppHeader user={user} /><main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-24 pt-5 sm:pt-8">
     <div><p className="page-kicker">Jedno místo pro všechny výběry</p><h1 className="page-title">Sázkové strategie</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-muted">Bilance, dnešní příležitosti a případné tikety zůstávají oddělené podle pravidel, která je vytvořila.</p></div>
@@ -116,8 +120,8 @@ export function StrategyHub() {
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface p-3"><button disabled={date <= minDate} onClick={() => navigate(strategy, shiftDate(date, -1))} className="min-h-10 rounded-lg px-3 font-bold disabled:opacity-30" aria-label="Předchozí den">←</button><label className="text-center"><span className="block text-[10px] font-bold uppercase text-muted">Herní den</span><input type="date" min={minDate} max={maxDate} value={date} onChange={(event) => navigate(strategy, event.target.value)} className="mt-1 rounded-lg border border-border bg-background px-3 py-2 text-sm font-bold" /><span className="ml-2 hidden text-sm capitalize sm:inline">{dateLabel(date)}</span></label><button disabled={date >= maxDate} onClick={() => navigate(strategy, shiftDate(date, 1))} className="min-h-10 rounded-lg px-3 font-bold disabled:opacity-30" aria-label="Další den">→</button></div>
       {locked ? <section className="ui-panel mt-4 border-dashed p-8 text-center"><p className="page-kicker">Obsah PRO</p><h2 className="mt-2 text-xl font-bold">Denní příležitosti a přesná bilance jsou uzamčené</h2><p className="mx-auto mt-2 max-w-xl text-sm text-muted">Veřejně vidíš princip a stav strategie. PRO zpřístupní zmrazené výběry, kurzy, výsledky a ROI.</p><button type="button" disabled={checkoutLoading} onClick={() => void unlock()} className="mt-5 inline-flex min-h-11 items-center rounded-xl bg-accent px-5 font-bold text-accent-ink disabled:opacity-60">{checkoutLoading ? "Otevírám…" : user ? "Odemknout PRO" : "Přihlásit přes Google"}</button></section> : data && <>
         <section className="mt-6"><div className="flex flex-wrap items-end justify-between gap-2"><div><p className="page-kicker">{dateLabel(date)}</p><h2 className="mt-1 text-xl font-bold">Příležitosti pro vybraný den</h2></div><p className="text-xs text-muted">{data.coverage.candidates} vybráno · {data.coverage.priced} s kurzem</p></div>
-          {data.opportunities.length ? <div className="mt-3 grid gap-3 lg:grid-cols-2">{data.opportunities.map((item) => <OpportunityCard key={item.id} item={item} />)}</div> : <div className="ui-panel mt-3 border-dashed p-7 text-center"><strong className="text-base">Dnes tato strategie nic nevybrala</strong><p className="mx-auto mt-2 max-w-xl text-sm text-muted">{emptyLabels[data.emptyReason ?? ""] ?? "Nejsou dostupné kvalifikované příležitosti."}</p></div>}
-        </section><Tickets tickets={data.tickets} />{!definition.accumulator && <p className="mt-4 rounded-xl bg-background p-3 text-xs text-muted">Tato strategie sleduje jednotlivé výběry a akumulační tiket neskládá.</p>}
+          {displayedOpportunities.length ? <div className="mt-3 grid gap-3 lg:grid-cols-2">{displayedOpportunities.map((item) => <OpportunityCard key={item.id} item={item} />)}</div> : <div className="ui-panel mt-3 border-dashed p-7 text-center"><strong className="text-base">Dnes tato strategie nic nevybrala</strong><p className="mx-auto mt-2 max-w-xl text-sm text-muted">{emptyLabels[data.emptyReason ?? ""] ?? "Nejsou dostupné kvalifikované příležitosti."}</p></div>}
+        </section>{strategy === "PRESSURE_FLOW_V5" && data.predictions ? <PressureFlowPredictions rows={data.predictions} view={pressureView} onViewChange={(view) => navigate(strategy, date, view)} /> : null}<Tickets tickets={data.tickets} />{!definition.accumulator && <p className="mt-4 rounded-xl bg-background p-3 text-xs text-muted">Tato strategie sleduje jednotlivé výběry a akumulační tiket neskládá.</p>}
       </>}
     </>}
     <p className="mt-8 text-center text-[11px] text-muted">Jde o prospektivní sledování modelů, nikoli doporučení vkladu. Výzkumné strategie nejsou ověřené.</p>

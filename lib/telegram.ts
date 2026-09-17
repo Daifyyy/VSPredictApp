@@ -32,7 +32,7 @@ export function shiftDateKey(date: string, days: number) { const value = new Dat
 export function isTelegramDateAllowed(date: string, today = localDateKey(new Date())) { if (!isDateKey(date)) return false; const delta = (Date.parse(`${date}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / 86400_000; return delta >= -30 && delta <= 7; }
 export async function loadTelegramDay(date: string): Promise<TelegramDay> { return { date, generatedAt: new Date().toISOString(), strategies: await Promise.all(STRATEGY_HUB_IDS.map(async (strategy) => ({ strategy, data: await strategyHubData(strategy, date) as HubData }))) }; }
 const title = (id: StrategyHubId) => STRATEGY_HUB_CATALOG.find((item) => item.id === id)?.title ?? id;
-const strategyIcon = (id: StrategyHubId) => ({ VALUE: "💎", ELO_INTUITION: "🧠", ONE_X_TWO: "🏆", OVER_25: "⚽", BTTS_YES: "🥅", TEAM_GOALS: "🎯", CORNERS: "🚩", CARDS_REF: "🟨", FOULS: "📋" })[id];
+const strategyIcon = (id: StrategyHubId) => ({ VALUE: "💎", ELO_INTUITION: "🧠", PRESSURE_FLOW_V5: "🧪", ONE_X_TWO: "🏆", OVER_25: "⚽", BTTS_YES: "🥅", TEAM_GOALS: "🎯", CORNERS: "🚩", CARDS_REF: "🟨", FOULS: "📋" })[id];
 const outcomeIcon = (value: StrategyHubOpportunity["outcome"]) => value === "PENDING" ? "⏳" : value === "WON" ? "✅" : value === "LOST" ? "❌" : "↩️";
 const ticketOutcomeIcon = (value: StrategyHubTicket["outcome"]) => value === "PENDING" ? "⏳" : value === "WON" ? "✅" : value === "LOST" ? "❌" : "↩️";
 
@@ -54,10 +54,15 @@ export function splitTelegramBlocks(blocks: string[], limit = TEXT_LIMIT) {
   if (current) chunks.push(current); return chunks;
 }
 
-export function formatTips(payload: TelegramDay, requested?: StrategyHubId, limit = TELEGRAM_TOP_LIMIT, skip = 0) {
+type PressureMarketFilter = "OVER_25" | "BTTS" | "TEAM_GOALS";
+const pressureMarketMatches = (market: string | undefined, filter?: PressureMarketFilter) => !filter || filter === "OVER_25" ? !filter || market === "OVER_25" : filter === "BTTS" ? market === "BTTS" : market?.startsWith("TEAM_") === true;
+const pressureMarketFilter = (value?: string): PressureMarketFilter | null | undefined => value == null ? undefined : value === "over25" ? "OVER_25" : value === "btts" ? "BTTS" : value === "tymove_goly" ? "TEAM_GOALS" : null;
+
+export function formatTips(payload: TelegramDay, requested?: StrategyHubId, limit = TELEGRAM_TOP_LIMIT, skip = 0, marketFilter?: PressureMarketFilter) {
   const blocks = [`📅 <b>Výběry na ${payload.date}</b>`];
   for (const { strategy, data } of payload.strategies.filter((row) => !requested || row.strategy === requested)) {
-    const picks = data.opportunities.slice(skip, skip + limit); blocks.push(picks.length ? `${strategyIcon(strategy)} <b>${esc(title(strategy))}</b>` : empty(strategy), ...picks.map(opportunity));
+    const eligible = data.opportunities.filter((item) => strategy !== "PRESSURE_FLOW_V5" || pressureMarketMatches(item.market, marketFilter));
+    const picks = eligible.slice(skip, skip + limit); blocks.push(picks.length ? `${strategyIcon(strategy)} <b>${esc(title(strategy))}</b>` : empty(strategy), ...picks.map(opportunity));
   }
   return splitTelegramBlocks(blocks);
 }
@@ -133,7 +138,7 @@ export async function publishTelegramMorning(now = new Date(), options: { dryRun
   return { date: clock.date, sent };
 }
 
-const ALIASES: Record<string, StrategyHubId> = { value: "VALUE", elo: "ELO_INTUITION", "1x2": "ONE_X_TWO", over25: "OVER_25", btts: "BTTS_YES", tymove_goly: "TEAM_GOALS", rohy: "CORNERS", karty: "CARDS_REF", fauly: "FOULS" };
+const ALIASES: Record<string, StrategyHubId> = { value: "VALUE", elo: "ELO_INTUITION", prubeh: "PRESSURE_FLOW_V5", "průběh": "PRESSURE_FLOW_V5", "1x2": "ONE_X_TWO", over25: "OVER_25", btts: "BTTS_YES", tymove_goly: "TEAM_GOALS", rohy: "CORNERS", karty: "CARDS_REF", fauly: "FOULS" };
 export const telegramStrategyAlias = (value?: string) => value ? ALIASES[value.toLowerCase()] ?? null : null;
 export async function handleTelegramCommand(userId: string, text: string, now = new Date()) {
   const [raw, ...args] = text.trim().split(/\s+/); const command = raw.toLowerCase().split("@")[0]; const today = localDateKey(now);
@@ -142,7 +147,7 @@ export async function handleTelegramCommand(userId: string, text: string, now = 
   if (command === "/stav") return formatStatus(await loadTelegramDay(today));
   if (command === "/tiket") { const strategy = telegramStrategyAlias(args[0]); return strategy === "VALUE" || strategy === "ELO_INTUITION" ? formatTickets(await loadTelegramDay(today), strategy, true) : ["Použij /tiket value nebo /tiket elo."]; }
   if (command === "/datum") { const strategy = telegramStrategyAlias(args[1]); if (!args[0] || !isTelegramDateAllowed(args[0], today)) return ["Použij /datum YYYY-MM-DD [strategie]. Povolen je včerejšek až +7 dní."]; if (args[1] && !strategy) return ["Neznámá strategie."]; return formatTips(await loadTelegramDay(args[0]), strategy ?? undefined); }
-  if (command === "/tipy") { const strategy = telegramStrategyAlias(args[0]); return args[0] && !strategy ? ["Neznámá strategie."] : formatTips(await loadTelegramDay(today), strategy ?? undefined); }
+  if (command === "/tipy") { const strategy = telegramStrategyAlias(args[0]); const market = strategy === "PRESSURE_FLOW_V5" ? pressureMarketFilter(args[1]) : undefined; if (args[0] && !strategy) return ["Neznámá strategie."]; if (market === null) return ["Použij /tipy prubeh over25, btts nebo tymove_goly."]; return formatTips(await loadTelegramDay(today), strategy ?? undefined, TELEGRAM_TOP_LIMIT, 0, market); }
   if (command === "/dalsi") {
     const all = args.includes("vse"); const strategyArg = args.find((arg) => arg !== "vse"); const strategy = telegramStrategyAlias(strategyArg); if (strategyArg && !strategy) return ["Neznámá strategie."]; const key = strategy ?? "ALL";
     const cursor = await prisma.telegramCommandCursor.findUnique({ where: { userId_dateKey_strategy: { userId, dateKey: today, strategy: key } } }); const offset = cursor?.offset ?? TELEGRAM_TOP_LIMIT; const payload = await loadTelegramDay(today); const available = strategy ? payload.strategies.find((row) => row.strategy === strategy)?.data.opportunities.length ?? 0 : Math.max(0, ...payload.strategies.map((row) => row.data.opportunities.length)); if (offset >= available) return ["Další kvalifikované výběry už nejsou."];

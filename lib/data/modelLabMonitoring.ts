@@ -43,20 +43,25 @@ async function monitorCornerCapture(definitionId: string, modelVersion: number, 
     return 0;
   }
   const fixtureIds = signals.map((row) => row.fixtureId);
-  const [predictions, captured] = await Promise.all([
+  const [predictions, evaluated] = await Promise.all([
     prisma.fixturePrediction.findMany({
       where: { fixtureId: { in: fixtureIds } },
       select: { fixtureId: true, oddsBooks: true, readinessSample: true, lowConfidence: true },
     }),
     prisma.autonomousTipSnapshot.findMany({
-      where: { fixtureId: { in: fixtureIds }, strategy: "CORNERS", policyVersion: AUTONOMOUS_POLICY_VERSION.CORNERS, status: "candidate", qualifiedAt: { gte: startedAt } },
-      select: { fixtureId: true },
+      where: { fixtureId: { in: fixtureIds }, strategy: "CORNERS", policyVersion: AUTONOMOUS_POLICY_VERSION.CORNERS, capturedAt: { gte: startedAt } },
+      select: { fixtureId: true, status: true, sampleCount: true },
     }),
   ]);
   const predictionByFixture = new Map(predictions.map((row) => [row.fixtureId, row]));
-  const capturedFixtures = new Set(captured.map((row) => row.fixtureId));
+  const evaluationByFixture = new Map(evaluated.map((row) => [row.fixtureId, row]));
   const missing = signals.filter((signal) => {
-    if (capturedFixtures.has(signal.fixtureId) || signal.line == null || Math.abs(signal.line % 1) !== .5) return false;
+    const sampleCount = Array.isArray(signal.series) ? signal.series.length : 0;
+    const existing = evaluationByFixture.get(signal.fixtureId);
+    // Candidate i watch jsou platně zachycené výsledky rozhodovací brány. Mezera vzniká
+    // pouze tehdy, když aktuální kurzový vzorek vůbec nebyl autonomní politikou vyhodnocen.
+    if (existing && existing.sampleCount >= sampleCount) return false;
+    if (signal.line == null || Math.abs(signal.line % 1) !== .5) return false;
     const prediction = predictionByFixture.get(signal.fixtureId);
     if (!prediction) return false;
     const side = signal.side === "UNDER" ? "under" : "over";
@@ -69,7 +74,7 @@ async function monitorCornerCapture(definitionId: string, modelVersion: number, 
       decimalOdds: quote.odds,
       readinessSample: prediction.readinessSample,
       lowConfidence: prediction.lowConfidence,
-      sampleCount: Array.isArray(signal.series) ? signal.series.length : 0,
+      sampleCount,
       minutesToKickoff: (signal.kickoff.getTime() - now.getTime()) / 60_000,
     }).status === "candidate";
   });
