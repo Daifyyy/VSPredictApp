@@ -14,7 +14,7 @@ import {
   getLeagueCountBaseline,
   cacheFinishedFixtureStats,
 } from "./realRepository";
-import { pendingMatchFlowFixtureIds, settleMatchFlowEvaluation } from "./matchFlowStore";
+import { pendingMatchFlowFixtureIds, settleMatchFlowEvaluation, repairRecentMatchFlowEvaluations } from "./matchFlowStore";
 import {
   DEFAULT_CORNER_BASELINE,
   cornerValues,
@@ -87,7 +87,7 @@ import { MODEL_CONTEXT_VERSION, modelContextForLeague } from "./modelContext";
 import { getRefereeProfile, ingestRefereeHistory } from "./refereeStore";
 import { normalizeRefereeName, type RefereeEstimate } from "@/lib/picks/cards";
 import { FOUL_MODEL_VERSION, predictFouls } from "@/lib/picks/fouls";
-import { captureAutonomousPortfolio, closeAutonomousPortfolio, settleAutonomousCountPortfolio } from "./autonomousPortfolioStore";
+import { captureAutonomousPortfolio, closeAutonomousPortfolio, settleAutonomousPortfolio, repairAutonomousGoalSettlements } from "./autonomousPortfolioStore";
 import { captureQuickOverviewDay, closeQuickOverviewSelections, settleQuickOverviewSelections } from "./quickOverviewStore";
 import { closeIntuitionTicketLegs } from "./intuitionTicketStore";
 import { priorityOrder } from "@/lib/picks/oddsCronPolicy";
@@ -479,6 +479,11 @@ export async function runPredictUpcoming(
           h2hSnapshotVersion: H2H_SNAPSHOT_VERSION,
           h2hCapturedAt: h2hCapturedAt.toISOString(),
           inputSnapshot: {
+            competition: {
+              version: 1, fixtureId: f.fixture.id, leagueId: f.league.id, season: f.league.season,
+              kickoff: f.fixture.date, homeTeamId: f.teams.home.id, awayTeamId: f.teams.away.id,
+              round: f.league.round ?? null,
+            },
             baseline: { home: baseline?.home ?? 1.5, away: baseline?.away ?? 1.2, source: baseline ? "league" : "default" },
             strengthSource: rh && ra ? "opponent_adjusted_rating" : "window_fallback",
             homeStrength: rh ? { attack: rh.attack, defense: rh.defense, sample: rh.sample } : null,
@@ -798,6 +803,13 @@ export async function runSettleResults(): Promise<{
   errors: number;
 }> {
   const statusPending = await getUnsettledPredictions();
+  for (const [name, repair] of [
+    ["autonomous", repairAutonomousGoalSettlements],
+    ["matchFlow", repairRecentMatchFlowEvaluations],
+  ] as const) {
+    try { await repair(); }
+    catch (error) { logError(`predictions.runSettleResults.repair.${name}`, error); }
+  }
   const statsRepairIds = await getMissingActualStatPredictionIds();
   const flowRepairIds = await pendingMatchFlowFixtureIds();
   const repairSet = new Set(statsRepairIds);
@@ -882,10 +894,10 @@ export async function runSettleResults(): Promise<{
         logError("predictions.runSettleResults.intuitionTickets", error, { fixtureId: f.fixture.id });
       }
       try {
-        await settleAutonomousCountPortfolio(f.fixture.id, new Date());
+        await settleAutonomousPortfolio(f.fixture.id, new Date());
       } catch (error) {
         errors++;
-        logError("predictions.runSettleResults.autonomousCounts", error, { fixtureId: f.fixture.id });
+        logError("predictions.runSettleResults.autonomousPortfolio", error, { fixtureId: f.fixture.id });
       }
     }
     await ingestRefereeHistory(fixtures);

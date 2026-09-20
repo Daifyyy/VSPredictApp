@@ -102,6 +102,7 @@ async function loadSeason(league: number, season: number): Promise<HistoryMatch[
     const ft = fullTimeGoals(f); // skóre po 90 min (v lize = koncové)
     if (!ft) continue;
     rows.push({
+      competitionRound: f.league.round ?? null,
       fixtureId: f.fixture.id,
       date: f.fixture.date,
       season,

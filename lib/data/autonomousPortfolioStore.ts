@@ -6,7 +6,7 @@ import { referenceLineQuote } from "@/lib/picks/books";
 import { AUTONOMOUS_POLICY_VERSION, CORNERS_LIVE_COUNT_MODEL_VERSION, GUARDED_ONE_X_TWO_POLICY_VERSION, evaluateAutonomousTip, evaluateGuardedOneXTwo, type AutonomousStrategy } from "@/lib/picks/autonomousPortfolio";
 import { COUNT_MARKET_SIGNAL_POLICY_VERSION, MARKET_SIGNAL_POLICY_VERSION, marketProbabilityAt } from "@/lib/picks/marketSignals";
 import { isPublicClubLeague } from "./catalog";
-import { binaryOutcome, portfolioProfit, RELIABLE_CLOSE_MAX_MINUTES } from "@/lib/picks/evaluation";
+import { binaryOutcome, portfolioProfit, RELIABLE_CLOSE_MAX_MINUTES, FINAL_STATUSES } from "@/lib/picks/evaluation";
 import { CLV_METHOD_VERSION, clvV2, comparableMarketQuote, type ComparableMarket } from "@/lib/picks/comparableMarketQuote";
 
 const countActivationCache = new Map<string, { enabled: boolean; expiresAt: number }>();
@@ -265,5 +265,54 @@ export async function settleAutonomousCountPortfolio(fixtureId: number, at: Date
     });
     settled += result.count;
   }
+  return settled;
+}
+
+/** Uzavře celé autonomní portfolio. Gólové a 1X2 trhy používají autoritativní
+ * skóre z FixturePrediction, početní trhy definitivní MatchStatCache. */
+export async function settleAutonomousPortfolio(fixtureId: number, at: Date): Promise<number> {
+  const prediction = await prisma.fixturePrediction.findUnique({
+    where: { fixtureId },
+    select: { homeGoals: true, awayGoals: true, status: true },
+  });
+  if (!prediction || !FINAL_STATUSES.has(prediction.status)) return 0;
+  let settled = await settleAutonomousCountPortfolio(fixtureId, at);
+  if (prediction.homeGoals == null || prediction.awayGoals == null) return settled;
+  const rows = await prisma.autonomousTipSnapshot.findMany({
+    where: {
+      fixtureId,
+      strategy: { in: ["ONE_X_TWO", "ONE_X_TWO_GUARDED", "OVER_25", "BTTS_YES"] },
+      status: "candidate",
+      settledAt: null,
+    },
+  });
+  for (const row of rows) {
+    const hit = binaryOutcome(row.market, row.side, prediction.homeGoals, prediction.awayGoals, row.line, null);
+    if (hit == null) continue;
+    const result = await prisma.autonomousTipSnapshot.updateMany({
+      where: { id: row.id, settledAt: null },
+      data: hit == null
+        ? { settlementStatus: "VOID", hit: null, profit: 0, settledAt: at }
+        : {
+            settlementStatus: "SETTLED",
+            hit,
+            profit: portfolioProfit(hit, row.decimalOdds, row.stake),
+            settledAt: at,
+          },
+    });
+    settled += result.count;
+  }
+  return settled;
+}
+
+export async function repairAutonomousGoalSettlements(at = new Date()): Promise<number> {
+  const pending = await prisma.autonomousTipSnapshot.findMany({
+    where: { status: "candidate", settledAt: null, market: { in: ["1X2", "OVER_25", "BTTS"] },
+      kickoff: { lt: new Date(at.getTime() - 3 * 3600_000) } },
+    distinct: ["fixtureId"], orderBy: { kickoff: "desc" }, take: 20,
+    select: { fixtureId: true },
+  });
+  let settled = 0;
+  for (const row of pending) settled += await settleAutonomousPortfolio(row.fixtureId, at);
   return settled;
 }

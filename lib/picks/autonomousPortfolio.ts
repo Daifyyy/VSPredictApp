@@ -3,8 +3,8 @@ export type AutonomousStatus = "candidate" | "watch" | "unavailable";
 
 export const AUTONOMOUS_POLICY_VERSION: Record<AutonomousStrategy, number> = {
   ONE_X_TWO: 2,
-  OVER_25: 1,
-  BTTS_YES: 1,
+  OVER_25: 2,
+  BTTS_YES: 2,
   CORNERS: 1,
   CARDS_REF: 1,
   FOULS: 1,
@@ -45,14 +45,20 @@ const CONFIG = {
   FOULS: { probability: 0.6, edge: 0.05, expectedValue: 0.03 },
 } as const;
 
+const GOAL_STRATEGIES = new Set<AutonomousStrategy>(["OVER_25", "BTTS_YES"]);
+// Prospektivní bezpečnostní omezení, nikoli hranice optimalizované na výsledku jediného zápasu.
+export const GOAL_MARKET_MIN_READINESS = 8;
+export const GOAL_MARKET_MAX_EDGE = 0.12;
+
 /** Cista, verzovana publikacni brana. Poradi kontrol zaroven urcuje jednu vetu v UI. */
 export function evaluateAutonomousTip(input: AutonomousInput): AutonomousDecision {
   const cfg = CONFIG[input.strategy];
   const edge = input.marketProbability == null ? null : input.modelProbability - input.marketProbability;
   const expectedValue = input.decimalOdds == null ? null : input.modelProbability * input.decimalOdds - 1;
   const watch = (reason: string): AutonomousDecision => ({ status: "watch", reason, edge, expectedValue });
-  if (input.lowConfidence || input.readinessSample < 6)
-    return watch(`Efektivni vzorek ${input.readinessSample.toFixed(1)}; potreba je alespon 6 zapasu.`);
+  const minReadiness = GOAL_STRATEGIES.has(input.strategy) ? GOAL_MARKET_MIN_READINESS : 6;
+  if (input.lowConfidence || input.readinessSample < minReadiness)
+    return watch(`Efektivni vzorek ${input.readinessSample.toFixed(1)}; potreba je alespon ${minReadiness} zapasu.`);
   if (input.modelProbability + Number.EPSILON < cfg.probability)
     return watch(`Modelu chybi ${((cfg.probability - input.modelProbability) * 100).toFixed(1)} p. b. k hranici ${Math.round(cfg.probability * 100)} %.`);
   if (input.strategy === "ONE_X_TWO" && input.secondProbability != null && input.modelProbability - input.secondProbability + Number.EPSILON < 0.1)
@@ -63,6 +69,8 @@ export function evaluateAutonomousTip(input: AutonomousInput): AutonomousDecisio
     return watch(`Zatim jen ${input.sampleCount} kurzove vzorky; potreba jsou alespon 3.`);
   if (input.minutesToKickoff < 15)
     return watch("Do vykopu zbyva mene nez 15 minut; novy vyber uz nelze publikovat.");
+  if (GOAL_STRATEGIES.has(input.strategy) && edge! - GOAL_MARKET_MAX_EDGE > 1e-9)
+    return watch(`Rozpor s trhem +${(edge! * 100).toFixed(1)} p. b. je nad bezpecnou hranici ${Math.round(GOAL_MARKET_MAX_EDGE * 100)} p. b.; vyber zustava jen k auditu.`);
   if (edge! + Number.EPSILON < cfg.edge)
     return watch(`Proti trhu chybi ${((cfg.edge - edge!) * 100).toFixed(1)} p. b. k pozadovane hrane.`);
   if (expectedValue! + Number.EPSILON < cfg.expectedValue)

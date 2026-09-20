@@ -15,8 +15,13 @@ describe("evaluateAutonomousTip", () => {
     expect(evaluateAutonomousTip({ ...base, minutesToKickoff: 14.9 }).status).toBe("watch");
   });
   it("pouzije odlisne hrany Overu a BTTS", () => {
-    expect(evaluateAutonomousTip({ ...base, strategy: "OVER_25", modelProbability: .6, marketProbability: .56, secondProbability: undefined, decimalOdds: 1.75 }).status).toBe("candidate");
-    expect(evaluateAutonomousTip({ ...base, strategy: "BTTS_YES", modelProbability: .6, marketProbability: .58, secondProbability: undefined, decimalOdds: 1.75 }).status).toBe("candidate");
+    expect(evaluateAutonomousTip({ ...base, strategy: "OVER_25", modelProbability: .6, marketProbability: .56, secondProbability: undefined, decimalOdds: 1.75, readinessSample: 8 }).status).toBe("candidate");
+    expect(evaluateAutonomousTip({ ...base, strategy: "BTTS_YES", modelProbability: .6, marketProbability: .58, secondProbability: undefined, decimalOdds: 1.75, readinessSample: 8 }).status).toBe("candidate");
+  });
+  it("nepublikuje golovy tip s malym vzorkem ani extremnim rozporem proti trhu", () => {
+    const goals = { ...base, strategy: "OVER_25" as const, modelProbability: .8, marketProbability: .62, secondProbability: undefined, decimalOdds: 1.53 };
+    expect(evaluateAutonomousTip({ ...goals, readinessSample: 7 }).reason).toContain("alespon 8");
+    expect(evaluateAutonomousTip({ ...goals, readinessSample: 8 }).reason).toContain("nad bezpecnou hranici");
   });
   it("použije konzervativní brány pro rohy", () => {
     const corners = { ...base, strategy: "CORNERS" as const, modelProbability: .6, marketProbability: .55, secondProbability: undefined, decimalOdds: 1.72 };

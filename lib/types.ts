@@ -1024,6 +1024,8 @@ export interface PredictionRow {
   h2hCapturedAt?: string | null;
   /** Point-in-time vysvetleni vstupu lambda; stare predikce jej nemaji. */
   inputSnapshot?: {
+    /** Raw competition phase retained for future season audits; does not change prediction. */
+    competition?: import("@/lib/stats/seasonPhases").CompetitionMetadata;
     baseline: { home: number; away: number; source: "league" | "default" };
     strengthSource: "opponent_adjusted_rating" | "window_fallback";
     homeStrength: { attack: number; defense: number; sample: number } | null;

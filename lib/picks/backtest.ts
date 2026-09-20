@@ -32,6 +32,8 @@ import type { MatchOddsRecord } from "./oddsDataset";
 
 /** Odehraný zápas z historie ligy (jen to, co jde levně vytáhnout z `/fixtures`). */
 export interface HistoryMatch {
+  /** Provider round retained on new imports; absent in legacy local caches. */
+  competitionRound?: string | null;
   fixtureId: number;
   date: string; // ISO
   season: number; // ligová sezóna (rok začátku)

@@ -1,4 +1,5 @@
 import { INTUITION_POLICY_VERSION } from "./intuitionTickets";
+import { AUTONOMOUS_POLICY_VERSION } from "./autonomousPortfolio";
 import { TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION } from "./marketSignals";
 
 export const STRATEGY_HUB_IDS = ["VALUE", "ELO_INTUITION", "PRESSURE_FLOW_V5", "ONE_X_TWO", "OVER_25", "BTTS_YES", "TEAM_GOALS", "CORNERS", "CARDS_REF", "FOULS"] as const;
@@ -29,6 +30,11 @@ export const STRATEGY_HUB_CATALOG: StrategyHubDefinition[] = [
   { id: "CARDS_REF", title: "Karty s rozhodčím", shortTitle: "Karty", description: "Výzkumný model karet, který auditně zohledňuje dostupného rozhodčího.", status: "RESEARCH", policyVersion: 1, minimumSample: 200, accumulator: false },
   { id: "FOULS", title: "Fauly Over / Under", shortTitle: "Fauly", description: "Výzkumné samostatné výběry na celkový počet faulů s přímou cenou.", status: "RESEARCH", policyVersion: 1, minimumSample: 200, accumulator: false },
 ];
+
+// Gólové policy v2 oddělují novou konzervativní kohortu od historické v1.
+for (const definition of STRATEGY_HUB_CATALOG) {
+  if (definition.id === "OVER_25" || definition.id === "BTTS_YES") definition.policyVersion = AUTONOMOUS_POLICY_VERSION[definition.id];
+}
 
 export function isStrategyHubId(value: string | null): value is StrategyHubId {
   return STRATEGY_HUB_IDS.includes(value as StrategyHubId);

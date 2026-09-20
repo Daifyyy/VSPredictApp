@@ -2,7 +2,7 @@ import { Prisma, type FixturePrediction } from "@prisma/client";
 import type { PredictionRow } from "@/lib/types";
 import { prisma } from "@/lib/db";
 import { PREDICT_PARAMS } from "@/lib/stats/predict";
-import { FINISHED_STATUSES } from "./apiFootball";
+import { FINISHED_STATUSES, LIVE_STATUSES } from "./apiFootball";
 import { DEFAULT_CORNER_TUNING } from "@/lib/picks/corners";
 import { DEFAULT_CARD_TUNING } from "@/lib/picks/cards";
 
@@ -467,7 +467,7 @@ export async function getUnsettledPredictions(
 ): Promise<{ fixtureId: number }[]> {
   return prisma.fixturePrediction.findMany({
     where: {
-      status: { in: ["NS", "PST", "TBD", "SUSP", "INT"] },
+      status: { in: [...new Set(["NS", "PST", "TBD", ...LIVE_STATUSES])] },
       kickoff: { lt: new Date(Date.now() - graceMs) },
     },
     orderBy: { kickoff: "asc" },

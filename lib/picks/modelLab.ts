@@ -1,4 +1,5 @@
 import { freshClosing } from "./evaluation";
+import { AUTONOMOUS_POLICY_VERSION } from "./autonomousPortfolio";
 import { summarizePortfolio, type PortfolioSummary } from "./portfolioStats";
 import { resolvedStrategyOutcome } from "./strategyOutcome";
 
@@ -31,6 +32,18 @@ export const STRATEGY_CATALOG: StrategyCatalogItem[] = [
   { strategy: "CHECKLIST", policyVersion: 1, market: "MIXED", title: "Checklist v1", status: "RETIRED", minimumSample: 0, rules: "Historická ukončená politika", decision: "Pouze neměnný archiv" },
   { strategy: "PUBLISHED_1X2", policyVersion: 1, market: "1X2", title: "Publikované 1X2 v1", status: "RETIRED", minimumSample: 0, rules: "55 % · náskok 10 p. b.", decision: "Pouze neměnný archiv" },
 ];
+
+// Uživatel smí v aktivním přehledu vidět pouze novou bezpečnější gólovou kohortu.
+for (const definition of STRATEGY_CATALOG) {
+  if ((definition.strategy === "OVER_25" || definition.strategy === "BTTS_YES") && definition.status !== "RETIRED") {
+    STRATEGY_CATALOG.push({ ...definition, status: "RETIRED", decision: "Historická policy v1; výsledky se nepřepočítávají novými pravidly." });
+    definition.policyVersion = AUTONOMOUS_POLICY_VERSION[definition.strategy];
+    definition.title = definition.strategy === "OVER_25" ? "Over 2,5 v2" : "BTTS Ano v2";
+    definition.rules = definition.strategy === "OVER_25"
+      ? "60 % · vzorek 8 · edge 4–12 p. b. · EV 2 %"
+      : "60 % · vzorek 8 · edge 2–12 p. b. · EV 2 %";
+  }
+}
 
 export interface ModelLabLedgerRow {
   id: string;

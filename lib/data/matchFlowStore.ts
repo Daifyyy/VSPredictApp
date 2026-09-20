@@ -8,7 +8,7 @@ import { buildMatchInsight, type MatchInsight } from "@/lib/picks/matchInsight";
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 function pressureOf(input: Prisma.JsonValue | null): PerformancePressureShadow | null {
   const pressure = (input as { performancePressure?: PerformancePressureShadow } | null)?.performancePressure;
-  return pressure?.version === 3 && pressure.expectedMatchShape ? pressure : null;
+  return (pressure?.version === 3 || pressure?.version === 5) && pressure.expectedMatchShape ? pressure : null;
 }
 function stats(row: { xg:number|null;shots:number|null;shotsOnTarget:number|null;shotsInsideBox:number|null;corners:number|null;possession:number|null } | null): FlowStats {
   if (!row) return {};
@@ -17,6 +17,7 @@ function stats(row: { xg:number|null;shots:number|null;shotsOnTarget:number|null
 export async function settleMatchFlowEvaluation(fixtureId:number,now=new Date()):Promise<"SKIPPED"|"PENDING"|"SETTLED">{
   const prediction=await prisma.fixturePrediction.findUnique({where:{fixtureId},select:{fixtureId:true,leagueId:true,kickoff:true,homeTeamId:true,awayTeamId:true,homeGoals:true,awayGoals:true,status:true,inputSnapshot:true}});
   const pressure=prediction?pressureOf(prediction.inputSnapshot):null;if(!prediction||!pressure)return"SKIPPED";
+  if (!["FT", "AET", "PEN"].includes(prediction.status)) return "SKIPPED";
   const rows=await prisma.matchStatCache.findMany({where:{fixtureId},select:{teamId:true,xg:true,shots:true,shotsOnTarget:true,shotsInsideBox:true,corners:true,possession:true,redCards:true}}),homeRow=rows.find(row=>row.teamId===prediction.homeTeamId)??null,awayRow=rows.find(row=>row.teamId===prediction.awayTeamId)??null;
   const halftime=await prisma.liveMatchSnapshot.findFirst({where:{fixtureId,OR:[{status:"HT"},{minute:{gte:44,lte:50}}]},orderBy:{observedAt:"asc"},select:{minute:true,status:true,homeGoals:true,awayGoals:true,homeStats:true,awayStats:true,events:true}});
   const pending={fixtureId,leagueId:prediction.leagueId,kickoff:prediction.kickoff,pressureVersion:pressure.version,evaluationVersion:MATCH_FLOW_EVALUATION_VERSION,expectation:json({shape:pressure.expectedMatchShape,dependencyRisk:pressure.dependencyRisk}),halftime:halftime?json(halftime):Prisma.JsonNull};
@@ -40,6 +41,26 @@ export async function liveMatchInsight(fixtureId:number,input:{minute:number;sta
 }
 
 export async function pendingMatchFlowFixtureIds(limit=20):Promise<number[]>{
-  const rows=await prisma.matchFlowEvaluationSnapshot.findMany({where:{pressureVersion:3,evaluationVersion:MATCH_FLOW_EVALUATION_VERSION,status:"PENDING"},orderBy:{kickoff:"asc"},take:limit,select:{fixtureId:true}});
+  const rows=await prisma.matchFlowEvaluationSnapshot.findMany({where:{pressureVersion:{in:[3,5]},evaluationVersion:MATCH_FLOW_EVALUATION_VERSION,status:"PENDING"},orderBy:{kickoff:"asc"},take:limit,select:{fixtureId:true}});
   return rows.map((row)=>row.fixtureId);
+}
+
+/** Bounded repair of recent completed fixtures, including v5 rows skipped by older code.
+ * Uses stored data only; no provider request is necessary. */
+export async function repairRecentMatchFlowEvaluations(now = new Date()): Promise<number> {
+  const predictions = await prisma.fixturePrediction.findMany({
+    where: { status: { in: ["FT", "AET", "PEN"] }, kickoff: { gte: new Date(now.getTime() - 7 * 86400_000), lt: now } },
+    orderBy: { kickoff: "desc" }, take: 100,
+    select: { fixtureId: true, inputSnapshot: true },
+  });
+  const eligible = predictions.filter(row => pressureOf(row.inputSnapshot));
+  const completed = await prisma.matchFlowEvaluationSnapshot.findMany({
+    where: { fixtureId: { in: eligible.map(row => row.fixtureId) }, evaluationVersion: MATCH_FLOW_EVALUATION_VERSION, status: "SETTLED" },
+    select: { fixtureId: true, pressureVersion: true },
+  });
+  const keys = new Set(completed.map(row => `${row.fixtureId}:${row.pressureVersion}`));
+  const missing = eligible.filter(row => !keys.has(`${row.fixtureId}:${pressureOf(row.inputSnapshot)!.version}`)).slice(0, 10);
+  let settled = 0;
+  for (const row of missing) if (await settleMatchFlowEvaluation(row.fixtureId, now) === "SETTLED") settled++;
+  return settled;
 }
