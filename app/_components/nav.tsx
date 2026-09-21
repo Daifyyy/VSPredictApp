@@ -20,6 +20,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/tabulky", label: "Tabulky", section: "analysis", description: "Ligové pořadí", icon: "table" },
   { href: "/predikce", label: "Predikce", section: "analysis", description: "Co čeká model", icon: "prediction" },
   { href: "/strategie", label: "Sázkové strategie", section: "analysis", description: "Bilance a denní příležitosti", icon: "strategy" },
+  { href: "/denni-vyber", label: "Denní výběr", section: "analysis", description: "Nejvýše pět samostatných sázek", icon: "strategy" },
   { href: "/transfers", label: "Přestupy", section: "analysis", description: "Pohyb v klubech", icon: "transfer" },
   { href: "/tipovacka", label: "Moje tipy", section: "tips", description: "Osobní deník", icon: "tips" },
   { href: "/hra", label: "Manažer", section: "game", description: "Vlastní kariéra", icon: "game" },
@@ -112,7 +113,7 @@ export function DesktopSidebar() {
       <nav aria-label="Hlavní navigace" className="mt-6 flex flex-1 flex-col gap-2">
         {NAV_ITEMS.map((item, index) => {
           const active = isActiveSection(pathname, item.href);
-          const showDivider = index === 1 || index === 6 || index === 7;
+          const showDivider = index > 0 && NAV_ITEMS[index - 1].section !== item.section;
           return (
             <div key={item.href} className={showDivider ? "mt-3 border-t border-border pt-4" : ""}>
               {showDivider && (

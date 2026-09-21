@@ -119,7 +119,7 @@ async function publishedResults(date: string, channelId: string) {
 export async function publishTelegramMorning(now = new Date(), options: { dryRun?: boolean; force?: boolean } = {}) {
   const config = telegramConfig(); const clock = pragueClock(now); if (!options.force && (clock.hour < 9 || clock.hour > 10)) return { skipped: "OUTSIDE_PRAGUE_MORNING_WINDOW", date: clock.date };
   await Promise.all([
-    prisma.telegramPublication.updateMany({ where: { status: "SENDING", updatedAt: { lt: new Date(now.getTime() - 15 * 60_000) } }, data: { status: "FAILED", lastError: "Obnova po přerušeném odesílání" } }),
+    prisma.telegramPublication.updateMany({ where: { status: "SENDING", NOT: {kind:{startsWith:"DAILY_"}}, updatedAt: { lt: new Date(now.getTime() - 15 * 60_000) } }, data: { status: "FAILED", lastError: "Obnova po přerušeném odesílání" } }),
     prisma.telegramCommandCursor.deleteMany({ where: { updatedAt: { lt: new Date(now.getTime() - 30 * 86400_000) } } }),
     prisma.telegramUpdateReceipt.deleteMany({ where: { createdAt: { lt: new Date(now.getTime() - 30 * 86400_000) } } }),
   ]);
@@ -147,7 +147,17 @@ const ALIASES: Record<string, StrategyHubId> = { value: "VALUE", elo: "ELO_INTUI
 export const telegramStrategyAlias = (value?: string) => value ? ALIASES[value.toLowerCase()] ?? null : null;
 export async function handleTelegramCommand(userId: string, text: string, now = new Date()) {
   const [raw, ...args] = text.trim().split(/\s+/); const command = raw.toLowerCase().split("@")[0]; const today = localDateKey(now);
-  if (command === "/help") return ["<b>Příkazy</b>\n/tipy [strategie]\n/dalsi [strategie|vse]\n/tiket value|elo\n/vysledky [YYYY-MM-DD]\n/datum YYYY-MM-DD [strategie]\n/stav"];
+  if (command === "/vyber") {
+    if (!telegramConfig().allowedUsers.has(userId)) return [];
+    const {dailySelectionConfig}=await import("./dailySelectionConfig");
+    if(!dailySelectionConfig().telegram)return ["Denní výběr zatím není zapnutý."];
+    const date=args[0]??today;
+    if(args.length>1||!isDateKey(date)||date>today)return ["Použij /vyber nebo /vyber YYYY-MM-DD; nejvýše dnešní datum."];
+    const {readDailySelection}=await import("./data/dailySelectionStore");
+    const {formatDailySelection}=await import("./dailySelectionTelegram");
+    return formatDailySelection(await readDailySelection(date,true),date<today);
+  }
+  if (command === "/help") return ["<b>Příkazy</b>\n/vyber [YYYY-MM-DD]\n/tipy [strategie]\n/dalsi [strategie|vse]\n/tiket value|elo\n/vysledky [YYYY-MM-DD]\n/datum YYYY-MM-DD [strategie]\n/stav"];
   if (command === "/vysledky") { const date = args[0] ?? shiftDateKey(today, -1); return isTelegramDateAllowed(date, today) ? formatResults(await loadTelegramDay(date)) : ["Neplatné nebo nepovolené datum."]; }
   if (command === "/stav") return formatStatus(await loadTelegramDay(today));
   if (command === "/tiket") { const strategy = telegramStrategyAlias(args[0]); return strategy === "VALUE" || strategy === "ELO_INTUITION" ? formatTickets(await loadTelegramDay(today), strategy, true) : ["Použij /tiket value nebo /tiket elo."]; }

@@ -1,0 +1,13 @@
+import { beforeEach,expect,it,vi } from "vitest";
+const mocks=vi.hoisted(()=>({read:vi.fn(),user:vi.fn(),enabled:true}));
+vi.mock("@/lib/dailySelectionConfig",()=>({dailySelectionConfig:()=>({ui:mocks.enabled})}));
+vi.mock("@/lib/authUser",()=>({getCurrentUser:mocks.user}));
+vi.mock("@/lib/entitlements",()=>({getEntitlement:(u:unknown)=>({pro:!!u})}));
+vi.mock("@/lib/data/dailySelectionStore",()=>({readDailySelection:mocks.read}));
+vi.mock("@/lib/rateLimit",()=>({allowRequest:()=>true,clientKey:()=>"test",tooMany:vi.fn()}));
+import { GET } from "./route";
+beforeEach(()=>{vi.clearAllMocks();mocks.enabled=true;mocks.user.mockResolvedValue(null);mocks.read.mockResolvedValue({items:[],counts:{documented:0,unverified:0}});});
+it("keeps disabled UI off the data path",async()=>{mocks.enabled=false;expect((await GET(new Request("http://local/api/picks/daily-selection"))).status).toBe(404);expect(mocks.read).not.toHaveBeenCalled();});
+it("requests only the redacted payload for anonymous users",async()=>{await GET(new Request("http://local/api/picks/daily-selection?date=2026-09-01"));expect(mocks.read).toHaveBeenCalledWith("2026-09-01",false);});
+it("requests PRO detail only after entitlement check",async()=>{mocks.user.mockResolvedValue({id:"pro"});await GET(new Request("http://local/api/picks/daily-selection?date=2026-09-01"));expect(mocks.read).toHaveBeenCalledWith("2026-09-01",true);});
+it.each(["2099-01-01","2026-02-30","not-a-date"])("rejects invalid/future date %s",async date=>{expect((await GET(new Request(`http://local/api/picks/daily-selection?date=${date}`))).status).toBe(400);expect(mocks.read).not.toHaveBeenCalled();});

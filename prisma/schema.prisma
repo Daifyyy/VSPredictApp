@@ -3535,6 +3535,62 @@ model TelegramPublication {
 }
 
 /// Serverless-safe strankovani prikazu /dalsi, oddelene podle uzivatele, dne a strategie.
+model DailySelectionDay {
+  id            String   @id @default(cuid())
+  dateKey       String   @unique
+  policyVersion Int
+  assembledAt   DateTime
+  status        String   @default("ASSEMBLED")
+  emptyReason   String?
+  summary       Json     @default("{}")
+  items         DailySelectionItem[]
+  events        DailySelectionEvent[]
+}
+
+model DailySelectionItem {
+  id             String   @id @default(cuid())
+  dayId          String
+  day            DailySelectionDay @relation(fields: [dayId], references: [id], onDelete: Restrict)
+  rank           Int
+  fixtureId      Int
+  leagueId       Int
+  kickoff        DateTime
+  marketKey      String
+  cohortKey      String
+  tier           String
+  decimalOdds    Float
+  bookmaker      String
+  quotedAt       DateTime
+  publishedAt    DateTime
+  snapshot       Json
+  status         String   @default("ACTIVE")
+  outcome        String   @default("PENDING")
+  profit         Float?
+  settledAt      DateTime?
+  priceClv       Float?
+  closingAudit   Json?
+  events         DailySelectionEvent[]
+
+  @@unique([dayId, rank])
+  @@unique([dayId, fixtureId])
+  @@index([outcome, kickoff])
+  @@index([cohortKey, publishedAt])
+}
+
+model DailySelectionEvent {
+  id        String   @id @default(cuid())
+  eventKey  String   @unique
+  dayId     String
+  day       DailySelectionDay @relation(fields: [dayId], references: [id], onDelete: Restrict)
+  itemId    String?
+  item      DailySelectionItem? @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  kind      String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  @@index([dayId, createdAt])
+}
+
 model TelegramCommandCursor {
   userId    String
   dateKey   String

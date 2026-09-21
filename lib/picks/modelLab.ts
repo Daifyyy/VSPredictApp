@@ -73,9 +73,11 @@ export interface ModelLabLedgerRow {
   homeGoals: number | null;
   awayGoals: number | null;
   actualCount?: number | null;
+  storedHit?: boolean | null;
 }
 
 const outcomeOf = (row: ModelLabLedgerRow) => resolvedStrategyOutcome({
+  storedHit: row.storedHit,
   market: row.market, side: row.side, line: row.line,
   homeGoals: row.homeGoals, awayGoals: row.awayGoals, actualCount: row.actualCount ?? null,
 });
@@ -104,7 +106,10 @@ export function probabilityMetrics(rows: Array<{ probability: number; outcome: b
 
 function holdoutRows(rows: ModelLabLedgerRow[]) {
   const ordered = [...rows].filter((row) => outcomeOf(row) != null).sort((a, b) => a.kickoff.getTime() - b.kickoff.getTime());
-  return ordered.slice(Math.floor(ordered.length * .7));
+  // A fixture/day cannot straddle training and holdout. The boundary is chosen
+  // chronologically, never according to outcome or strategy profitability.
+  const boundary = ordered[Math.floor(ordered.length * .7)]?.kickoff.toISOString().slice(0,10);
+  return boundary ? ordered.filter(row=>row.kickoff.toISOString().slice(0,10)>=boundary) : [];
 }
 
 export function bankrollSimulation(rows: ModelLabLedgerRow[], mode: "FLAT" | "PERCENT" | "KELLY", initial = 100) {
@@ -145,18 +150,22 @@ export function modelLabSummary(rows: ModelLabLedgerRow[]) {
     const close = freshClosing(row.kickoff, row.closedAt, row.closingMarketProbability).close;
     return close == null ? [] : [{ row, close }];
   });
-  const model = probabilityMetrics(settled.map(({ row, hit }) => ({ probability: row.modelProbability, outcome: hit })));
-  const opening = probabilityMetrics(settled.map(({ row, hit }) => ({ probability: row.marketProbability, outcome: hit })));
-  const closing = probabilityMetrics(settled.flatMap(({ row, hit }) => {
-    const close = freshClosing(row.kickoff, row.closedAt, row.closingMarketProbability).close;
-    return close == null ? [] : [{ probability: close, outcome: hit }];
-  }));
+  const validProbability = (value: number) => Number.isFinite(value) && value > 0 && value < 1;
+  const pairedOpening = settled.filter(({row})=>validProbability(row.modelProbability)&&validProbability(row.marketProbability));
+  const model = probabilityMetrics(pairedOpening.map(({ row, hit }) => ({ probability: row.modelProbability, outcome: hit })));
+  const opening = probabilityMetrics(pairedOpening.map(({ row, hit }) => ({ probability: row.marketProbability, outcome: hit })));
+  const pairedClosing = settled.flatMap(({row,hit})=>{
+    const close=freshClosing(row.kickoff,row.closedAt,row.closingMarketProbability).close;
+    return close!=null && validProbability(close) && validProbability(row.modelProbability) ? [{row,hit,close}] : [];
+  });
+  const modelOnClosing = probabilityMetrics(pairedClosing.map(({row,hit})=>({probability:row.modelProbability,outcome:hit})));
+  const closing = probabilityMetrics(pairedClosing.map(({close,hit})=>({probability:close,outcome:hit})));
   const portfolioInput = rows.map((row) => ({ strategy: row.strategy, stake: row.stake, odds: row.decimalOdds, hit: outcomeOf(row), marketProbability: row.marketProbability, closingMarketProbability: row.closingMarketProbability, qualifiedAt: row.qualifiedAt, fixtureId: row.fixtureId, kickoff: row.kickoff, closedAt: row.closedAt, priceClv: row.priceClv, probabilityClv: row.probabilityClv, closingFreshness: row.closingFreshness, benchmarkQuality: row.closingBenchmarkQuality, sameBookClv: row.sameBookClv, clvMethodVersion: row.clvMethodVersion }));
   const portfolio = summarizePortfolio(portfolioInput);
   const positiveClvRate = closes.length ? closes.filter(({ row, close }) => close > row.marketProbability).length / closes.length : null;
   const chronologicalHoldout = holdoutRows(rows);
   const holdout = summarizePortfolio(chronologicalHoldout.map((row) => ({ strategy: row.strategy, stake: row.stake, odds: row.decimalOdds, hit: outcomeOf(row), marketProbability: row.marketProbability, closingMarketProbability: row.closingMarketProbability, qualifiedAt: row.qualifiedAt, fixtureId: row.fixtureId, kickoff: row.kickoff, closedAt: row.closedAt, priceClv: row.priceClv, probabilityClv: row.probabilityClv, closingFreshness: row.closingFreshness, benchmarkQuality: row.closingBenchmarkQuality, sameBookClv: row.sameBookClv, clvMethodVersion: row.clvMethodVersion })));
-  const holdoutSettled = chronologicalHoldout.flatMap((row) => { const hit = outcomeOf(row); return hit == null ? [] : [{ row, hit }]; });
+  const holdoutSettled = chronologicalHoldout.flatMap((row) => { const hit = outcomeOf(row); return hit == null || !validProbability(row.modelProbability) || !validProbability(row.marketProbability) ? [] : [{ row, hit }]; });
   const holdoutModel = probabilityMetrics(holdoutSettled.map(({ row, hit }) => ({ probability: row.modelProbability, outcome: hit })));
   const holdoutOpening = probabilityMetrics(holdoutSettled.map(({ row, hit }) => ({ probability: row.marketProbability, outcome: hit })));
   const v2Primary = rows.filter((row) => row.clvMethodVersion === 2 && row.closingFreshness === "PRIMARY_30" && row.closingBenchmarkQuality === "PANEL" && row.sameBookClv && row.priceClv != null);
@@ -173,7 +182,7 @@ export function modelLabSummary(rows: ModelLabLedgerRow[]) {
   const dayMeans = [...dayGroups.values()].map((values) => values.reduce((sum, value) => sum + value, 0) / values.length);
   const dayStable = dayMeans.length >= 20 && dayMeans.filter((value) => value > 0).length / dayMeans.length > .5;
   const gates = {
-    frozenPolicy: rows.length > 0,
+    frozenPolicy: rows.length > 0 && new Set(rows.map(r=>JSON.stringify([r.strategy,r.market,r.policyVersion,r.modelVersion,r.modelContext]))).size === 1,
     sampleAndCoverage: portfolio.gateReason === "REQUIRES_HOLDOUT_AND_SEGMENT_VALIDATION",
     clv: portfolio.gateReason === "REQUIRES_HOLDOUT_AND_SEGMENT_VALIDATION" && (portfolio.averagePriceClv ?? -Infinity) > 0,
     calibration: model.ece != null && model.ece <= .05,
@@ -182,8 +191,8 @@ export function modelLabSummary(rows: ModelLabLedgerRow[]) {
     dayStable,
   };
   const recommendedStatus: ModelLabStatus = Object.values(gates).every(Boolean) ? "CANDIDATE" : rows.length ? "LIVE_TEST" : "RESEARCH";
-  const verdict = !rows.length ? "Zatím bez živých výběrů." : model.logLoss != null && closing.logLoss != null && model.logLoss > closing.logLoss ? "Model zatím nepřekonává closingový trh." : portfolio.roiConfidence95 && portfolio.roiConfidence95.low <= 0 ? "ROI je neprůkazné; interval stále zahrnuje ztrátu." : gates.clv ? "Trh se pohybuje směrem modelu, čekáme na dostatečný holdout." : "Vzorek nebo CLV zatím nestačí k rozhodnutí.";
-  return { portfolio, holdout, probability: { model, opening, closing }, positiveClvRate, closingCompleteness: rows.length ? closes.length / rows.length : 0, gates, recommendedStatus, verdict, bankroll: [bankrollSimulation(rows, "FLAT"), bankrollSimulation(rows, "PERCENT"), bankrollSimulation(rows, "KELLY")] };
+  const verdict = !rows.length ? "Zatím bez živých výběrů." : modelOnClosing.logLoss != null && closing.logLoss != null && modelOnClosing.logLoss > closing.logLoss ? "Model zatím nepřekonává closingový trh." : portfolio.roiConfidence95 && portfolio.roiConfidence95.low <= 0 ? "ROI je neprůkazné; interval stále zahrnuje ztrátu." : gates.clv ? "Trh se pohybuje směrem modelu, čekáme na dostatečný holdout." : "Vzorek nebo CLV zatím nestačí k rozhodnutí.";
+  return { portfolio, holdout, probability: { model, opening, closing, modelOnClosing }, positiveClvRate, closingCompleteness: rows.length ? closes.length / rows.length : 0, gates, recommendedStatus, verdict, bankroll: [bankrollSimulation(rows, "FLAT"), bankrollSimulation(rows, "PERCENT"), bankrollSimulation(rows, "KELLY")] };
 }
 
 export function modelLabSegments(rows: ModelLabLedgerRow[]) {

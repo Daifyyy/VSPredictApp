@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { logError } from "@/lib/logError";
 import { handleTelegramCommand, sendTelegramMessages, telegramConfig } from "@/lib/telegram";
+import { upsertIncident } from "@/lib/operations";
 
 type TelegramUpdate = { update_id?: number; message?: { text?: string; from?: { id?: number }; chat?: { id?: number; type?: string } } };
 
@@ -17,7 +18,7 @@ export async function POST(request: Request) {
     receipt = await prisma.telegramUpdateReceipt.create({ data: { updateId: BigInt(updateId), userId, chatId } });
   } catch {
     receipt = await prisma.telegramUpdateReceipt.findUnique({ where: { updateId: BigInt(updateId) } });
-    if (!receipt || receipt.status === "SENT" || receipt.status === "PROCESSING") return NextResponse.json({ ok: true });
+    if (!receipt || receipt.status === "SENT" || receipt.status === "PROCESSING" || receipt.status === "UNKNOWN") return NextResponse.json({ ok: true });
     const claimed = await prisma.telegramUpdateReceipt.updateMany({ where: { updateId: BigInt(updateId), status: "FAILED" }, data: { status: "PROCESSING", lastError: null } });
     if (!claimed.count) return NextResponse.json({ ok: true });
   }
@@ -31,7 +32,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await prisma.telegramUpdateReceipt.update({ where: { updateId: BigInt(updateId) }, data: { status: "FAILED", lastError: message } }).catch(() => undefined);
+    const dailyCommand=/^\/vyber(?:@\S+)?(?:\s|$)/i.test(text);
+    await prisma.telegramUpdateReceipt.update({ where: { updateId: BigInt(updateId) }, data: { status: dailyCommand?"UNKNOWN":"FAILED", lastError: message } }).catch(() => undefined);
+    if(dailyCommand)await upsertIncident({fingerprint:`daily-selection:command:${updateId}`,kind:"TELEGRAM_DELIVERY",severity:"WARNING",message:"Odpověď /vyber nemá potvrzené doručení; nebude automaticky zopakována.",details:{updateId}}).catch(()=>undefined);
     logError("telegram/webhook", error, { updateId, userId });
     return NextResponse.json({ error: "Zpracování příkazu selhalo." }, { status: 502 });
   }

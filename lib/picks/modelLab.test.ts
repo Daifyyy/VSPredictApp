@@ -18,7 +18,15 @@ describe("Model Lab", () => {
     expect(result.probability.model.n).toBe(2);
     expect(result.probability.opening.n).toBe(2);
     expect(result.probability.closing.n).toBe(1);
+    expect(result.probability.modelOnClosing.n).toBe(1);
     expect(result.portfolio.clvComplete).toBe(1);
+  });
+
+  it("does not validate mixed policies or compare invalid opening probabilities",()=>{
+    const summary=modelLabSummary([row(),row({id:"2",fixtureId:2,policyVersion:2,marketProbability:NaN})]);
+    expect(summary.gates.frozenPolicy).toBe(false);
+    expect(summary.probability.model.n).toBe(1);
+    expect(summary.probability.opening.n).toBe(1);
   });
 
   it("simulace bankrollu nemění ledger a Kelly respektuje strop 1 %", () => {

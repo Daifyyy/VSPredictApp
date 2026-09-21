@@ -43,6 +43,7 @@ on:
     # Dva pokusy mimo celou hodinu chrani pred best-effort vypadkem GitHub scheduleru;
     # databazova idempotence zaruci, ze kanal presto dostane jen jednu serii zprav.
     - cron: "11,41 7,8 * * *" # telegram-digest
+    - cron: "0 7,8 * * *" # daily-selection (09:00 Prague, DST checked by endpoint)
     # Plošný player-profiles refresh není plánovaný: zatím nemění veřejné
     # predikce a /players je kvůli stránkování drahý. Endpoint zůstává ručně dostupný.
     # Vypořádání jede DVAKRÁT denně (ráno + večer). S jediným ranním během čekal zápas
@@ -86,6 +87,7 @@ on:
           - personnel-shadow
           - player-profiles
           - telegram-digest
+          - daily-selection
 
 jobs:
   run:
@@ -124,6 +126,7 @@ jobs:
             "30 16 * * *")  path="predict-upcoming" ;;
             "0 5 * * *")    path="refresh-transfers" ;;
             "11,41 7,8 * * *") path="telegram-digest" ;;
+            "0 7,8 * * *") path="daily-selection" ;;
             "0 6 * * *")    path="settle-results" ;;
             "0 12 * * *")   path="settle-results" ;;
             "0 18 * * *")   path="settle-results" ;;
@@ -289,3 +292,16 @@ jobs:
                --header "Authorization: Bearer $CRON_SECRET" \
                "$url"
           echo
+      # Separate invocation: never spend the odds/prediction cron's 60s budget on selection.
+      - name: Aktualizuj Denní výběr po dokončení zdrojů
+        if: ${{ success() && contains(fromJSON('["snapshot-odds","predict-upcoming","settle-results","telegram-digest"]'), steps.pick.outputs.path) }}
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          JOB: ${{ steps.pick.outputs.path }}
+        run: |
+          suffix=""
+          if [ "$JOB" = "settle-results" ]; then suffix="?settle=1"; fi
+          curl --fail-with-body --silent --show-error --max-time 70 \
+               --header "Authorization: Bearer $CRON_SECRET" \
+               "$APP_URL/api/cron/daily-selection$suffix"

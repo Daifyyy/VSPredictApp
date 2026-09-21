@@ -51,7 +51,7 @@ async function pedigreeSnapshots(teamIds: number[], asOfDate: Date, calculatedAt
   return prisma.clubPedigreeSnapshot.findMany({ where: { teamId: { in: teamIds }, asOfDate, modelVersion: CLUB_ELO_MODEL_VERSION } });
 }
 
-async function sources(windowKey: string, persistPedigree = false, asOf = new Date()): Promise<IntuitionSource[]> {
+async function sources(windowKey: string, persistPedigree = false, asOf = new Date(), strictDaily = false): Promise<IntuitionSource[]> {
   const start = pragueDateBounds(windowKey).start;
   const end = new Date(start.getTime() + 48 * 60 * 60_000);
   const upcomingFrom = asOf > start ? asOf : start;
@@ -68,8 +68,8 @@ async function sources(windowKey: string, persistPedigree = false, asOf = new Da
   const [eloRows, pedigreeRows, history, personnel] = await Promise.all([
     prisma.clubEloFixtureSnapshot.findMany({ where: { modelVersion: CLUB_ELO_MODEL_VERSION, fixtureId: { in: rows.map((row) => row.fixtureId) } } }),
     pedigreeSnapshots(teamIds, start, new Date(), persistPedigree),
-    prisma.fixturePrediction.findMany({ where: { kickoff: { gte: historyStart, lt: end }, leagueId: { in: [...new Set(rows.map((row) => row.leagueId))] }, homeGoals: { not: null }, awayGoals: { not: null } }, select: { fixtureId: true, leagueId: true, season: true, kickoff: true, homeTeamId: true, awayTeamId: true, homeGoals: true, awayGoals: true } }),
-    prisma.fixturePersonnelFeatures.findMany({ where: { fixtureId: { in: rows.map((row) => row.fixtureId) }, calculatedAt: { lt: end } }, orderBy: { calculatedAt: "desc" } }),
+    prisma.fixturePrediction.findMany({ where: { kickoff: { gte: historyStart, lt: strictDaily ? asOf : end }, ...(strictDaily ? {status:{in:["FT","AET","PEN"]},settledAt:{lt:asOf}}:{}), leagueId: { in: [...new Set(rows.map((row) => row.leagueId))] }, homeGoals: { not: null }, awayGoals: { not: null } }, select: { fixtureId: true, leagueId: true, season: true, kickoff: true, homeTeamId: true, awayTeamId: true, homeGoals: true, awayGoals: true } }),
+    prisma.fixturePersonnelFeatures.findMany({ where: { fixtureId: { in: rows.map((row) => row.fixtureId) }, calculatedAt: { lt: strictDaily ? asOf : end } }, orderBy: { calculatedAt: "desc" } }),
   ]);
   const elo = new Map(eloRows.map((row) => [row.fixtureId, row]));
   const pedigree = new Map(pedigreeRows.map((row) => [row.teamId, row]));
@@ -133,6 +133,15 @@ export async function previewIntuitionTickets(windowKey: string, now = new Date(
     const beforeVeto = candidates.length + vetoed.length;
     return { strategy, frozen: persisted.length > 0, tickets, emptyReason: persisted.length ? null : emptyReason(strategy, rows, built), coverage: { fixtures: rows.length, withOdds: rows.filter((r) => Array.isArray(r.oddsBooks) && r.oddsBooks.length > 0).length, candidates: candidates.length, beforeVeto }, vetoes: [...new Set(vetoed.flatMap((item) => item.details ?? []))] };
   }) };
+}
+
+/** Shared qualification, including reserves. Called by batch collection, never page reads. */
+export async function qualifiedDailyTicketCandidates(date: string, now: Date) {
+  const rows = await sources(date, false, now, true);
+  return { rows, groups: [
+    { strategy: "VALUE" as const, candidates: rankIntuitionCandidates(rows) },
+    { strategy: "ELO_INTUITION" as const, candidates: rankEloCandidates(rows) },
+  ] };
 }
 
 /** Volá kurzový cron. Draft se nemění v historický záznam dříve než dvě hodiny před první nohou. */
