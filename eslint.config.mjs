@@ -7,6 +7,8 @@ const eslintConfig = defineConfig([
   ...nextTs,
   // Override default ignores of eslint-config-next.
   globalIgnores([
+    // Local generated audit/replay artifacts are not application source.
+    ".cache/**",
     // Default ignores of eslint-config-next:
     ".next/**",
     "out/**",

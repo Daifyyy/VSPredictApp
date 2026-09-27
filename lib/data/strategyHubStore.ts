@@ -1,3 +1,4 @@
+import { strategyCohort, ledgerClv } from "@/lib/picks/strategyCohort";
 import { prisma } from "@/lib/db";
 import { Prisma } from "@prisma/client";
 import { catalogLeagueName } from "@/lib/data/catalog";
@@ -98,13 +99,13 @@ export async function strategyHubData(strategy: StrategyHubId, date: string) {
 
   if (strategy === "PRESSURE_FLOW_V5") {
     const [signals, dayPredictions] = await Promise.all([
-      prisma.marketSignalSnapshot.findMany({ where: { policyVersion: PRESSURE_FLOW_V5_POLICY_VERSION }, orderBy: { openedAt: "asc" } }),
-      prisma.fixturePrediction.findMany({ where: { kickoff: { gte: bounds.start, lt: bounds.end }, inputSnapshot: { not: Prisma.DbNull } }, orderBy: { kickoff: "asc" }, select: { fixtureId: true, leagueId: true, kickoff: true, homeName: true, awayName: true, homeGoals: true, awayGoals: true, inputSnapshot: true } }),
+      prisma.marketSignalSnapshot.findMany({ where: { policyVersion: PRESSURE_FLOW_V5_POLICY_VERSION, ...strategyCohort("PRESSURE_FLOW_V5") }, orderBy: { openedAt: "asc" } }),
+      prisma.fixturePrediction.findMany({ where: { modelContext: "LEAGUE", kickoff: { gte: bounds.start, lt: bounds.end }, inputSnapshot: { not: Prisma.DbNull } }, orderBy: { kickoff: "asc" }, select: { fixtureId: true, leagueId: true, kickoff: true, homeName: true, awayName: true, homeGoals: true, awayGoals: true, inputSnapshot: true } }),
     ]);
     const fixtureIds = [...new Set(signals.map((row) => row.fixtureId))];
     const fixtures = fixtureIds.length ? await prisma.fixturePrediction.findMany({ where: { fixtureId: { in: fixtureIds } }, select: { fixtureId: true, homeName: true, awayName: true, homeGoals: true, awayGoals: true } }) : [];
     const fixtureById = new Map(fixtures.map((row) => [row.fixtureId, row]));
-    const portfolioRows = signals.map((row) => { const fixture = fixtureById.get(row.fixtureId); return { strategy, stake: 1, odds: row.decimalOdds, hit: resolvedStrategyOutcome({ market: row.market, side: row.side, line: row.line, homeGoals: fixture?.homeGoals ?? null, awayGoals: fixture?.awayGoals ?? null, actualCount: null }), marketProbability: row.openMarketProbability, closingMarketProbability: row.closeMarketProbability, qualifiedAt: row.openedAt, fixtureId: row.fixtureId, kickoff: row.kickoff, closedAt: row.closedAt, priceClv: row.priceClv, probabilityClv: row.probabilityClv, closingFreshness: row.closingFreshness, benchmarkQuality: row.closingBenchmarkQuality, sameBookClv: row.sameBookClv, clvMethodVersion: row.clvMethodVersion }; });
+    const portfolioRows = signals.map((row) => { const fixture = fixtureById.get(row.fixtureId); return { strategy, stake: 1, odds: row.decimalOdds, hit: resolvedStrategyOutcome({ market: row.market, side: row.side, line: row.line, homeGoals: fixture?.homeGoals ?? null, awayGoals: fixture?.awayGoals ?? null, actualCount: null }), marketProbability: row.openMarketProbability, closingMarketProbability: row.closeMarketProbability, qualifiedAt: row.openedAt, fixtureId: row.fixtureId, kickoff: row.kickoff, closedAt: row.closedAt, ...ledgerClv(row) }; });
     const dated = signals.filter((row) => row.kickoff >= bounds.start && row.kickoff < bounds.end);
     const opportunities: StrategyHubOpportunity[] = dated.map((row) => { const fixture = fixtureById.get(row.fixtureId); const hit = resolvedStrategyOutcome({ market: row.market, side: row.side, line: row.line, homeGoals: fixture?.homeGoals ?? null, awayGoals: fixture?.awayGoals ?? null, actualCount: null }); const edge = row.modelProbability - row.openMarketProbability; return {
       id: row.id, market: row.market, fixtureId: row.fixtureId, leagueId: row.leagueId, leagueName: catalogLeagueName(row.leagueId, ""), kickoff: row.kickoff.toISOString(), homeName: fixture?.homeName ?? `Fixture ${row.fixtureId}`, awayName: fixture?.awayName ?? "",
@@ -168,9 +169,9 @@ export async function strategyHubData(strategy: StrategyHubId, date: string) {
 
   if (strategy === "TEAM_GOALS") {
     const rows = await prisma.marketSignalSnapshot.findMany({
-      where: { policyVersion: definition.policyVersion, market: { in: ["TEAM_HOME_05", "TEAM_HOME_15", "TEAM_AWAY_05", "TEAM_AWAY_15"] }, modelContext: "LEAGUE" },
-      orderBy: { openedAt: "asc" },
-      select: { id: true, fixtureId: true, leagueId: true, kickoff: true, market: true, modelProbability: true, openMarketProbability: true, closeMarketProbability: true, decimalOdds: true, bookmaker: true, openedAt: true, closedAt: true, closingFreshness: true, closingBenchmarkQuality: true, priceClv: true, probabilityClv: true, sameBookClv: true, clvMethodVersion: true },
+      where: { policyVersion: definition.policyVersion, market: { in: ["TEAM_HOME_05", "TEAM_HOME_15", "TEAM_AWAY_05", "TEAM_AWAY_15"] }, ...strategyCohort("TEAM_GOALS") },
+      orderBy: [{ openedAt: "asc" }, { id: "asc" }],
+      select: { id: true, fixtureId: true, leagueId: true, kickoff: true, market: true, modelProbability: true, openMarketProbability: true, closeMarketProbability: true, decimalOdds: true, bookmaker: true, openedAt: true, closedAt: true, closingFreshness: true, closingBenchmarkQuality: true, priceClv: true, probabilityClv: true, sameBookClv: true, clvMethodVersion: true, closingBenchmarkProbability: true, openingBookmaker: true },
     });
     const fixtureIds = [...new Set(rows.map((row) => row.fixtureId))];
     const fixtures = fixtureIds.length ? await prisma.fixturePrediction.findMany({
@@ -188,21 +189,21 @@ export async function strategyHubData(strategy: StrategyHubId, date: string) {
       if (!current || decision.score > current.decision.score) qualifiedByFixture.set(row.fixtureId, { row, fixture, hit, decision });
     }
     const qualified = [...qualifiedByFixture.values()];
-    const summaryRows = qualified.map(({ row, hit }) => ({ strategy, stake: 1, odds: row.decimalOdds, hit, marketProbability: row.openMarketProbability, closingMarketProbability: row.closeMarketProbability, qualifiedAt: row.openedAt, fixtureId: row.fixtureId, kickoff: row.kickoff, closedAt: row.closedAt, closingFreshness: row.closingFreshness, benchmarkQuality: row.closingBenchmarkQuality, priceClv: row.priceClv, probabilityClv: row.probabilityClv, sameBookClv: row.sameBookClv, clvMethodVersion: row.clvMethodVersion }));
+    const summaryRows = qualified.map(({ row, hit }) => ({ strategy, stake: 1, odds: row.decimalOdds, hit, marketProbability: row.openMarketProbability, closingMarketProbability: row.closeMarketProbability, qualifiedAt: row.openedAt, fixtureId: row.fixtureId, kickoff: row.kickoff, closedAt: row.closedAt, ...ledgerClv(row) }));
     const daily = qualified.filter(({ row }) => row.kickoff >= bounds.start && row.kickoff < bounds.end);
     const opportunities: StrategyHubOpportunity[] = daily.flatMap(({ row, fixture, hit, decision }) => fixture ? [{ id: row.id, fixtureId: row.fixtureId, leagueId: row.leagueId, leagueName: catalogLeagueName(row.leagueId, ""), kickoff: row.kickoff.toISOString(), homeName: fixture.homeName, awayName: fixture.awayName, selection: teamGoalSelection(row.market, fixture.homeName, fixture.awayName), reason: `Konzervativní odhad ${(decision.decisionProbability * 100).toFixed(0)} % při kurzu ${row.decimalOdds?.toFixed(2)}.`, risk: "Výzkumná strategie zatím nemá dostatečný potvrzený vzorek.", probability: decision.decisionProbability, marketProbability: row.openMarketProbability, edge: decision.decisionProbability - row.openMarketProbability, expectedValue: decision.expectedValue, confidence: null, odds: row.decimalOdds, bookmaker: row.bookmaker, priceKind: "DIRECT", outcome: outcome(hit), score: fixture.homeGoals == null || fixture.awayGoals == null ? null : `${fixture.homeGoals}:${fixture.awayGoals}`, ticketSlots: [] }] : []);
     return { opportunities, tickets: [], metrics: { all: summarizePortfolio(summaryRows), recent: summarizePortfolio(summaryRows.filter((item) => new Date(item.qualifiedAt) >= recentFrom)), selectionAccuracy: summarizePortfolio(summaryRows).accuracy, unit: "SELECTIONS" } satisfies StrategyHubMetrics, coverage: { candidates: opportunities.length, priced: opportunities.filter((item) => item.odds != null).length, tickets: 0 }, emptyReason: opportunities.length ? null : "NOT_ENOUGH_CANDIDATES" };
   }
 
   const rows = await prisma.autonomousTipSnapshot.findMany({
-    where: { strategy, policyVersion: definition.policyVersion, status: "candidate", modelContext: "LEAGUE" },
+    where: { strategy, policyVersion: definition.policyVersion, status: "candidate", ...strategyCohort(strategy) },
     orderBy: { qualifiedAt: "asc" },
-    select: { id: true, fixtureId: true, leagueId: true, kickoff: true, homeTeamId: true, awayTeamId: true, homeName: true, awayName: true, market: true, side: true, line: true, modelProbability: true, marketProbability: true, edge: true, expectedValue: true, decimalOdds: true, bookmaker: true, sampleCount: true, stake: true, reason: true, qualifiedAt: true, closingMarketProbability: true, closedAt: true, closingFreshness: true, closingBenchmarkQuality: true, priceClv: true, probabilityClv: true, sameBookClv: true, clvMethodVersion: true, settlementStatus: true, actualCount: true, hit: true },
+    select: { id: true, fixtureId: true, leagueId: true, kickoff: true, homeTeamId: true, awayTeamId: true, homeName: true, awayName: true, market: true, side: true, line: true, modelProbability: true, marketProbability: true, edge: true, expectedValue: true, decimalOdds: true, bookmaker: true, sampleCount: true, stake: true, reason: true, qualifiedAt: true, closingMarketProbability: true, closedAt: true, closingFreshness: true, closingBenchmarkQuality: true, priceClv: true, probabilityClv: true, sameBookClv: true, clvMethodVersion: true, closingBenchmarkProbability: true, openingBookmaker: true, settlementStatus: true, actualCount: true, hit: true },
   });
   const fixtureIds = [...new Set(rows.map((row) => row.fixtureId))];
   const countRows = rows.filter((row) => ["CORNERS", "CARDS", "FOULS"].includes(row.market) && row.actualCount == null);
   const [results, cornerStats] = await Promise.all([
-    fixtureIds.length ? prisma.fixturePrediction.findMany({ where: { fixtureId: { in: fixtureIds } }, select: { fixtureId: true, homeGoals: true, awayGoals: true } }) : [],
+    fixtureIds.length ? prisma.fixturePrediction.findMany({ where: { fixtureId: { in: fixtureIds } }, select: { fixtureId: true, homeTeamId: true, awayTeamId: true, homeGoals: true, awayGoals: true } }) : [],
     countRows.length ? prisma.matchStatCache.findMany({ where: { fixtureId: { in: countRows.map((row) => row.fixtureId) } }, select: { fixtureId: true, teamId: true, corners: true, yellowCards: true, redCards: true, fouls: true } }) : [],
   ]);
   const resultByFixture = new Map(results.map((row) => [row.fixtureId, row]));
@@ -211,6 +212,7 @@ export async function strategyHubData(strategy: StrategyHubId, date: string) {
   const foulsByTeam = new Map(cornerStats.map((row) => [`${row.fixtureId}:${row.teamId}`, row.fouls]));
   const resolved = rows.map((row) => {
     const result = resultByFixture.get(row.fixtureId);
+    const dataWarning = !!result && (row.homeTeamId !== result.homeTeamId || row.awayTeamId !== result.awayTeamId);
     const homeCorners = cornerByTeam.get(`${row.fixtureId}:${row.homeTeamId}`);
     const awayCorners = cornerByTeam.get(`${row.fixtureId}:${row.awayTeamId}`);
     const homeCards = cardsByTeam.get(`${row.fixtureId}:${row.homeTeamId}`);
@@ -219,13 +221,13 @@ export async function strategyHubData(strategy: StrategyHubId, date: string) {
     const awayFouls = foulsByTeam.get(`${row.fixtureId}:${row.awayTeamId}`);
     const actualCount = row.actualCount ?? (row.market === "CARDS" ? homeCards != null && awayCards != null ? homeCards + awayCards : null : row.market === "FOULS" ? homeFouls != null && awayFouls != null ? homeFouls + awayFouls : null : homeCorners != null && awayCorners != null ? homeCorners + awayCorners : null);
     const hit = resolvedStrategyOutcome({ storedHit: row.hit, market: row.market, side: row.side, line: row.line, homeGoals: result?.homeGoals ?? null, awayGoals: result?.awayGoals ?? null, actualCount });
-    return { row, result, hit };
+    return { row, result, hit, dataWarning };
   });
-  const summaryRows = resolved.map(({ row, hit }) => ({ strategy, stake: row.stake, odds: row.decimalOdds, hit, marketProbability: row.marketProbability, closingMarketProbability: row.closingMarketProbability, qualifiedAt: row.qualifiedAt, fixtureId: row.fixtureId, kickoff: row.kickoff, closedAt: row.closedAt, closingFreshness: row.closingFreshness, benchmarkQuality: row.closingBenchmarkQuality, priceClv: row.priceClv, probabilityClv: row.probabilityClv, sameBookClv: row.sameBookClv, clvMethodVersion: row.clvMethodVersion }));
+  const summaryRows = resolved.map(({ row, hit, dataWarning }) => ({ strategy, stake: row.stake, odds: row.decimalOdds, hit, marketProbability: row.marketProbability, closingMarketProbability: row.closingMarketProbability, qualifiedAt: row.qualifiedAt, fixtureId: row.fixtureId, kickoff: row.kickoff, closedAt: row.closedAt, ...ledgerClv(row), ...(dataWarning ? { closingMarketProbability: null, priceClv: null, sameBookClv: false } : {}) }));
   const dailyRows = rows.filter((row) => row.kickoff >= bounds.start && row.kickoff < bounds.end);
   const dailyIds = new Set(dailyRows.map((row) => row.id));
-  const opportunities: StrategyHubOpportunity[] = resolved.filter(({ row }) => dailyIds.has(row.id)).map(({ row, result, hit }) => {
-    return { id: row.id, fixtureId: row.fixtureId, leagueId: row.leagueId, leagueName: catalogLeagueName(row.leagueId, ""), kickoff: row.kickoff.toISOString(), homeName: row.homeName, awayName: row.awayName, selection: autonomousSelection(strategy, row.side, row.line, row.homeName, row.awayName), reason: row.reason, risk: row.decimalOdds == null ? "Chybí realizovatelný kurz." : definition.status === "RESEARCH" ? "Výzkumná strategie ještě nemá potvrzený vzorek." : "Výsledek jednoho zápasu má přirozeně vysokou varianci.", probability: row.modelProbability, marketProbability: row.marketProbability, edge: row.edge, expectedValue: row.expectedValue, confidence: row.sampleCount, odds: row.decimalOdds, bookmaker: row.bookmaker, priceKind: row.decimalOdds ? "DIRECT" : "NONE", outcome: outcome(hit, row.settlementStatus === "VOID"), score: result?.homeGoals == null || result.awayGoals == null ? null : `${result.homeGoals}:${result.awayGoals}`, ticketSlots: [] }; });
+  const opportunities: StrategyHubOpportunity[] = resolved.filter(({ row }) => dailyIds.has(row.id)).map(({ row, result, hit, dataWarning }) => {
+    return { id: row.id, fixtureId: row.fixtureId, leagueId: row.leagueId, leagueName: catalogLeagueName(row.leagueId, ""), kickoff: row.kickoff.toISOString(), homeName: row.homeName, awayName: row.awayName, selection: autonomousSelection(strategy, row.side, row.line, row.homeName, row.awayName), reason: row.reason, risk: dataWarning ? "Nesoulad identity zápasu. Původní bilance je zachována, řádek není validační důkaz." : row.decimalOdds == null ? "Chybí realizovatelný kurz." : definition.status === "RESEARCH" ? "Výzkumná strategie ještě nemá potvrzený vzorek." : "Výsledek jednoho zápasu má přirozeně vysokou varianci.", probability: row.modelProbability, marketProbability: row.marketProbability, edge: row.edge, expectedValue: row.expectedValue, confidence: row.sampleCount, odds: row.decimalOdds, bookmaker: row.bookmaker, priceKind: row.decimalOdds ? "DIRECT" : "NONE", outcome: outcome(hit, row.settlementStatus === "VOID"), score: result?.homeGoals == null || result.awayGoals == null ? null : `${result.homeGoals}:${result.awayGoals}`, ticketSlots: [] }; });
   return { opportunities, tickets: [], metrics: { all: summarizePortfolio(summaryRows), recent: summarizePortfolio(summaryRows.filter((item) => item.qualifiedAt && new Date(item.qualifiedAt) >= recentFrom)), selectionAccuracy: summarizePortfolio(summaryRows).accuracy, unit: "SELECTIONS" } satisfies StrategyHubMetrics, coverage: { candidates: opportunities.length, priced: opportunities.filter((item) => item.odds != null).length, tickets: 0 }, emptyReason: opportunities.length ? null : definition.status === "NO_MARKET" ? "NO_MARKET" : "NOT_ENOUGH_CANDIDATES" };
 }
 
@@ -233,9 +235,9 @@ export async function strategyHubDailySummary(date: string) {
   const bounds = pragueDateBounds(date);
   const [ticketRows, autonomous, teamGoals, pressureFlow] = await Promise.all([
     prisma.intuitionTicket.findMany({ where: { policyVersion: STRATEGY_HUB_CATALOG[0].policyVersion, legs: { some: { kickoff: { gte: bounds.start, lt: bounds.end } } } }, select: { strategy: true, slot: true, legs: { where: { kickoff: { gte: bounds.start, lt: bounds.end } }, select: { fixtureId: true } } } }),
-    prisma.autonomousTipSnapshot.findMany({ where: { kickoff: { gte: bounds.start, lt: bounds.end }, status: "candidate", modelContext: "LEAGUE", OR: STRATEGY_HUB_CATALOG.filter((item) => ["ONE_X_TWO", "OVER_25", "BTTS_YES", "CORNERS", "CARDS_REF", "FOULS"].includes(item.id)).map((item) => ({ strategy: item.id, policyVersion: item.policyVersion })) }, select: { strategy: true, fixtureId: true } }),
-    prisma.marketSignalSnapshot.findMany({ where: { kickoff: { gte: bounds.start, lt: bounds.end }, policyVersion: STRATEGY_HUB_CATALOG.find((item) => item.id === "TEAM_GOALS")!.policyVersion, modelContext: "LEAGUE", market: { in: ["TEAM_HOME_05", "TEAM_HOME_15", "TEAM_AWAY_05", "TEAM_AWAY_15"] } }, select: { fixtureId: true, market: true, modelProbability: true, openMarketProbability: true, decimalOdds: true } }),
-    prisma.marketSignalSnapshot.findMany({ where: { kickoff: { gte: bounds.start, lt: bounds.end }, policyVersion: PRESSURE_FLOW_V5_POLICY_VERSION }, select: { fixtureId: true } }),
+    prisma.autonomousTipSnapshot.findMany({ where: { kickoff: { gte: bounds.start, lt: bounds.end }, status: "candidate", modelContext: "LEAGUE", OR: STRATEGY_HUB_CATALOG.filter((item) => ["ONE_X_TWO", "OVER_25", "BTTS_YES", "CORNERS", "CARDS_REF", "FOULS"].includes(item.id)).map((item) => ({ strategy: item.id, policyVersion: item.policyVersion, ...strategyCohort(item.id) })) }, select: { strategy: true, fixtureId: true } }),
+    prisma.marketSignalSnapshot.findMany({ where: { kickoff: { gte: bounds.start, lt: bounds.end }, policyVersion: STRATEGY_HUB_CATALOG.find((item) => item.id === "TEAM_GOALS")!.policyVersion, ...strategyCohort("TEAM_GOALS"), market: { in: ["TEAM_HOME_05", "TEAM_HOME_15", "TEAM_AWAY_05", "TEAM_AWAY_15"] } }, select: { fixtureId: true, market: true, modelProbability: true, openMarketProbability: true, decimalOdds: true } }),
+    prisma.marketSignalSnapshot.findMany({ where: { kickoff: { gte: bounds.start, lt: bounds.end }, policyVersion: PRESSURE_FLOW_V5_POLICY_VERSION, ...strategyCohort("PRESSURE_FLOW_V5") }, select: { fixtureId: true } }),
   ]);
   const values = STRATEGY_HUB_CATALOG.map((definition) => {
     if (definition.id === "VALUE" || definition.id === "ELO_INTUITION") {

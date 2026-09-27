@@ -17,6 +17,10 @@ export const CORNERS_LIVE_COUNT_MODEL_VERSION = 2;
 export const GUARDED_ONE_X_TWO_POLICY_VERSION = 1;
 export const GUARDED_ONE_X_TWO_MAX_EDGE = 0.15;
 
+/** Research-only prospective cohort; never resumes retired OVER_25 policy 1. */
+export const LEGACY_OVER_SHADOW_STRATEGY = "OVER_25_LEGACY_SHADOW";
+export const LEGACY_OVER_SHADOW_POLICY_VERSION = 1;
+
 export interface AutonomousInput {
   strategy: AutonomousStrategy;
   modelProbability: number;
@@ -52,11 +56,19 @@ export const GOAL_MARKET_MAX_EDGE = 0.12;
 
 /** Cista, verzovana publikacni brana. Poradi kontrol zaroven urcuje jednu vetu v UI. */
 export function evaluateAutonomousTip(input: AutonomousInput): AutonomousDecision {
+  return evaluatePolicy(input, false);
+}
+
+export function evaluateLegacyOverShadow(input: Omit<AutonomousInput, "strategy">): AutonomousDecision {
+  return evaluatePolicy({ ...input, strategy: "OVER_25" }, true);
+}
+
+function evaluatePolicy(input: AutonomousInput, legacyOver: boolean): AutonomousDecision {
   const cfg = CONFIG[input.strategy];
   const edge = input.marketProbability == null ? null : input.modelProbability - input.marketProbability;
   const expectedValue = input.decimalOdds == null ? null : input.modelProbability * input.decimalOdds - 1;
   const watch = (reason: string): AutonomousDecision => ({ status: "watch", reason, edge, expectedValue });
-  const minReadiness = GOAL_STRATEGIES.has(input.strategy) ? GOAL_MARKET_MIN_READINESS : 6;
+  const minReadiness = !legacyOver && GOAL_STRATEGIES.has(input.strategy) ? GOAL_MARKET_MIN_READINESS : 6;
   if (input.lowConfidence || input.readinessSample < minReadiness)
     return watch(`Efektivni vzorek ${input.readinessSample.toFixed(1)}; potreba je alespon ${minReadiness} zapasu.`);
   if (input.modelProbability + Number.EPSILON < cfg.probability)
@@ -69,7 +81,7 @@ export function evaluateAutonomousTip(input: AutonomousInput): AutonomousDecisio
     return watch(`Zatim jen ${input.sampleCount} kurzove vzorky; potreba jsou alespon 3.`);
   if (input.minutesToKickoff < 15)
     return watch("Do vykopu zbyva mene nez 15 minut; novy vyber uz nelze publikovat.");
-  if (GOAL_STRATEGIES.has(input.strategy) && edge! - GOAL_MARKET_MAX_EDGE > 1e-9)
+  if (!legacyOver && GOAL_STRATEGIES.has(input.strategy) && edge! - GOAL_MARKET_MAX_EDGE > 1e-9)
     return watch(`Rozpor s trhem +${(edge! * 100).toFixed(1)} p. b. je nad bezpecnou hranici ${Math.round(GOAL_MARKET_MAX_EDGE * 100)} p. b.; vyber zustava jen k auditu.`);
   if (edge! + Number.EPSILON < cfg.edge)
     return watch(`Proti trhu chybi ${((cfg.edge - edge!) * 100).toFixed(1)} p. b. k pozadovane hrane.`);

@@ -10,20 +10,16 @@ import { refreshDailyAutonomousEvidence } from "./dailySelectionEvidenceStore";
 import { upsertIncident } from "../operations";
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
-import { dailyCandidateRejection } from "../picks/dailySelection";
+import { dailyPublishedAudit } from "../picks/dailyPublishedAudit";
 import type { DailyPublicationCandidate } from "./dailySelectionStore";
 
-async function auditPublished(candidates:DailyPublicationCandidate[],now:Date){
+async function auditPublished(candidates:DailyPublicationCandidate[],now:Date,sourceRejections:Array<{id:string;reason:string}>){
   const items=await prisma.dailySelectionItem.findMany({where:{day:{dateKey:localDateKey(now)},kickoff:{gt:now},outcome:"PENDING"}});
   for(const item of items){
     const c=candidates.find(c=>c.fixtureId===item.fixtureId&&c.marketKey===item.marketKey&&(item.snapshot as unknown as DailyPublicationCandidate).strategy===c.strategy);
-    const reason=c?dailyCandidateRejection(c,now):"SOURCE_NO_LONGER_AVAILABLE";
-    // Near kickoff is the admission cutoff, not a reason to withdraw an existing bet.
-    const warning=reason==="KICKOFF_TOO_CLOSE"?null:reason;
-    const withdrawn=warning==="SOURCE_BLOCKED"||warning==="SOURCE_NOT_QUALIFIED"||warning==="INVALID_IDENTITY";
-    const priceChanged=c&&c.odds!==item.decimalOdds;
-    if(!warning&&!priceChanged)continue;
-    const kind=withdrawn?"WITHDRAWN":priceChanged?"PRICE_CHANGED":"WARNING";
+    const snapshot=item.snapshot as unknown as DailyPublicationCandidate;
+    const {warning,withdrawn,kind}=dailyPublishedAudit({publishedSourceId:snapshot.id,publishedOdds:item.decimalOdds,candidate:c,sourceRejections,now});
+    if(!kind)continue;
     const eventKey=`audit:${item.id}:${kind}:${warning??c?.odds}`;
     await prisma.$transaction(async tx=>{
       await tx.dailySelectionEvent.upsert({where:{eventKey},create:{eventKey,dayId:item.dayId,itemId:item.id,kind,payload:{reason:warning,newOdds:c?.odds??null,newQuoteAt:c?.oddsAt??null,at:now.toISOString()}},update:{}});
@@ -71,7 +67,7 @@ export async function runDailySelection(now=new Date(),options:{dryRun?:boolean;
     const hour=Number(new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Prague",hour:"2-digit",hourCycle:"h23"}).format(now));
     if(hour<9)return {status:"BEFORE_PUBLICATION"};
     const sources=await loadDailySources(localDateKey(now),now);
-    if(!options.dryRun)await auditPublished(sources.candidates,now);
+    if(!options.dryRun)await auditPublished(sources.candidates,now,sources.rejected);
     const result=await appendDailySelection(sources.candidates,now,options.dryRun,sources.rejected);
     if(!options.dryRun&&"added" in result&&result.added)await refreshDailySelectionBalances(now);
     return {...result,sourceRejections:sources.rejected};

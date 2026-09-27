@@ -28,7 +28,7 @@ export async function loadDailyAutonomousSources(date:string, now=new Date()) {
   const rejected:Array<{id:string;reason:string}>=[];
   const candidates=rows.flatMap(row=>{
     const fixture=byFixture.get(row.fixtureId);
-    if(!fixture){rejected.push({id:row.id,reason:"MISSING_FIXTURE"});return [];}
+    if(!fixture){rejected.push({id:`AUTONOMOUS:${row.id}`,reason:"MISSING_FIXTURE"});return [];}
     const definition=definitions.find(d=>d.strategy===row.strategy&&d.policyVersion===row.policyVersion&&d.modelVersion===row.modelVersion&&d.modelContext===row.modelContext);
     const catalog=STRATEGY_CATALOG.find(d=>d.strategy===row.strategy&&d.policyVersion===row.policyVersion);
     const sourceBlocked=!catalog||catalog.status==="RETIRED"||catalog.status==="REJECTED"||!!definition&&["RETIRED","REJECTED","PAUSED"].includes(definition.status);
@@ -37,7 +37,7 @@ export async function loadDailyAutonomousSources(date:string, now=new Date()) {
       return detail?.fixtureId===row.fixtureId||detail?.fixtureIds?.includes(row.fixtureId)||detail?.leagueId===row.leagueId||detail?.strategy===row.strategy||detail?.scope==="GLOBAL";
     });
     const result=dailyAutonomousCandidate(row,fixture,evidence.get(dailyEvidenceCacheKey(dailyEvidenceCohortKey(row)))??null,now,sourceBlocked||incidentBlocked);
-    if(!result.candidate){rejected.push({id:row.id,reason:result.reason!});return [];}
+    if(!result.candidate){rejected.push({id:`AUTONOMOUS:${row.id}`,reason:result.reason!});return [];}
     return [result.candidate];
   });
   return {candidates,rejected,sourceCoverage:{autonomous:true,teamGoals:false,pressureFlow:false,valueElo:false}};

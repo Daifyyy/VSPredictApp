@@ -1,10 +1,11 @@
 import "server-only";
 import { isRealDataConfigured, prisma } from "@/lib/db";
 import type { FixtureDay, ModelReviewChip, PlayedModelReview } from "@/lib/types";
-import { binaryOutcome, countTone, freshClosing, portfolioProfit } from "@/lib/picks/evaluation";
+import { countTone, freshClosing, portfolioProfit } from "@/lib/picks/evaluation";
 import type { MatchFlowEvaluation } from "@/lib/picks/matchFlowEvaluation";
 import { buildMatchInsight, publicMatchInsight } from "@/lib/picks/matchInsight";
 import type { PerformancePressureShadow } from "@/lib/picks/performancePressureShadow";
+import { resolvedStrategyOutcome } from "@/lib/picks/strategyOutcome";
 
 const pct = (value: number) => `${Math.round(value * 100)} %`;
 const one = (value: number) => value.toFixed(1).replace(".", ",");
@@ -19,7 +20,7 @@ export async function getResultModelReviews(fixtureIds: number[], options: { pro
   const [predictions, stats, selections, signals, flowRows] = await Promise.all([
     prisma.fixturePrediction.findMany({ where: { fixtureId: { in: ids } } }),
     prisma.matchStatCache.findMany({ where: { fixtureId: { in: ids } }, select: { fixtureId: true, teamId: true, context: true, corners: true, fouls: true, yellowCards: true, redCards: true } }),
-    prisma.autonomousTipSnapshot.findMany({ where: { fixtureId: { in: ids }, status: "candidate" } }),
+    prisma.autonomousTipSnapshot.findMany({ where: { strategy: { not: "OVER_25_LEGACY_SHADOW" }, fixtureId: { in: ids }, status: "candidate" } }),
     prisma.marketSignalSnapshot.findMany({ where: { fixtureId: { in: ids } }, orderBy: { openedAt: "asc" } }),
     prisma.matchFlowEvaluationSnapshot.findMany({ where: { fixtureId: { in: ids }, evaluationVersion: 3, status: "SETTLED" }, orderBy: { evaluationVersion: "desc" } }),
   ]);
@@ -63,12 +64,12 @@ export async function getResultModelReviews(fixtureIds: number[], options: { pro
       return { market: signal.market, side: signal.side, line: signal.line, open: signal.openMarketProbability, close: close.close, movement: close.close == null ? null : close.close - signal.openMarketProbability, freshClose: close.fresh };
     });
     const portfolio = (selectionMap.get(p.fixtureId) ?? []).map((row) => {
-      const hit = binaryOutcome(row.market, row.side, p.homeGoals, p.awayGoals);
+      const hit = resolvedStrategyOutcome({ storedHit: row.hit, market: row.market, side: row.side, line: row.line, homeGoals: p.homeGoals, awayGoals: p.awayGoals, actualCount: row.actualCount });
       return { strategy: row.strategy, side: row.side, odds: row.decimalOdds, hit, profit: portfolioProfit(hit, row.decimalOdds, row.stake), policyVersion: row.policyVersion };
     });
     const matchFlow=flowMap.get(p.fixtureId)??null;
     const pressure=(p.inputSnapshot as {performancePressure?:PerformancePressureShadow}|null)?.performancePressure;
-    const fullMatchInsight=matchFlow&&pressure?.version===3?buildMatchInsight({pressure,evaluation:matchFlow,phase:"FINAL",capturedAt:pressure.capturedAt}):null;
+    const fullMatchInsight=matchFlow&&pressure&&[3,5].includes(pressure.version)?buildMatchInsight({pressure,evaluation:matchFlow,phase:"FINAL",capturedAt:pressure.capturedAt}):null;
     const matchInsight=fullMatchInsight&&(options.pro!==true)?publicMatchInsight(fullMatchInsight):fullMatchInsight;
     reviews.set(p.fixtureId, { chips, probabilities: { home: p.homeWin, draw: p.draw, away: p.awayWin, over25: p.over25, bttsYes: p.bttsYes }, expectedScore: { home: p.lambdaHome, away: p.lambdaAway }, counts: { corners, cards, fouls }, modelVersion: p.modelVersion, countModelVersion: p.countModelVersion, foulModelVersion: p.foulModelVersion, context: p.modelContext, readinessSample: p.readinessSample, lowConfidence: p.lowConfidence, referee: { name: p.refereeName, factor: p.refereeFactor, sample: p.refereeSample }, market, portfolio, matchFlow, matchInsight });
   }

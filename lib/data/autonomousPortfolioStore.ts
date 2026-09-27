@@ -1,4 +1,5 @@
 import type { BookOdds } from "./apiFootball";
+import type { Prisma } from "@prisma/client";
 import { PINNACLE_FIRST_BOOKMAKERS } from "./apiFootball";
 import { prisma } from "@/lib/db";
 import { sharpFair, sharpFairTotal } from "@/lib/picks/books";
@@ -8,15 +9,28 @@ import { COUNT_MARKET_SIGNAL_POLICY_VERSION, MARKET_SIGNAL_POLICY_VERSION, marke
 import { isPublicClubLeague } from "./catalog";
 import { binaryOutcome, portfolioProfit, RELIABLE_CLOSE_MAX_MINUTES, FINAL_STATUSES } from "@/lib/picks/evaluation";
 import { CLV_METHOD_VERSION, clvV2, comparableMarketQuote, type ComparableMarket } from "@/lib/picks/comparableMarketQuote";
+import { LEGACY_OVER_SHADOW_STRATEGY, LEGACY_OVER_SHADOW_POLICY_VERSION, evaluateLegacyOverShadow } from "@/lib/picks/autonomousPortfolio";
+
+/** Unique insert plus conditional promotion: concurrent captures cannot overwrite a candidate. */
+async function captureUnqualifiedRow(data: Prisma.AutonomousTipSnapshotCreateManyInput): Promise<number> {
+  const inserted = await prisma.autonomousTipSnapshot.createMany({ data: [data], skipDuplicates: true });
+  if (inserted.count) return data.status === "candidate" ? 1 : 0;
+  const updated = await prisma.autonomousTipSnapshot.updateMany({
+    where: { fixtureId: data.fixtureId, strategy: data.strategy, policyVersion: data.policyVersion,
+      status: { not: "candidate" }, settledAt: null, capturedAt: { lte: data.capturedAt } },
+    data,
+  });
+  return data.status === "candidate" ? updated.count : 0;
+}
 
 const countActivationCache = new Map<string, { enabled: boolean; expiresAt: number }>();
 
-async function countResearchEnabled(strategy: "CORNERS" | "CARDS_REF" | "FOULS", modelVersion: number, at: Date): Promise<boolean> {
-  const cacheKey = `${strategy}:${modelVersion}`;
+async function countResearchEnabled(strategy: "CORNERS" | "CARDS_REF" | "FOULS" | typeof LEGACY_OVER_SHADOW_STRATEGY, modelVersion: number, at: Date, modelContext = "LEAGUE"): Promise<boolean> {
+  const cacheKey = `${strategy}:${modelVersion}:${modelContext}`;
   const cached = countActivationCache.get(cacheKey);
   if (cached && cached.expiresAt > at.getTime()) return cached.enabled;
   const definition = await prisma.modelStrategyDefinition.findUnique({
-    where: { strategy_policyVersion_modelContext_modelVersion: { strategy, policyVersion: AUTONOMOUS_POLICY_VERSION[strategy], modelContext: "LEAGUE", modelVersion } },
+    where: { strategy_policyVersion_modelContext_modelVersion: { strategy, policyVersion: strategy === LEGACY_OVER_SHADOW_STRATEGY ? LEGACY_OVER_SHADOW_POLICY_VERSION : AUTONOMOUS_POLICY_VERSION[strategy], modelContext, modelVersion } },
     select: { status: true, startedAt: true },
   });
   const enabled = definition == null || (["RESEARCH", "LIVE_TEST", "CANDIDATE"].includes(definition.status) && definition.startedAt <= at);
@@ -25,6 +39,7 @@ async function countResearchEnabled(strategy: "CORNERS" | "CARDS_REF" | "FOULS",
 }
 
 type Side = "HOME" | "AWAY" | "OVER" | "UNDER";
+type CapturedStrategy = AutonomousStrategy | typeof LEGACY_OVER_SHADOW_STRATEGY;
 
 function auditMarket(market: string): ComparableMarket {
   if (market.startsWith("TEAM_HOME")) return "TEAM_HOME";
@@ -88,10 +103,11 @@ export async function captureAutonomousPortfolio(fixtureId: number, books: BookO
   const cornerSignal = byMarket.get("CORNERS");
   const cardSignal = byMarket.get("CARDS");
   const foulSignal = byMarket.get("FOULS");
-  const [cornerEnabled, cardEnabled, foulEnabled] = await Promise.all([
+  const [cornerEnabled, cardEnabled, foulEnabled, legacyOverEnabled] = await Promise.all([
     countResearchEnabled("CORNERS", prediction.modelVersion, at),
     countResearchEnabled("CARDS_REF", prediction.modelVersion, at),
     countResearchEnabled("FOULS", prediction.modelVersion, at),
+    countResearchEnabled(LEGACY_OVER_SHADOW_STRATEGY, prediction.modelVersion, at, prediction.modelContext),
   ]);
   const cornerSide = cornerSignal?.side === "UNDER" ? "UNDER" : "OVER";
   const cornerQuote = cornerSignal?.line == null ? null : referenceLineQuote(books, "corners", cornerSignal.line, cornerSide === "OVER" ? "over" : "under", PINNACLE_FIRST_BOOKMAKERS);
@@ -99,7 +115,7 @@ export async function captureAutonomousPortfolio(fixtureId: number, books: BookO
   const cardQuote = cardSignal?.line == null ? null : referenceLineQuote(books, "cards", cardSignal.line, cardSide === "OVER" ? "over" : "under", PINNACLE_FIRST_BOOKMAKERS);
   const foulSide = foulSignal?.side === "UNDER" ? "UNDER" : "OVER";
   const foulQuote = foulSignal?.line == null ? null : referenceLineQuote(books, "fouls", foulSignal.line, foulSide === "OVER" ? "over" : "under", PINNACLE_FIRST_BOOKMAKERS);
-  const inputs: Array<{ strategy: AutonomousStrategy; market: string; side: Side; line: number | null; probability: number; marketProbability: number | null; second?: number; price: { odds: number; bookmaker: string } | null; samples: number; overround?: number | null; countModelVersion?: number | null }> = [
+  const inputs: Array<{ strategy: CapturedStrategy; market: string; side: Side; line: number | null; probability: number; marketProbability: number | null; second?: number; price: { odds: number; bookmaker: string } | null; samples: number; overround?: number | null; countModelVersion?: number | null }> = [
     { strategy: "ONE_X_TWO", market: "1X2", side: oneSide, line: null, probability: oneProb, marketProbability: oneFair ? (oneSide === "HOME" ? oneFair.home : oneFair.away) : null, second: Math.max(prediction.draw, oneSide === "HOME" ? prediction.awayWin : prediction.homeWin), price: referenceOneXTwo(books, oneSide), samples: Array.isArray(byMarket.get("1X2")?.series) ? (byMarket.get("1X2")!.series as unknown[]).length : 0, overround: oneFair?.overround },
     { strategy: "OVER_25", market: "OVER_25", side: "OVER", line: 2.5, probability: prediction.over25, marketProbability: totalFair?.over25 ?? null, price: referenceBook(books, "OVER_25"), samples: Array.isArray(byMarket.get("OVER_25")?.series) ? (byMarket.get("OVER_25")!.series as unknown[]).length : 0, overround: totalFair?.overround },
     { strategy: "BTTS_YES", market: "BTTS", side: "OVER", line: null, probability: prediction.bttsYes, marketProbability: bttsFair?.yes ?? null, price: referenceBook(books, "BTTS_YES"), samples: Array.isArray(byMarket.get("BTTS")?.series) ? (byMarket.get("BTTS")!.series as unknown[]).length : 0, overround: bttsFair?.overround },
@@ -113,16 +129,19 @@ export async function captureAutonomousPortfolio(fixtureId: number, books: BookO
       ? [{ strategy: "FOULS" as const, market: "FOULS", side: foulSide as Side, line: foulSignal.line, probability: foulSignal.modelProbability, marketProbability: foulQuote.probability, price: { odds: foulQuote.odds, bookmaker: foulQuote.bookmaker }, samples: Array.isArray(foulSignal.series) ? (foulSignal.series as unknown[]).length : 0, overround: foulQuote.overround, countModelVersion: prediction.foulModelVersion }]
       : []),
   ];
+  // Same corrected prediction and fetched quote; new prospective identity, never old policy history.
+  const overInput = inputs.find((input) => input.strategy === "OVER_25")!;
+  if (legacyOverEnabled) inputs.push({ ...overInput, strategy: LEGACY_OVER_SHADOW_STRATEGY });
   let created = 0;
   for (const input of inputs) {
     if (input.marketProbability == null) continue;
-    const version = AUTONOMOUS_POLICY_VERSION[input.strategy];
+    const legacyShadow = input.strategy === LEGACY_OVER_SHADOW_STRATEGY;
+    const version = legacyShadow ? LEGACY_OVER_SHADOW_POLICY_VERSION : AUTONOMOUS_POLICY_VERSION[input.strategy as AutonomousStrategy];
     const existing = await prisma.autonomousTipSnapshot.findUnique({
       where: { fixtureId_strategy_policyVersion: { fixtureId, strategy: input.strategy, policyVersion: version } },
     });
     if (existing?.status === "candidate") continue;
-    const decision = evaluateAutonomousTip({
-      strategy: input.strategy,
+    const decisionInput = {
       modelProbability: input.probability,
       marketProbability: input.marketProbability,
       decimalOdds: input.price?.odds ?? null,
@@ -131,7 +150,9 @@ export async function captureAutonomousPortfolio(fixtureId: number, books: BookO
       lowConfidence: prediction.lowConfidence,
       sampleCount: input.samples,
       minutesToKickoff,
-    });
+    };
+    const decision = legacyShadow ? evaluateLegacyOverShadow(decisionInput)
+      : evaluateAutonomousTip({ ...decisionInput, strategy: input.strategy as AutonomousStrategy });
     const openingAudit = auditQuote(books, input.market, input.side, input.line, at);
     const data = {
       leagueId: prediction.leagueId, kickoff: prediction.kickoff,
@@ -157,12 +178,9 @@ export async function captureAutonomousPortfolio(fixtureId: number, books: BookO
       referenceOverround: input.overround ?? null, status: decision.status,
       capturedAt: at, qualifiedAt: decision.status === "candidate" ? at : null,
     };
-    await prisma.autonomousTipSnapshot.upsert({
-      where: { fixtureId_strategy_policyVersion: { fixtureId, strategy: input.strategy, policyVersion: version } },
-      create: { fixtureId, strategy: input.strategy, policyVersion: version, ...data },
-      update: data,
-    });
-    if (decision.status === "candidate") created++;
+    const qualified = await captureUnqualifiedRow({ fixtureId, strategy: input.strategy, policyVersion: version, ...data });
+    // Research collection must not inflate the existing public-candidate counter.
+    if (!legacyShadow) created += qualified;
   }
   // Shadow politika se uklada oddelene a nikdy se nepocita do verejneho portfolia v2.
   if (oneFair) {
@@ -191,11 +209,7 @@ export async function captureAutonomousPortfolio(fixtureId: number, books: BookO
         contextVersion: prediction.contextVersion, modelInputSnapshot: prediction.inputSnapshot ?? undefined, referenceOverround: oneFair.overround, status: decision.status,
         capturedAt: at, qualifiedAt: decision.status === "candidate" ? at : null,
       };
-      await prisma.autonomousTipSnapshot.upsert({
-        where: { fixtureId_strategy_policyVersion: key },
-        create: { ...key, ...shared },
-        update: shared,
-      });
+      await captureUnqualifiedRow({ ...key, ...shared });
     }
   }
   return created;
@@ -281,7 +295,7 @@ export async function settleAutonomousPortfolio(fixtureId: number, at: Date): Pr
   const rows = await prisma.autonomousTipSnapshot.findMany({
     where: {
       fixtureId,
-      strategy: { in: ["ONE_X_TWO", "ONE_X_TWO_GUARDED", "OVER_25", "BTTS_YES"] },
+      strategy: { in: ["ONE_X_TWO", "ONE_X_TWO_GUARDED", "OVER_25", LEGACY_OVER_SHADOW_STRATEGY, "BTTS_YES"] },
       status: "candidate",
       settledAt: null,
     },

@@ -241,7 +241,7 @@ export async function sendKickoffReminders(now = new Date()) {
       select: { fixtureId: true, market: true, side: true, line: true, policyVersion: true, modelProbability: true, openMarketProbability: true, series: true },
     }),
     prisma.autonomousTipSnapshot.findMany({
-      where: { fixtureId: { in: fixtures.map((fixture) => fixture.fixtureId) }, status: "candidate" },
+      where: { strategy: { not: "OVER_25_LEGACY_SHADOW" }, fixtureId: { in: fixtures.map((fixture) => fixture.fixtureId) }, status: "candidate" },
       select: { fixtureId: true, market: true },
     }),
   ]) : [[], []];

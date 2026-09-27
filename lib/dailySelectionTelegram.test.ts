@@ -15,6 +15,23 @@ it("escapes HTML, splits whole blocks and tracks precisely which picks are in ea
   expect(parts.flatMap(p=>p.itemIds)).toEqual(["0","1","2","3","4"]);
   for(const p of parts){expect(p.text).not.toContain("<&");expect(p.text.match(/<b>/g)?.length??0).toBe(p.text.match(/<\/b>/g)?.length??0);}
 });
+it("marks withdrawn picks explicitly without erasing their published loss from results",()=>{
+  const data=day();
+  data.items=[{...data.items[0],status:"WITHDRAWN",outcome:"LOST",profit:-1}];
+  const before=JSON.stringify(data);
+  const parts=dailySelectionMessageParts(data,true);
+  const text=parts.map(part=>part.text).join("\n");
+  expect(text).toContain("⚠️ staženo");
+  expect(text).toContain("❌ <b>");
+  expect(text).toContain("profit -1.00 j · ROI -100.0 %");
+  expect(parts.flatMap(part=>part.itemIds)).toEqual(["0"]);
+  expect(JSON.stringify(data)).toBe(before);
+});
+it("marks a withdrawn pending pick in the current-day command response",()=>{
+  const data=day();
+  data.items=[{...data.items[0],status:"WITHDRAWN"}];
+  expect(dailySelectionMessageParts(data).map(part=>part.text).join("\n")).toContain("⚠️ staženo");
+});
 it("dry run never creates publications or sends Telegram requests",async()=>{
   const fetch=vi.fn();vi.stubGlobal("fetch",fetch);
   expect((await publishDailySelectionTelegram(new Date(),false,true)).status).toBe("DRY_RUN");expect(mocks.tx).not.toHaveBeenCalled();expect(fetch).not.toHaveBeenCalled();

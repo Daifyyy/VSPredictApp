@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/db";
-import { MODEL_VERSION } from "./modelVersion";
-import { STRATEGY_CATALOG, modelLabSummary, type ModelLabLedgerRow } from "@/lib/picks/modelLab";
+import { strategyCohort } from "../picks/strategyCohort";
+import { loadModelStrategyLedger, MODEL_LAB_REPORT_VERSION } from "./modelStrategyLedger";
+import { refreshPressurePerformance } from "./pressurePerformanceStore";
+import { STRATEGY_CATALOG, modelLabSummary, resolveModelLabStatus } from "@/lib/picks/modelLab";
 import { upsertIncident, resolveIncident } from "@/lib/operations";
 import { PUBLIC_CLUB_LEAGUE_IDS } from "./catalog";
 import { parseBooks, referenceLineQuote } from "@/lib/picks/books";
@@ -9,21 +11,6 @@ import { AUTONOMOUS_POLICY_VERSION, CORNERS_LIVE_COUNT_MODEL_VERSION, evaluateAu
 import { COUNT_MARKET_SIGNAL_POLICY_VERSION } from "@/lib/picks/marketSignals";
 
 function json(value: unknown) { return JSON.parse(JSON.stringify(value)); }
-
-async function ledgerFor(strategy: string, policyVersion: number): Promise<ModelLabLedgerRow[]> {
-  const tips = await prisma.autonomousTipSnapshot.findMany({ where: { strategy, policyVersion, status: "candidate", modelContext: "LEAGUE" }, orderBy: { qualifiedAt: "asc" } });
-  const results = await prisma.fixturePrediction.findMany({ where: { fixtureId: { in: [...new Set(tips.map((row) => row.fixtureId))] } }, select: { fixtureId: true, homeGoals: true, awayGoals: true } });
-  const byFixture = new Map(results.map((row) => [row.fixtureId, row]));
-  const countTips = tips.filter((row) => row.market === "CORNERS" || row.market === "CARDS");
-  const stats = countTips.length ? await prisma.matchStatCache.findMany({ where: { fixtureId: { in: countTips.map((row) => row.fixtureId) } }, select: { fixtureId: true, teamId: true, corners: true, yellowCards: true, redCards: true } }) : [];
-  return tips.map((row) => {
-    const homeStat = stats.find((item) => item.fixtureId === row.fixtureId && item.teamId === row.homeTeamId);
-    const awayStat = stats.find((item) => item.fixtureId === row.fixtureId && item.teamId === row.awayTeamId);
-    const home = row.market === "CARDS" ? homeStat?.yellowCards == null && homeStat?.redCards == null ? null : (homeStat?.yellowCards ?? 0) + (homeStat?.redCards ?? 0) : homeStat?.corners;
-    const away = row.market === "CARDS" ? awayStat?.yellowCards == null && awayStat?.redCards == null ? null : (awayStat?.yellowCards ?? 0) + (awayStat?.redCards ?? 0) : awayStat?.corners;
-    return { ...row, homeGoals: byFixture.get(row.fixtureId)?.homeGoals ?? null, awayGoals: byFixture.get(row.fixtureId)?.awayGoals ?? null, actualCount: row.actualCount ?? (home != null && away != null ? home + away : null) };
-  });
-}
 
 async function monitorCornerCapture(definitionId: string, modelVersion: number, startedAt: Date, now = new Date()) {
   const signals = await prisma.marketSignalSnapshot.findMany({
@@ -96,20 +83,32 @@ async function monitorCornerCapture(definitionId: string, modelVersion: number, 
 /** Denní kontrola pouze čte zmrazený ledger. Vytváří reporty a doporučení, nikdy nemění politiku. */
 export async function monitorModelLab() {
   let reports = 0, findings = 0;
-  for (const item of STRATEGY_CATALOG.filter((entry) => entry.status === "LIVE_TEST" || entry.strategy === "CORNERS" || entry.strategy === "CARDS_REF")) {
+  const now = new Date();
+  for (const context of ["LEAGUE", "EURO_CUP", "NATIONAL"] as const) {
+  const { ledger } = await loadModelStrategyLedger(context);
+  for (const item of STRATEGY_CATALOG) {
+    const modelVersion = strategyCohort(item.strategy, context).modelVersion;
     const definition = await prisma.modelStrategyDefinition.upsert({
-      where: { strategy_policyVersion_modelContext_modelVersion: { strategy: item.strategy, policyVersion: item.policyVersion, modelContext: "LEAGUE", modelVersion: MODEL_VERSION } },
-      create: { strategy: item.strategy, policyVersion: item.policyVersion, market: item.market, modelContext: "LEAGUE", modelVersion: MODEL_VERSION, status: item.status, title: item.title, rules: { text: item.rules }, decisionCriteria: { text: item.decision }, minimumSample: item.minimumSample, startedAt: new Date() },
-      update: { title: item.title, rules: { text: item.rules }, decisionCriteria: { text: item.decision }, minimumSample: item.minimumSample },
+      where: { strategy_policyVersion_modelContext_modelVersion: { strategy: item.strategy, policyVersion: item.policyVersion, modelContext: context, modelVersion } },
+      create: { strategy: item.strategy, policyVersion: item.policyVersion, market: item.market, modelContext: context, modelVersion, status: item.status, title: item.title, rules: { text: item.rules }, decisionCriteria: { text: item.decision }, minimumSample: item.minimumSample, startedAt: new Date() },
+      update: { title: item.title, rules: { text: item.rules }, minimumSample: item.minimumSample },
     });
-    if (definition.status !== "LIVE_TEST" && !(definition.status === "RESEARCH" && (item.strategy === "CORNERS" || item.strategy === "CARDS_REF"))) continue;
-    if (item.strategy === "CORNERS") findings += await monitorCornerCapture(definition.id, definition.modelVersion, definition.startedAt);
-    const rows = await ledgerFor(item.strategy, item.policyVersion);
+    const rows = ledger.filter(row => row.strategy === item.strategy && row.policyVersion === item.policyVersion);
     const summary = modelLabSummary(rows);
+    const status = resolveModelLabStatus(item, definition.status);
+    const card = { ...item, modelVersion, modelContext: context, status, reportVersion: MODEL_LAB_REPORT_VERSION, summary, currentCount: rows.filter(row => row.kickoff > now).length };
+    const datasetCutoff = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    await prisma.modelStrategyMetricSnapshot.upsert({
+      where: { strategy_policyVersion_modelContext_modelVersion_datasetCutoff: { strategy: item.strategy, policyVersion: item.policyVersion, modelContext: context, modelVersion, datasetCutoff } },
+      create: { strategy: item.strategy, policyVersion: item.policyVersion, modelContext: context, modelVersion, datasetCutoff, sampleSize: summary.probability.model.n, currentCount: card.currentCount, metrics: json(card) },
+      update: { sampleSize: summary.probability.model.n, currentCount: card.currentCount, metrics: json(card), createdAt: now },
+    });
+    if (status === "RETIRED" || status === "REJECTED") continue;
+    if (context === "LEAGUE" && item.strategy === "CORNERS") findings += await monitorCornerCapture(definition.id, definition.modelVersion, definition.startedAt);
     const settled = summary.portfolio.settled;
     for (const milestone of [50, 100, 200]) {
       if (settled < milestone) continue;
-      const ordered = rows.filter((row) => row.market === "CORNERS" || row.market === "CARDS" ? row.actualCount != null : row.homeGoals != null && row.awayGoals != null).sort((a, b) => a.kickoff.getTime() - b.kickoff.getTime()).slice(0, milestone);
+      const ordered = rows.filter((row) => row.market === "CORNERS" || row.market === "CARDS" || row.market === "FOULS" ? row.actualCount != null : row.homeGoals != null && row.awayGoals != null).sort((a, b) => a.kickoff.getTime() - b.kickoff.getTime()).slice(0, milestone);
       const reportSummary = modelLabSummary(ordered);
       await prisma.modelStrategyReviewReport.upsert({
         where: { definitionId_milestone: { definitionId: definition.id, milestone } },
@@ -137,5 +136,7 @@ export async function monitorModelLab() {
       await resolveIncident(fingerprint);
     }
   }
+  }
+  await refreshPressurePerformance(now);
   return { reports, findings };
 }

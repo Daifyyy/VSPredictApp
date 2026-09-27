@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bankrollSimulation, modelLabSegments, modelLabSummary, type ModelLabLedgerRow } from "./modelLab";
+import { STRATEGY_CATALOG, resolveModelLabStatus } from "./modelLab";
 
 function row(overrides: Partial<ModelLabLedgerRow> = {}): ModelLabLedgerRow {
   return {
@@ -13,6 +14,30 @@ function row(overrides: Partial<ModelLabLedgerRow> = {}): ModelLabLedgerRow {
 }
 
 describe("Model Lab", () => {
+  it("retains a published loss but excludes an identity mismatch from model validation", () => {
+    const summary = modelLabSummary([row({ storedHit: false, dataWarning: "FIXTURE_IDENTITY_MISMATCH" })]);
+    expect(summary.portfolio.settled).toBe(1);
+    expect(summary.portfolio.profit).toBe(-1);
+    expect(summary.probability.model.n).toBe(0);
+    expect(summary.probability.opening.n).toBe(0);
+    expect(summary.dataWarnings).toBe(1);
+    expect(summary.gates.dataQuality).toBe(false);
+  });
+  it("does not validate mixed context or count versions", () => {
+    expect(modelLabSummary([row({ contextVersion: 1 }), row({ contextVersion: 2 })]).gates.frozenPolicy).toBe(false);
+    expect(modelLabSummary([row({ countModelVersion: 1 }), row({ countModelVersion: 2 })]).gates.frozenPolicy).toBe(false);
+  });
+  it("keeps retired Over history, active v2 and the new research comparator distinct", () => {
+    const old = STRATEGY_CATALOG.find((item) => item.strategy === "OVER_25" && item.policyVersion === 1)!;
+    const current = STRATEGY_CATALOG.find((item) => item.strategy === "OVER_25" && item.policyVersion === 2)!;
+    const challenger = STRATEGY_CATALOG.find((item) => item.strategy === "OVER_25_LEGACY_SHADOW")!;
+    expect(old.status).toBe("RETIRED");
+    expect(resolveModelLabStatus(old, "LIVE_TEST")).toBe("RETIRED");
+    expect(current.status).toBe("LIVE_TEST");
+    expect(challenger).toMatchObject({ policyVersion: 1, market: "OVER_25", status: "RESEARCH" });
+    expect(resolveModelLabStatus(challenger, "VALIDATED")).toBe("RESEARCH");
+    expect(modelLabSummary([row(), row({ strategy: challenger.strategy })]).gates.frozenPolicy).toBe(false);
+  });
   it("počítá model a trh na stejné kohortě a ignoruje early closing", () => {
     const result = modelLabSummary([row(), row({ id: "2", fixtureId: 2, closedAt: new Date("2026-08-01T10:00:00Z"), homeGoals: 0, awayGoals: 0 })]);
     expect(result.probability.model.n).toBe(2);

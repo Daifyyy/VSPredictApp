@@ -406,6 +406,7 @@ export async function runPredictUpcoming(
           currentLambdaHome: p.lambdaHomeBase,
           currentLambdaAway: p.lambdaAwayBase,
           currentOver25: p.over25,
+          mainMarketProbabilities: { OVER_25: p.over25, BTTS_YES: p.bttsYes },
           context: modelContext,
         };
         const v5Allowed = process.env.PRESSURE_V5_ENABLED !== "false" && pressureV5SpentMs < pressureV5BudgetMs;
@@ -638,6 +639,7 @@ export async function runSnapshotOdds(
   const priorityHorizon = new Date(now.getTime() + 90 * 60_000);
   const priorityRows = mode === "priority" ? await prisma.autonomousTipSnapshot.findMany({
     where: {
+      strategy: { not: "OVER_25_LEGACY_SHADOW" },
       kickoff: { gt: now, lte: priorityHorizon },
       OR: [
         { status: "candidate" },

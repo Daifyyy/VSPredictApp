@@ -32,7 +32,7 @@ export async function loadDailyAdditionalSources(date:string,now:Date) {
   }
   for(const row of signals) {
     const f=byFixture.get(row.fixtureId),v5=row.policyVersion===PRESSURE_FLOW_V5_POLICY_VERSION;
-    const reject=(reason:string)=>rejected.push({id:row.id,reason});
+    const reject=(reason:string)=>rejected.push({id:`SIGNAL:${row.id}`,reason});
     if(!v5&&teamWinners.get(row.fixtureId)?.id!==row.id){reject("NOT_IN_SOURCE_SHORTLIST");continue;}
     if(!f||!f.oddsCurrentAt||row.kickoff.getTime()!==f.kickoff.getTime()||row.openedAt>=row.kickoff||row.openedAt>now){reject("MISSING_OR_CHANGED_SOURCE");continue;}
     const snapshot=f.inputSnapshot as {capturedAt?:string;competition?:{homeTeamId:number;awayTeamId:number};performancePressure?:PerformancePressureShadowV5}|null;

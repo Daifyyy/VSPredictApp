@@ -20,6 +20,7 @@ export function dailyAutonomousCandidate(row: DailyAutonomousRow, fixture: Daily
   const reject=(reason:string)=>({candidate:null,reason});
   const strategy=row.strategy as AutonomousStrategy;
   if(!(strategy in AUTONOMOUS_POLICY_VERSION)||row.policyVersion!==AUTONOMOUS_POLICY_VERSION[strategy]||row.status!=="candidate") return reject("INACTIVE_SOURCE_POLICY");
+  if(blocked)return reject("SOURCE_BLOCKED");
   if(!row.qualifiedAt||row.qualifiedAt>=row.kickoff||row.qualifiedAt>now) return reject("NOT_PREMATCH_QUALIFIED");
   if(!Number.isFinite(row.modelProbability)||row.modelProbability<=0||row.modelProbability>=1) return reject("INVALID_FROZEN_PROBABILITY");
   if(!fixture.available||fixture.status!=="NS"||row.fixtureId!==fixture.fixtureId||row.leagueId!==fixture.leagueId||row.homeTeamId!==fixture.homeTeamId||row.awayTeamId!==fixture.awayTeamId||row.kickoff.getTime()!==fixture.kickoff.getTime()) return reject("FIXTURE_CHANGED_OR_UNAVAILABLE");
@@ -32,6 +33,8 @@ export function dailyAutonomousCandidate(row: DailyAutonomousRow, fixture: Daily
   const snap=row.modelInputSnapshot as {readinessSample?:unknown}|null;
   const readiness=typeof snap?.readinessSample==="number"?Math.min(snap.readinessSample,fixture.readinessSample):null;
   if(readiness==null||!Number.isFinite(readiness)) return reject("MISSING_FROZEN_READINESS");
+  // Separate the publication deadline from a genuine loss of price qualification.
+  if((fixture.kickoff.getTime()-now.getTime())/60_000<15)return reject("KICKOFF_TOO_CLOSE");
   const decision=evaluateAutonomousTip({strategy,modelProbability:row.modelProbability,marketProbability:quote.fairProbability,decimalOdds:quote.decimalOdds,
     secondProbability:strategy==="ONE_X_TWO"?Math.max(fixture.draw,row.side==="HOME"?fixture.awayWin:fixture.homeWin):undefined,
     readinessSample:readiness,lowConfidence:fixture.lowConfidence,sampleCount:row.sampleCount,minutesToKickoff:(row.kickoff.getTime()-now.getTime())/60_000});

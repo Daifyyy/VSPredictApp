@@ -15,7 +15,7 @@ export async function GET() {
   const bounds = pragueDateBounds(localDateKey(now));
   const [autonomous, research, manual] = await Promise.all([
     prisma.autonomousTipSnapshot.findMany({
-      where: { status: "candidate", settlementStatus: "PENDING", kickoff: { gte: new Date(now.getTime() - 4 * 60 * 60_000), lt: bounds.end } },
+      where: { strategy: { not: "OVER_25_LEGACY_SHADOW" }, status: "candidate", settlementStatus: "PENDING", kickoff: { gte: new Date(now.getTime() - 4 * 60 * 60_000), lt: bounds.end } },
       orderBy: { kickoff: "asc" }, take: 40,
       select: { id: true, fixtureId: true, leagueId: true, homeTeamId: true, awayTeamId: true, strategy: true, market: true, side: true, line: true, homeName: true, awayName: true, homeLogo: true, awayLogo: true, kickoff: true, modelProbability: true, marketProbability: true, edge: true, expectedValue: true, decimalOdds: true, bookmaker: true, capturedAt: true },
     }),
