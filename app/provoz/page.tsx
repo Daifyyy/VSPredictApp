@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/authUser";
 import { isAdminEmail } from "@/lib/entitlements";
-import { auditPipeline } from "@/lib/operations";
+import { readOperationsReport } from "@/lib/data/operationsReport";
 import { OperationsActions } from "./OperationsActions";
 import { Breadcrumbs, PageBackLink } from "@/app/_components/ui/PageNavigation";
 import { ActionLink, Badge } from "@/app/_components/ui/primitives";
@@ -21,9 +21,13 @@ const coverageCopy: Record<string, { title: string; detail: string }> = {
 export default async function OperationsPage() {
   const user = await getCurrentUser();
   if (!user?.email || !isAdminEmail(user.email)) notFound();
-  const health = await auditPipeline();
+  const cached = await readOperationsReport();
+  const health = cached.report;
+  if (!health) return <main className="page-shell py-6"><h1 className="page-title">Provoz</h1><p>Audit dosud není uložen. Nejde o nulovou bilanci.</p><ActionLink href="/provoz/kapacita">Kapacita služeb</ActionLink><OperationsActions /></main>;
   return (
     <main className="page-shell py-6">
+      <ActionLink href="/provoz/kapacita">Kapacita služeb</ActionLink>
+      {cached.stale && <p role="status">Uložený audit je neaktuální. Otevření stránky nespouští přepočet.</p>}
       <header className="mb-5">
         <div className="mb-4 flex flex-wrap items-center gap-3"><PageBackLink /><Breadcrumbs items={[{ label: "Zápasy", href: "/" }, { label: "Provoz" }]} /></div>
         <p className="page-kicker">Administrace</p>

@@ -40,6 +40,8 @@ export function dailySelectionMessageParts(data:Day,results=false):Array<{text:s
 
 /** Immutable per-part outbox. UNKNOWN and stale SENDING are never blindly retried. */
 export async function publishDailySelectionTelegram(now=new Date(),results=false,dryRun=false){
+  const { resourceBudgetGuard } = await import('./resourceBudgetGuard');
+  if (await resourceBudgetGuard('telegram-digest')) return { status: 'RESOURCE_LIMITED' };
   const config=telegramConfig(),clock=pragueClock(now);
   if(!dailySelectionConfig().telegram||!config.enabled)return {status:"DISABLED"};
   if(clock.hour<9||results&&clock.hour>10)return {status:"OUTSIDE_WINDOW"};

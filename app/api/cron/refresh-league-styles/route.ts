@@ -8,7 +8,7 @@ export const maxDuration = 60;
 
 /** Jedna liga na jeden běh; plánovač rozloží 18 chráněných volání během dne. */
 export async function GET(req: Request) {
-  const denied = requireCronAuth(req);
+  const denied = await requireCronAuth(req);
   if (denied) return denied;
   if (!isRealDataConfigured()) return NextResponse.json({ error: "Reálná data nejsou nakonfigurována" }, { status: 400 });
   const leagueId = Number(new URL(req.url).searchParams.get("league"));

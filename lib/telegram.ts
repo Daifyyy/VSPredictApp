@@ -117,6 +117,8 @@ async function publishedResults(date: string, channelId: string) {
 }
 
 export async function publishTelegramMorning(now = new Date(), options: { dryRun?: boolean; force?: boolean } = {}) {
+  const { resourceBudgetGuard } = await import('./resourceBudgetGuard');
+  if (await resourceBudgetGuard('telegram-digest')) return { status: 'RESOURCE_LIMITED' };
   const config = telegramConfig(); const clock = pragueClock(now); if (!options.force && (clock.hour < 9 || clock.hour > 10)) return { skipped: "OUTSIDE_PRAGUE_MORNING_WINDOW", date: clock.date };
   await Promise.all([
     prisma.telegramPublication.updateMany({ where: { status: "SENDING", NOT: {kind:{startsWith:"DAILY_"}}, updatedAt: { lt: new Date(now.getTime() - 15 * 60_000) } }, data: { status: "FAILED", lastError: "Obnova po přerušeném odesílání" } }),

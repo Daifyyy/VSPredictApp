@@ -46,6 +46,9 @@ export async function loadDailySources(date:string,now:Date) {
 
 /** Isolated optional workflow: provider calls are forbidden here. */
 export async function runDailySelection(now=new Date(),options:{dryRun?:boolean;settle?:boolean}={}) {
+  const { resourceBudgetGuard } = await import('../resourceBudgetGuard');
+  const limited = await resourceBudgetGuard(options.settle ? 'daily-selection-settle' : 'daily-selection');
+  if (limited) return { status: 'RESOURCE_LIMITED' };
   if(!dailySelectionConfig().collect&&!options.dryRun)return {status:"DISABLED"};
   const leaseKey="daily-selection:lease",owner=randomUUID();let leased=false;
   try {

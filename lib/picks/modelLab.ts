@@ -214,7 +214,12 @@ export function modelLabSummary(rows: ModelLabLedgerRow[]) {
 export function modelLabSegments(rows: ModelLabLedgerRow[]) {
   return ["market", "league", "model", "odds", "edge", "side"].map((kind) => {
     const groups = new Map<string, ModelLabLedgerRow[]>();
-    for (const row of rows) { const key = segmentLabel(row, kind); groups.set(key, [...(groups.get(key) ?? []), row]); }
+    for (const row of rows) {
+      const key = segmentLabel(row, kind);
+      const group = groups.get(key);
+      if (group) group.push(row);
+      else groups.set(key, [row]);
+    }
     return { kind, groups: [...groups].map(([label, values]) => ({ label, descriptiveOnly: values.filter((row) => row.market === "CORNERS" || row.market === "CARDS" ? row.actualCount != null : row.homeGoals != null && row.awayGoals != null).length < 20, ...modelLabSummary(values) })) };
   });
 }

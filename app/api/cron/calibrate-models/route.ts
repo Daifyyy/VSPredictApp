@@ -10,7 +10,7 @@ export const maxDuration = 60;
 const CONTEXTS = new Set<ModelContext>(["LEAGUE", "EURO_CUP", "NATIONAL"]);
 
 export async function GET(req: Request) {
-  const denied = requireCronAuth(req);
+  const denied = await requireCronAuth(req);
   if (denied) return denied;
   const value = new URL(req.url).searchParams.get("context") ?? "LEAGUE";
   if (!CONTEXTS.has(value as ModelContext)) return NextResponse.json({ error: "Neplatný modelový kontext" }, { status: 400 });

@@ -5,6 +5,15 @@ import { strategyCohort, ledgerClv } from "../picks/strategyCohort";
 
 export const MODEL_LAB_REPORT_VERSION = 2;
 const TEAM_MARKETS = ["TEAM_HOME_05", "TEAM_HOME_15", "TEAM_AWAY_05", "TEAM_AWAY_15"];
+// Historical reporting never needs frozen model JSON or complete odds time series.
+const commonSelect = {
+  id: true, fixtureId: true, leagueId: true, kickoff: true, policyVersion: true,
+  market: true, side: true, line: true, modelProbability: true, decimalOdds: true,
+  modelContext: true, modelVersion: true, contextVersion: true, countModelVersion: true,
+  bookmaker: true, openingBookmaker: true, closingBenchmarkProbability: true,
+  sameBookClv: true, probabilityClv: true, closingFreshness: true,
+  closingBenchmarkQuality: true, clvMethodVersion: true, closedAt: true,
+} as const;
 
 /** Batched read of frozen selections. No odds fetch, model inference or source mutation. */
 export async function loadModelStrategyLedger(context: ModelLabContext, strategy?: string) {
@@ -12,8 +21,8 @@ export async function loadModelStrategyLedger(context: ModelLabContext, strategy
   const autonomous = definitions.filter(item => !["TEAM_GOALS", "PRESSURE_FLOW_V5"].includes(item.strategy));
   const signalDefinitions = definitions.filter(item => ["TEAM_GOALS", "PRESSURE_FLOW_V5"].includes(item.strategy));
   const [tips, signals] = await Promise.all([
-    autonomous.length ? prisma.autonomousTipSnapshot.findMany({ where: { status: "candidate", OR: autonomous.map(item => ({ strategy: item.strategy, policyVersion: item.policyVersion, ...strategyCohort(item.strategy, context) })) }, orderBy: [{ qualifiedAt: "asc" }, { id: "asc" }] }) : [],
-    signalDefinitions.length ? prisma.marketSignalSnapshot.findMany({ where: { OR: signalDefinitions.map(item => ({ policyVersion: item.policyVersion, ...strategyCohort(item.strategy, context), ...(item.strategy === "TEAM_GOALS" ? { market: { in: TEAM_MARKETS } } : {}) })) }, orderBy: [{ openedAt: "asc" }, { id: "asc" }] }) : [],
+    autonomous.length ? prisma.autonomousTipSnapshot.findMany({ where: { status: "candidate", OR: autonomous.map(item => ({ strategy: item.strategy, policyVersion: item.policyVersion, ...strategyCohort(item.strategy, context) })) }, select: { ...commonSelect, strategy: true, homeTeamId: true, awayTeamId: true, marketProbability: true, qualifiedAt: true, stake: true, closingMarketProbability: true, actualCount: true, hit: true }, orderBy: [{ qualifiedAt: "asc" }, { id: "asc" }] }) : [],
+    signalDefinitions.length ? prisma.marketSignalSnapshot.findMany({ where: { OR: signalDefinitions.map(item => ({ policyVersion: item.policyVersion, ...strategyCohort(item.strategy, context), ...(item.strategy === "TEAM_GOALS" ? { market: { in: TEAM_MARKETS } } : {}) })) }, select: { ...commonSelect, openMarketProbability: true, closeMarketProbability: true, openedAt: true }, orderBy: [{ openedAt: "asc" }, { id: "asc" }] }) : [],
   ]);
   const ids = [...new Set([...tips, ...signals].map(row => row.fixtureId))];
   const countIds = [...new Set(tips.filter(row => ["CORNERS", "CARDS", "FOULS"].includes(row.market)).map(row => row.fixtureId))];

@@ -8,7 +8,7 @@ import { prisma } from "@/lib/db";
 export const maxDuration = 60;
 
 export async function GET(req: Request) {
-  const denied = requireCronAuth(req);
+  const denied = await requireCronAuth(req);
   if (denied) return denied;
   try {
     const [stats, director] = await Promise.all([sendKickoffReminders(), sendDirectorNotifications()]);

@@ -10,7 +10,7 @@ import { useCurrentUser } from "./useCurrentUser";
 import { PressureFlowPredictions, type PressureFlowView } from "./PressureFlowPredictions";
 
 type CatalogItem = StrategyHubDefinition & { statusLabel: string };
-type Payload = { date: string; strategy: StrategyHubId; catalog: CatalogItem[]; locked: boolean; data?: { opportunities: StrategyHubOpportunity[]; predictions?: StrategyHubPrediction[]; tickets: StrategyHubTicket[]; metrics: StrategyHubMetrics; coverage: { candidates: number; priced: number; tickets: number }; emptyReason: string | null } };
+type Payload = { asOf?: string | null; stale?: boolean; limitedReason?: string | null; date: string; strategy: StrategyHubId; catalog: CatalogItem[]; locked: boolean; data?: { opportunities: StrategyHubOpportunity[]; predictions?: StrategyHubPrediction[]; tickets: StrategyHubTicket[]; metrics: StrategyHubMetrics; coverage: { candidates: number; priced: number; tickets: number }; emptyReason: string | null } };
 
 const emptyLabels: Record<string, string> = {
   NOT_ENOUGH_VALUE_LEGS: "Pro tento den nevznikly alespoň tři samostatně kvalitní VALUE nohy.",
@@ -113,6 +113,7 @@ export function StrategyHub() {
   const displayedOpportunities = data?.opportunities.filter((item) => strategy !== "PRESSURE_FLOW_V5" || pressureView === "all" || pressureView === "over25" && item.market === "OVER_25" || pressureView === "btts" && item.market === "BTTS" || pressureView === "team" && item.market?.startsWith("TEAM_")) ?? [];
   const locked = payload?.locked ?? false;
   return <><AppHeader user={user} /><main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-24 pt-5 sm:pt-8">
+    {payload?.stale && <p role="status" className="ui-panel mb-4 p-3 text-sm text-warning">Bilance je z uloženého neaktuálního souhrnu ({payload.asOf ? new Date(payload.asOf).toLocaleString('cs-CZ') : 'čas neznámý'}). Nejde o nově přepočítané výsledky.</p>}
     <div><p className="page-kicker">Jedno místo pro všechny výběry</p><h1 className="page-title">Sázkové strategie</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-muted">Bilance, dnešní příležitosti a případné tikety zůstávají oddělené podle pravidel, která je vytvořila.</p></div>
     <nav aria-label="Výběr strategie" className="mt-5 -mx-4 overflow-x-auto px-4 [scrollbar-width:none]"><div className="flex min-w-max gap-2 pb-2">{catalog.map((item) => <button key={item.id} onClick={() => navigate(item.id)} className={`rounded-full border px-4 py-2 text-sm font-bold transition ${item.id === strategy ? "border-accent-strong bg-accent text-accent-ink" : "border-border bg-surface text-muted hover:text-foreground"}`}>{item.shortTitle}</button>)}</div></nav>
     {!payload && !error ? <div className="ui-panel mt-4 h-56 animate-pulse bg-border/30" /> : error ? <div className="ui-panel mt-4 p-6 text-sm text-negative">Přehled se nepodařilo načíst. Zkus stránku obnovit.</div> : definition && <>

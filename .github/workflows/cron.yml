@@ -20,7 +20,8 @@ name: Cron
 
 on:
   schedule:
-    - cron: "2,12,22,32,42,52 * * * *" # live výzkum po 10 min; kratší interval nepřinášel úměrnou hodnotu
+    - cron: "2 * * * *" # hourly schedule refresh/recovery, same total frequency
+    - cron: "12,22,32,42,52 * * * *" # live only inside saved windows when preflight enabled
     # Snímky kurzů – nejčastější úloha, kvůli zavírací linii u večerních zápasů.
     # HODINOVĚ (od 28. 7. 2026): `fixturesNeedingOdds` v posledních 3 h průběžně přepisuje
     # kandidáta na closing. Hodinová kadence dává typicky poslední bod 0–60 min před výkopem.
@@ -91,6 +92,8 @@ on:
 
 jobs:
   run:
+    # Stops allocation of a runner, unlike an application-side quota rejection.
+    if: ${{ vars.RESOURCE_AUTOMATION_PAUSED != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Zvol endpoint podle času spuštění
@@ -113,7 +116,7 @@ jobs:
             exit 0
           fi
           case "$SCHEDULE" in
-            "2,12,22,32,42,52 * * * *") path="collect-live" ;;
+            "2 * * * *"|"12,22,32,42,52 * * * *") path="collect-live" ;;
             "20 * * * *") path="snapshot-odds" ;;
             "5,35,50 * * * *") path="snapshot-odds-priority" ;;
             "7,22,37,52 * * * *") path="send-notifications" ;;
@@ -142,7 +145,44 @@ jobs:
           echo "path=$path" >> "$GITHUB_OUTPUT"
           echo "Rozvrh '$SCHEDULE' → úloha $path"
 
+      # Opt-in only after verifying GitHub billed minutes/cache headroom.
+      # No training data, credentials or betting content are cached.
+      - uses: actions/checkout@v5
+        if: ${{ vars.LIVE_SCHEDULE_PREFLIGHT_ENABLED == 'true' && steps.pick.outputs.path == 'collect-live' && github.event_name == 'schedule' }}
+        with:
+          sparse-checkout: scripts/liveScheduleGate.mjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: Schedule cache bucket
+        id: schedule_clock
+        if: ${{ vars.LIVE_SCHEDULE_PREFLIGHT_ENABLED == 'true' && steps.pick.outputs.path == 'collect-live' && github.event_name == 'schedule' }}
+        run: echo "bucket=$(date -u +%Y%m%d%H)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v5
+        id: schedule_cache
+        continue-on-error: true
+        if: ${{ steps.schedule_clock.outputs.bucket != '' }}
+        env:
+          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
+        with:
+          path: .runtime/live-schedule.json
+          key: live-schedule-v1-${{ github.ref }}-${{ steps.schedule_clock.outputs.bucket }}
+          restore-keys: live-schedule-v1-${{ github.ref }}-
+      - name: Live preflight before application invocation
+        id: live_gate
+        if: ${{ steps.schedule_clock.outputs.bucket != '' }}
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          SCHEDULE: ${{ github.event.schedule }}
+        run: node scripts/liveScheduleGate.mjs
+      - uses: actions/cache/save@v5
+        continue-on-error: true
+        if: ${{ steps.live_gate.outputs.save_schedule == 'true' && steps.schedule_cache.outputs.cache-hit != 'true' }}
+        with:
+          path: .runtime/live-schedule.json
+          key: live-schedule-v1-${{ github.ref }}-${{ steps.schedule_clock.outputs.bucket }}
       - name: Zavolej endpoint
+        if: ${{ steps.live_gate.outputs.run_live != 'false' }}
         env:
           APP_URL: ${{ vars.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}

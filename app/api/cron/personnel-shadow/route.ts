@@ -10,7 +10,7 @@ export const maxDuration = 60;
 
 export async function GET(request: Request) {
   if (!isRealDataConfigured()) return NextResponse.json({ error: "Mock režim" }, { status: 400 });
-  const denied = requireCronAuth(request);
+  const denied = await requireCronAuth(request);
   if (denied) return denied;
   const params = new URL(request.url).searchParams;
   const limit = Math.max(1, Math.min(8, Number(params.get("limit")) || 4));

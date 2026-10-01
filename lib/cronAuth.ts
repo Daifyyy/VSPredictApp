@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resourceBudgetGuard } from "./resourceBudgetGuard";
 
 /**
  * Sdílené ověření cron/warm endpointů (centralizace dřívějšího `if (secret) {…}` bloku,
@@ -18,7 +19,7 @@ import { NextResponse } from "next/server";
  * Chybí-li secret, vrací se **503** – to je stav serveru (chybí konfigurace), ne
  * odmítnutí volajícího, a v logu Actions se to nesplete s otočeným secretem (401).
  */
-export function requireCronAuth(req: Request): NextResponse | null {
+export async function requireCronAuth(req: Request): Promise<NextResponse | null> {
   const secret = process.env.CRON_SECRET;
   if (!secret) {
     return NextResponse.json(
@@ -29,5 +30,9 @@ export function requireCronAuth(req: Request): NextResponse | null {
   if (req.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Neautorizováno" }, { status: 401 });
   }
-  return null;
+  const url = new URL(req.url);
+  let job = url.pathname.split('/').pop() ?? 'unknown';
+  if (job === 'snapshot-odds' && url.searchParams.get('mode') === 'priority') job = 'snapshot-odds-priority';
+  if (job === 'daily-selection' && url.searchParams.get('settle') === '1') job = 'daily-selection-settle';
+  return resourceBudgetGuard(job);
 }

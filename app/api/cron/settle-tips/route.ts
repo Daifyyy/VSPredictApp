@@ -16,7 +16,7 @@ export async function GET(req: Request) {
       { status: 400 }
     );
   }
-  const denied = requireCronAuth(req);
+  const denied = await requireCronAuth(req);
   if (denied) return denied;
 
   try {

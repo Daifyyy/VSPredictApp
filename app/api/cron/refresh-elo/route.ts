@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 export async function GET(request: Request) {
-  const denied = requireCronAuth(request); if (denied) return denied;
+  const denied = await requireCronAuth(request); if (denied) return denied;
   try {
     const result = await withCronRun("refresh-elo", () => refreshClubElo());
     return cronJson("cron/refresh-elo", result, result.errors, result.processed);

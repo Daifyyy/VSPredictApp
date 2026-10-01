@@ -9,7 +9,10 @@ import { STRATEGY_HUB_CATALOG, type StrategyHubId } from "@/lib/picks/strategyHu
 import { resolvedStrategyOutcome } from "@/lib/picks/strategyOutcome";
 import { teamGoalOpportunityDecision } from "@/lib/picks/marketSignals";
 import { PRESSURE_FLOW_V5_POLICY_VERSION } from "@/lib/picks/pressureFlowV5";
-import type { PerformancePressureShadowV5 } from "@/lib/picks/performancePressureShadowV5";
+import { loadPressureDailyProjection } from "./pressureDailyProjection";
+import { sharedReadCache } from "@/lib/boundedCache";
+import { createHash } from "node:crypto";
+import { localDateKey } from "@/lib/competitionGrouping";
 
 export interface StrategyHubOpportunity {
   id: string;
@@ -92,15 +95,52 @@ function teamGoalHit(market: string, homeGoals: number | null, awayGoals: number
   return goals > (market.endsWith("15") ? 1.5 : .5);
 }
 
+function metricsKey(strategy: StrategyHubId) {
+  const policy = STRATEGY_HUB_CATALOG.find(item => item.id === strategy)!.policyVersion;
+  const cohort = JSON.stringify({ policy, ...strategyCohort(strategy) });
+  return `strategy-metrics:v1:${strategy}:${createHash('sha256').update(cohort).digest('hex').slice(0, 16)}`;
+}
+
+/** Shared domain payload only; authorization stays in API/page callers. */
 export async function strategyHubData(strategy: StrategyHubId, date: string) {
+  if (process.env.RESOURCE_SAVING_READS_ENABLED !== 'true') return computeStrategyHubData(strategy, date);
+  return sharedReadCache.read(`strategy-day:${metricsKey(strategy)}:${date}`, 60_000, async () => {
+    const stored = await sharedReadCache.read(metricsKey(strategy), 15 * 60_000, async () => {
+      const row = await prisma.apiCache.findUnique({ where: { key: metricsKey(strategy) }, select: { payload: true } });
+      return row?.payload as unknown as { metrics: StrategyHubMetrics; asOf: string } | null;
+    });
+    // Missing historical data is not a zero balance, and a read never rebuilds history.
+    if (!stored?.metrics || !Number.isFinite(Date.parse(stored.asOf))) throw new Error('STRATEGY_METRICS_NOT_CAPTURED');
+    const data = await computeStrategyHubData(strategy, date, stored.metrics);
+    const stale = Date.now() - Date.parse(stored.asOf) > 26 * 3600_000;
+    return { ...data, asOf: stored.asOf, stale, limitedReason: stale ? 'STRATEGY_METRICS_STALE' : null };
+  });
+}
+
+/** Explicit administrative/cron work, never called by a read or build. */
+export async function refreshStrategyHubMetrics(now = new Date()) {
+  const date = localDateKey(now);
+  for (const definition of STRATEGY_HUB_CATALOG) {
+    const data = await computeStrategyHubData(definition.id, date);
+    const payload = JSON.parse(JSON.stringify({ metrics: data.metrics, asOf: now.toISOString() })) as Prisma.InputJsonValue;
+    if (Buffer.byteLength(JSON.stringify(payload), 'utf8') > 250_000) throw new Error('STRATEGY_METRICS_TOO_LARGE');
+    const key = metricsKey(definition.id), expiresAt = new Date(+now + 90 * 86400_000);
+    await prisma.apiCache.upsert({ where: { key }, create: { key, payload, expiresAt }, update: { payload, expiresAt } });
+    sharedReadCache.delete(key);
+    sharedReadCache.delete(`strategy-day:${key}:${date}`);
+  }
+}
+
+async function computeStrategyHubData(strategy: StrategyHubId, date: string, cachedMetrics?: StrategyHubMetrics) {
   const definition = STRATEGY_HUB_CATALOG.find((item) => item.id === strategy)!;
   const bounds = pragueDateBounds(date);
   const recentFrom = new Date(Date.now() - 30 * 86400_000);
+  const dayWhere = cachedMetrics ? { kickoff: { gte: bounds.start, lt: bounds.end } } : {};
 
   if (strategy === "PRESSURE_FLOW_V5") {
     const [signals, dayPredictions] = await Promise.all([
-      prisma.marketSignalSnapshot.findMany({ where: { policyVersion: PRESSURE_FLOW_V5_POLICY_VERSION, ...strategyCohort("PRESSURE_FLOW_V5") }, orderBy: { openedAt: "asc" } }),
-      prisma.fixturePrediction.findMany({ where: { modelContext: "LEAGUE", kickoff: { gte: bounds.start, lt: bounds.end }, inputSnapshot: { not: Prisma.DbNull } }, orderBy: { kickoff: "asc" }, select: { fixtureId: true, leagueId: true, kickoff: true, homeName: true, awayName: true, homeGoals: true, awayGoals: true, inputSnapshot: true } }),
+      prisma.marketSignalSnapshot.findMany({ where: { policyVersion: PRESSURE_FLOW_V5_POLICY_VERSION, ...strategyCohort("PRESSURE_FLOW_V5"), ...dayWhere }, omit: { series: true }, orderBy: { openedAt: "asc" } }),
+      loadPressureDailyProjection(bounds.start, bounds.end),
     ]);
     const fixtureIds = [...new Set(signals.map((row) => row.fixtureId))];
     const fixtures = fixtureIds.length ? await prisma.fixturePrediction.findMany({ where: { fixtureId: { in: fixtureIds } }, select: { fixtureId: true, homeName: true, awayName: true, homeGoals: true, awayGoals: true } }) : [];
@@ -112,15 +152,15 @@ export async function strategyHubData(strategy: StrategyHubId, date: string) {
       selection: row.market === "OVER_25" ? `${row.side === "OVER" ? "Více" : "Méně"} než 2,5 gólu` : row.market === "BTTS" ? `Oba týmy skórují – ${row.side === "OVER" ? "ano" : "ne"}` : teamGoalSelection(row.market, fixture?.homeName ?? "Domácí", fixture?.awayName ?? "Hosté"),
       reason: `Model průběhu v5 vidí ${Math.round(row.modelProbability * 100)} % proti trhu ${Math.round(row.openMarketProbability * 100)} %.`, risk: "Výzkumný model zatím nemá dostatečný prospektivní vzorek.", probability: row.modelProbability, marketProbability: row.openMarketProbability, edge, expectedValue: row.decimalOdds == null ? null : row.modelProbability * row.decimalOdds - 1, confidence: null, odds: row.decimalOdds, bookmaker: row.bookmaker, priceKind: row.decimalOdds == null ? "NONE" : "DIRECT", outcome: outcome(hit), score: fixture?.homeGoals == null || fixture.awayGoals == null ? null : `${fixture.homeGoals}:${fixture.awayGoals}`, ticketSlots: [],
     }; });
-    const predictions: StrategyHubPrediction[] = dayPredictions.flatMap((row) => { const pressure = (row.inputSnapshot as { performancePressure?: PerformancePressureShadowV5 } | null)?.performancePressure; if (pressure?.version !== 5) return []; const hs = pressure.expectedMatchShape.home.shots, as = pressure.expectedMatchShape.away.shots, share = pressure.expectedMatchShape.home.chanceShare.value ?? .5; return [{ fixtureId: row.fixtureId, leagueId: row.leagueId, leagueName: catalogLeagueName(row.leagueId, ""), kickoff: row.kickoff.toISOString(), homeName: row.homeName, awayName: row.awayName, expectedGoals: pressure.goalLambda, expectedShots: { home: hs.value, away: as.value, low: hs.interval && as.interval ? hs.interval.low + as.interval.low : null, high: hs.interval && as.interval ? hs.interval.high + as.interval.high : null }, probabilities: { over25: pressure.marketProbabilities.OVER_25, btts: pressure.marketProbabilities.BTTS_YES, home05: pressure.marketProbabilities.TEAM_HOME_05, home15: pressure.marketProbabilities.TEAM_HOME_15, away05: pressure.marketProbabilities.TEAM_AWAY_05, away15: pressure.marketProbabilities.TEAM_AWAY_15 }, tempo: pressure.expectedMatchShape.opennessLabel, dominance: { side: share > .55 ? "HOME" : share < .45 ? "AWAY" : "EVEN", share }, confidence: pressure.featureCoverage, warnings: pressure.fallbacks }]; });
+    const predictions: StrategyHubPrediction[] = dayPredictions.flatMap((row) => { const pressure = row.pressure; if (pressure?.version !== 5) return []; const hs = pressure.expectedMatchShape.home.shots, as = pressure.expectedMatchShape.away.shots, share = pressure.expectedMatchShape.home.chanceShare.value ?? .5; return [{ fixtureId: row.fixtureId, leagueId: row.leagueId, leagueName: catalogLeagueName(row.leagueId, ""), kickoff: row.kickoff.toISOString(), homeName: row.homeName, awayName: row.awayName, expectedGoals: pressure.goalLambda, expectedShots: { home: hs.value, away: as.value, low: hs.interval && as.interval ? hs.interval.low + as.interval.low : null, high: hs.interval && as.interval ? hs.interval.high + as.interval.high : null }, probabilities: { over25: pressure.marketProbabilities.OVER_25, btts: pressure.marketProbabilities.BTTS_YES, home05: pressure.marketProbabilities.TEAM_HOME_05, home15: pressure.marketProbabilities.TEAM_HOME_15, away05: pressure.marketProbabilities.TEAM_AWAY_05, away15: pressure.marketProbabilities.TEAM_AWAY_15 }, tempo: pressure.expectedMatchShape.opennessLabel, dominance: { side: share > .55 ? "HOME" : share < .45 ? "AWAY" : "EVEN", share }, confidence: pressure.featureCoverage, warnings: pressure.fallbacks }]; });
     const recentRows = portfolioRows.filter((row) => new Date(row.qualifiedAt) >= recentFrom);
-    return { opportunities, predictions, tickets: [], metrics: { all: summarizePortfolio(portfolioRows), recent: summarizePortfolio(recentRows), selectionAccuracy: null, unit: "SELECTIONS" } satisfies StrategyHubMetrics, coverage: { candidates: predictions.length, priced: opportunities.length, tickets: 0 }, emptyReason: opportunities.length ? null : predictions.length ? "NOT_ENOUGH_CANDIDATES" : "NO_FORECASTS" };
+    return { opportunities, predictions, tickets: [], metrics: cachedMetrics ?? { all: summarizePortfolio(portfolioRows), recent: summarizePortfolio(recentRows), selectionAccuracy: null, unit: "SELECTIONS" } satisfies StrategyHubMetrics, coverage: { candidates: predictions.length, priced: opportunities.length, tickets: 0 }, emptyReason: opportunities.length ? null : predictions.length ? "NOT_ENOUGH_CANDIDATES" : "NO_FORECASTS" };
   }
 
   if (strategy === "VALUE" || strategy === "ELO_INTUITION") {
     const [rows, preview] = await Promise.all([
       prisma.intuitionTicket.findMany({
-        where: { strategy, policyVersion: definition.policyVersion },
+        where: { strategy, policyVersion: definition.policyVersion, ...(cachedMetrics ? { lockedAt: { gte: bounds.start, lt: bounds.end } } : {}) },
         orderBy: [{ lockedAt: "asc" }, { slot: "asc" }],
         select: { lockedAt: true, naturalCombinedOdds: true, hit: true, priceKind: true, legs: { select: { hit: true } } },
       }),
@@ -161,7 +201,7 @@ export async function strategyHubData(strategy: StrategyHubId, date: string) {
     const tickets: StrategyHubTicket[] = dated.map((ticket) => ({ slot: ticket.slot, odds: ticket.naturalCombinedOdds, estimatedPriceCount: ticket.estimatedPriceCount, outcome: outcome(ticket.hit), profit: ticket.profit, fixtureIds: ticket.legs.map((leg) => leg.fixtureId) }));
     return {
       opportunities: [...byFixture.values()].sort((a, b) => a.kickoff.localeCompare(b.kickoff)), tickets,
-      metrics: { all: summarizePortfolio(portfolioRows), recent: summarizePortfolio(portfolioRows.filter((row) => new Date(row.qualifiedAt) >= recentFrom)), selectionAccuracy: settledLegs.length ? settledLegs.filter((leg) => leg.hit).length / settledLegs.length : null, direct: summarizePortfolio(directRows), synthetic: summarizePortfolio(syntheticRows), unit: "TICKETS" } satisfies StrategyHubMetrics,
+      metrics: cachedMetrics ?? { all: summarizePortfolio(portfolioRows), recent: summarizePortfolio(portfolioRows.filter((row) => new Date(row.qualifiedAt) >= recentFrom)), selectionAccuracy: settledLegs.length ? settledLegs.filter((leg) => leg.hit).length / settledLegs.length : null, direct: summarizePortfolio(directRows), synthetic: summarizePortfolio(syntheticRows), unit: "TICKETS" } satisfies StrategyHubMetrics,
       coverage: { candidates: block.coverage.candidates, priced: block.coverage.withOdds, tickets: tickets.length },
       emptyReason: block.emptyReason,
     };
@@ -169,7 +209,7 @@ export async function strategyHubData(strategy: StrategyHubId, date: string) {
 
   if (strategy === "TEAM_GOALS") {
     const rows = await prisma.marketSignalSnapshot.findMany({
-      where: { policyVersion: definition.policyVersion, market: { in: ["TEAM_HOME_05", "TEAM_HOME_15", "TEAM_AWAY_05", "TEAM_AWAY_15"] }, ...strategyCohort("TEAM_GOALS") },
+      where: { policyVersion: definition.policyVersion, market: { in: ["TEAM_HOME_05", "TEAM_HOME_15", "TEAM_AWAY_05", "TEAM_AWAY_15"] }, ...strategyCohort("TEAM_GOALS"), ...dayWhere },
       orderBy: [{ openedAt: "asc" }, { id: "asc" }],
       select: { id: true, fixtureId: true, leagueId: true, kickoff: true, market: true, modelProbability: true, openMarketProbability: true, closeMarketProbability: true, decimalOdds: true, bookmaker: true, openedAt: true, closedAt: true, closingFreshness: true, closingBenchmarkQuality: true, priceClv: true, probabilityClv: true, sameBookClv: true, clvMethodVersion: true, closingBenchmarkProbability: true, openingBookmaker: true },
     });
@@ -192,11 +232,11 @@ export async function strategyHubData(strategy: StrategyHubId, date: string) {
     const summaryRows = qualified.map(({ row, hit }) => ({ strategy, stake: 1, odds: row.decimalOdds, hit, marketProbability: row.openMarketProbability, closingMarketProbability: row.closeMarketProbability, qualifiedAt: row.openedAt, fixtureId: row.fixtureId, kickoff: row.kickoff, closedAt: row.closedAt, ...ledgerClv(row) }));
     const daily = qualified.filter(({ row }) => row.kickoff >= bounds.start && row.kickoff < bounds.end);
     const opportunities: StrategyHubOpportunity[] = daily.flatMap(({ row, fixture, hit, decision }) => fixture ? [{ id: row.id, fixtureId: row.fixtureId, leagueId: row.leagueId, leagueName: catalogLeagueName(row.leagueId, ""), kickoff: row.kickoff.toISOString(), homeName: fixture.homeName, awayName: fixture.awayName, selection: teamGoalSelection(row.market, fixture.homeName, fixture.awayName), reason: `Konzervativní odhad ${(decision.decisionProbability * 100).toFixed(0)} % při kurzu ${row.decimalOdds?.toFixed(2)}.`, risk: "Výzkumná strategie zatím nemá dostatečný potvrzený vzorek.", probability: decision.decisionProbability, marketProbability: row.openMarketProbability, edge: decision.decisionProbability - row.openMarketProbability, expectedValue: decision.expectedValue, confidence: null, odds: row.decimalOdds, bookmaker: row.bookmaker, priceKind: "DIRECT", outcome: outcome(hit), score: fixture.homeGoals == null || fixture.awayGoals == null ? null : `${fixture.homeGoals}:${fixture.awayGoals}`, ticketSlots: [] }] : []);
-    return { opportunities, tickets: [], metrics: { all: summarizePortfolio(summaryRows), recent: summarizePortfolio(summaryRows.filter((item) => new Date(item.qualifiedAt) >= recentFrom)), selectionAccuracy: summarizePortfolio(summaryRows).accuracy, unit: "SELECTIONS" } satisfies StrategyHubMetrics, coverage: { candidates: opportunities.length, priced: opportunities.filter((item) => item.odds != null).length, tickets: 0 }, emptyReason: opportunities.length ? null : "NOT_ENOUGH_CANDIDATES" };
+    return { opportunities, tickets: [], metrics: cachedMetrics ?? { all: summarizePortfolio(summaryRows), recent: summarizePortfolio(summaryRows.filter((item) => new Date(item.qualifiedAt) >= recentFrom)), selectionAccuracy: summarizePortfolio(summaryRows).accuracy, unit: "SELECTIONS" } satisfies StrategyHubMetrics, coverage: { candidates: opportunities.length, priced: opportunities.filter((item) => item.odds != null).length, tickets: 0 }, emptyReason: opportunities.length ? null : "NOT_ENOUGH_CANDIDATES" };
   }
 
   const rows = await prisma.autonomousTipSnapshot.findMany({
-    where: { strategy, policyVersion: definition.policyVersion, status: "candidate", ...strategyCohort(strategy) },
+    where: { strategy, policyVersion: definition.policyVersion, status: "candidate", ...strategyCohort(strategy), ...dayWhere },
     orderBy: { qualifiedAt: "asc" },
     select: { id: true, fixtureId: true, leagueId: true, kickoff: true, homeTeamId: true, awayTeamId: true, homeName: true, awayName: true, market: true, side: true, line: true, modelProbability: true, marketProbability: true, edge: true, expectedValue: true, decimalOdds: true, bookmaker: true, sampleCount: true, stake: true, reason: true, qualifiedAt: true, closingMarketProbability: true, closedAt: true, closingFreshness: true, closingBenchmarkQuality: true, priceClv: true, probabilityClv: true, sameBookClv: true, clvMethodVersion: true, closingBenchmarkProbability: true, openingBookmaker: true, settlementStatus: true, actualCount: true, hit: true },
   });
@@ -228,7 +268,7 @@ export async function strategyHubData(strategy: StrategyHubId, date: string) {
   const dailyIds = new Set(dailyRows.map((row) => row.id));
   const opportunities: StrategyHubOpportunity[] = resolved.filter(({ row }) => dailyIds.has(row.id)).map(({ row, result, hit, dataWarning }) => {
     return { id: row.id, fixtureId: row.fixtureId, leagueId: row.leagueId, leagueName: catalogLeagueName(row.leagueId, ""), kickoff: row.kickoff.toISOString(), homeName: row.homeName, awayName: row.awayName, selection: autonomousSelection(strategy, row.side, row.line, row.homeName, row.awayName), reason: row.reason, risk: dataWarning ? "Nesoulad identity zápasu. Původní bilance je zachována, řádek není validační důkaz." : row.decimalOdds == null ? "Chybí realizovatelný kurz." : definition.status === "RESEARCH" ? "Výzkumná strategie ještě nemá potvrzený vzorek." : "Výsledek jednoho zápasu má přirozeně vysokou varianci.", probability: row.modelProbability, marketProbability: row.marketProbability, edge: row.edge, expectedValue: row.expectedValue, confidence: row.sampleCount, odds: row.decimalOdds, bookmaker: row.bookmaker, priceKind: row.decimalOdds ? "DIRECT" : "NONE", outcome: outcome(hit, row.settlementStatus === "VOID"), score: result?.homeGoals == null || result.awayGoals == null ? null : `${result.homeGoals}:${result.awayGoals}`, ticketSlots: [] }; });
-  return { opportunities, tickets: [], metrics: { all: summarizePortfolio(summaryRows), recent: summarizePortfolio(summaryRows.filter((item) => item.qualifiedAt && new Date(item.qualifiedAt) >= recentFrom)), selectionAccuracy: summarizePortfolio(summaryRows).accuracy, unit: "SELECTIONS" } satisfies StrategyHubMetrics, coverage: { candidates: opportunities.length, priced: opportunities.filter((item) => item.odds != null).length, tickets: 0 }, emptyReason: opportunities.length ? null : definition.status === "NO_MARKET" ? "NO_MARKET" : "NOT_ENOUGH_CANDIDATES" };
+  return { opportunities, tickets: [], metrics: cachedMetrics ?? { all: summarizePortfolio(summaryRows), recent: summarizePortfolio(summaryRows.filter((item) => item.qualifiedAt && new Date(item.qualifiedAt) >= recentFrom)), selectionAccuracy: summarizePortfolio(summaryRows).accuracy, unit: "SELECTIONS" } satisfies StrategyHubMetrics, coverage: { candidates: opportunities.length, priced: opportunities.filter((item) => item.odds != null).length, tickets: 0 }, emptyReason: opportunities.length ? null : definition.status === "NO_MARKET" ? "NO_MARKET" : "NOT_ENOUGH_CANDIDATES" };
 }
 
 export async function strategyHubDailySummary(date: string) {

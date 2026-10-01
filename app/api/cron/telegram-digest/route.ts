@@ -7,7 +7,7 @@ import { withCronRun } from "@/lib/operations";
 export const maxDuration = 60;
 
 export async function GET(request: Request) {
-  const denied = requireCronAuth(request);
+  const denied = await requireCronAuth(request);
   if (denied) return denied;
   const url = new URL(request.url);
   try {

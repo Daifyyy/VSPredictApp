@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("@/lib/data/modelLabDetailStore", () => ({ readModelLabDetail: vi.fn() }));
+import { readModelLabDetail } from "@/lib/data/modelLabDetailStore";
 vi.mock("@/lib/db", () => ({ prisma: { modelStrategyMetricSnapshot: { findMany: vi.fn() }, modelStrategyDefinition: { findMany: vi.fn() }, apiCache: { findUnique: vi.fn() } } }));
 vi.mock("@/lib/authUser", () => ({ getCurrentUser: vi.fn() }));
 vi.mock("@/lib/entitlements", () => ({ getEntitlement: vi.fn() }));
@@ -11,6 +13,7 @@ import { loadModelStrategyLedger } from "@/lib/data/modelStrategyLedger";
 import { GET } from "./route";
 
 describe("model overview API", () => {
+  afterEach(() => vi.unstubAllEnvs());
   beforeEach(() => {
     vi.resetAllMocks();
     vi.mocked(prisma.modelStrategyMetricSnapshot.findMany).mockResolvedValue([]);
@@ -30,8 +33,29 @@ describe("model overview API", () => {
     expect(loadModelStrategyLedger).not.toHaveBeenCalled();
   });
   it("does not expose protected detail to a public request", async () => {
+    vi.stubEnv('RESOURCE_SAVING_READS_ENABLED', 'true');
     expect((await GET(new Request("https://example.test/api/picks/model-lab?detail=true"))).status).toBe(403);
     expect(prisma.modelStrategyMetricSnapshot.findMany).not.toHaveBeenCalled();
+    expect(loadModelStrategyLedger).not.toHaveBeenCalled();
+    expect(readModelLabDetail).not.toHaveBeenCalled();
+  });
+  it('reads only saved detail in saving mode, with PRO auth and explicit policy', async () => {
+    vi.stubEnv('RESOURCE_SAVING_READS_ENABLED', 'true');
+    vi.mocked(getEntitlement).mockReturnValue({ pro: true } as never);
+    vi.mocked(readModelLabDetail).mockResolvedValue({ detailRows: [], segments: [], asOf: '2026-10-01T00:00:00Z', stale: true } as never);
+    const response = await GET(new Request('https://example.test/api/picks/model-lab?detail=true&strategy=OVER_25&policyVersion=1&page=2'));
+    expect(response.status).toBe(200);
+    expect(readModelLabDetail).toHaveBeenCalledWith('LEAGUE', 'OVER_25', 1, 2);
+    expect(loadModelStrategyLedger).not.toHaveBeenCalled();
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(await response.json()).toMatchObject({ stale: true });
+  });
+  it('never backfills missing detail on GET', async () => {
+    vi.stubEnv('RESOURCE_SAVING_READS_ENABLED', 'true');
+    vi.mocked(getEntitlement).mockReturnValue({ pro: true } as never);
+    vi.mocked(readModelLabDetail).mockResolvedValue(null);
+    const response = await GET(new Request('https://example.test/api/picks/model-lab?detail=true&strategy=OVER_25&policyVersion=1'));
+    expect(response.status).toBe(503);
     expect(loadModelStrategyLedger).not.toHaveBeenCalled();
   });
   it("restricts detail to the selected policy", async () => {

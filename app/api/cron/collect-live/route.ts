@@ -12,7 +12,7 @@ import { sendLiveCandidateNotifications } from "@/lib/push";
 export const maxDuration = 60;
 
 export async function GET(req: Request) {
-  const denied = requireCronAuth(req); if (denied) return denied;
+  const denied = await requireCronAuth(req); if (denied) return denied;
   const params = new URL(req.url).searchParams;
   const limit = Math.max(1, Math.min(3, Number(params.get("limit")) || 2));
   const offset = Math.max(0, Number(params.get("cursor")) || 0);

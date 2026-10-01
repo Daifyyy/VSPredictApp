@@ -29,6 +29,7 @@ export async function GET(request: Request) {
   const q = parsed.data;
   try {
     const rows = await prisma.autonomousTipSnapshot.findMany({
+      omit: { modelInputSnapshot: true },
       where: { strategy: q.strategy, modelContext: q.context, status: "candidate", ...(q.policyVersion ? { policyVersion: q.policyVersion } : {}), ...(q.leagueId ? { leagueId: q.leagueId } : {}), ...(q.side ? { side: q.side } : {}), ...(q.modelVersion ? { modelVersion: q.modelVersion } : {}) },
       ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
       orderBy: [{ kickoff: "desc" }, { id: "desc" }], take: q.limit + 1,

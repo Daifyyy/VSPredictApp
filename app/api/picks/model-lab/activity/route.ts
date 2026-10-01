@@ -35,6 +35,13 @@ export async function GET(request: Request) {
       where: { strategy, policyVersion, modelContext: context, status: "candidate", kickoff: { gte: pragueTwoDayStart(now) } },
       orderBy: { kickoff: "asc" },
       take: 100,
+      select: {
+        id: true, fixtureId: true, leagueId: true, kickoff: true,
+        homeTeamId: true, awayTeamId: true, homeName: true, awayName: true, homeLogo: true, awayLogo: true,
+        market: true, side: true, line: true, modelProbability: true, marketProbability: true,
+        edge: true, expectedValue: true, decimalOdds: true, bookmaker: true, qualifiedAt: true,
+        actualCount: true, hit: true, stake: true, closedAt: true, closingMarketProbability: true,
+      },
     });
     const results = rows.length ? await prisma.fixturePrediction.findMany({
       where: { fixtureId: { in: rows.map((row) => row.fixtureId) } },

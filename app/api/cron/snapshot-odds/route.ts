@@ -6,6 +6,7 @@ import { requireCronAuth } from "@/lib/cronAuth";
 import { cronJson } from "@/lib/cronResult";
 import { acquireOddsCronLease, releaseOddsCronLease, resolveIncident, safeApiBudget, safeOddsApiBudget, upsertIncident, withCronRun } from "@/lib/operations";
 import { allowedOddsFixtures } from "@/lib/picks/oddsCronPolicy";
+import { readResourceBudget } from "@/lib/data/resourceBudgetStore";
 
 // Snímky kurzů pro CLV: otevírací, zavírací a body ČASOVÉ ŘADY. Běží **hodinově**,
 // na rozdíl od ostatních cronů – a je to nutnost, ne ladění:
@@ -31,7 +32,7 @@ export async function GET(req: Request) {
       { status: 400 }
     );
   }
-  const denied = requireCronAuth(req);
+  const denied = await requireCronAuth(req);
   if (denied) return denied;
 
   // `?limit=` jen pro ruční doplnění po výpadku; default drží běh krátký.
@@ -40,6 +41,8 @@ export async function GET(req: Request) {
   const limit = limitParam ? Number(limitParam) : undefined;
   const seenFixtureIds = (searchParams.get("cursor") ?? "").split(",").map(Number).filter((id) => Number.isInteger(id) && id > 0).slice(0, 100);
   const mode = searchParams.get("mode") === "priority" ? "priority" : "full";
+  const closingOnly = process.env.RESOURCE_BUDGET_ENFORCEMENT_ENABLED === 'true'
+    && (await readResourceBudget()).mode === 'CRITICAL';
   // Candidate-first sběr je po opravě coverage výchozí. Hodnota `false` zůstává
   // jako provozní kill switch; denní i globální rozpočet se hlídají níže.
   if (mode === "priority" && process.env.CLV_V2_PRIORITY_ENABLED === "false") {
@@ -61,11 +64,11 @@ export async function GET(req: Request) {
       const oddsBudget = await safeOddsApiBudget();
       if (oddsBudget.warned) await upsertIncident({ fingerprint: "odds-api:daily-warning", kind: "API_BUDGET", severity: "WARNING", message: `Kurzový sběr dnes použil ${oddsBudget.apiCalls}/${oddsBudget.ceiling} API pokusů.`, details: oddsBudget });
       else await resolveIncident("odds-api:daily-warning");
-      const requested = mode === "priority" ? 12 : Number.isFinite(limit) && limit! > 0 ? Math.min(24, limit!) : 12;
+      const requested = closingOnly ? 3 : mode === "priority" ? 12 : Number.isFinite(limit) && limit! > 0 ? Math.min(24, limit!) : 12;
       // Jeden logický fetch může mít až dva retry; rezervujeme proto tři skutečné pokusy,
       // aby ani nejhorší transientní série nepřekročila kurzový hard limit.
       const allowed = allowedOddsFixtures({ requested, globalRemaining: budget.remaining, oddsRemaining: oddsBudget.remaining });
-      const result = await runSnapshotOdds(allowed, undefined, seenFixtureIds, mode);
+      const result = await runSnapshotOdds(allowed, undefined, seenFixtureIds, mode, closingOnly);
       if (allowed === 0) return { ...result, candidates: result.remaining, processed: 0, remaining: 0, deferred: result.remaining, cursor: null, reason: budget.remaining === 0 ? "DAILY_BUDGET" : "ODDS_DAILY_BUDGET", quota: budget, oddsQuota: oddsBudget };
       const nextCursor = [...new Set([...seenFixtureIds, ...result.processedFixtureIds])].join(",");
       return {

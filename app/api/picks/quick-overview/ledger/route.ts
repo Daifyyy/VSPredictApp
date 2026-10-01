@@ -12,6 +12,10 @@ import { pragueDateBounds } from "@/lib/recentWindow";
 import { FIXTURE_LIST_LEAGUE_IDS } from "@/lib/data/catalog";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const dateSchema = z.string().regex(DATE_RE).refine(value => {
+  const time = Date.parse(`${value}T00:00:00Z`);
+  return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value;
+});
 
 const querySchema = z.object({
   category: z.enum(QUICK_BET_CATEGORIES),
@@ -19,11 +23,11 @@ const querySchema = z.object({
   leagueId: z.coerce.number().int().positive().optional(),
   result: z.enum(["hit", "miss"]).optional(),
   clv: z.enum(["positive", "negative"]).optional(),
-  from: z.string().regex(DATE_RE).optional(),
-  to: z.string().regex(DATE_RE).optional(),
+  from: dateSchema.optional(),
+  to: dateSchema.optional(),
   cursor: z.string().min(1).optional(),
-  limit: z.coerce.number().int().min(1).max(50).default(20),
-});
+  limit: z.coerce.number().int().min(1).max(30).default(20),
+}).refine(value => !value.from || !value.to || value.from <= value.to);
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
@@ -46,11 +50,18 @@ export async function GET(request: Request) {
       },
       ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
       orderBy: [{ qualifiedAt: "desc" }, { id: "desc" }], take: scanLimit + 1,
+      select: {
+        id: true, fixtureId: true, category: true, sourceMarket: true, side: true, line: true,
+        modelContext: true, modelVersion: true, contextVersion: true, policyVersion: true,
+        kickoff: true, qualifiedAt: true, settledAt: true, settlementStatus: true,
+        decimalOdds: true, bookmaker: true, oddsAt: true, hit: true, profit: true,
+        modelProbability: true, marketProbability: true, closingMarketProbability: true, closedAt: true,
+      },
     });
-    const predictions = await prisma.fixturePrediction.findMany({
+    const predictions = rows.length ? await prisma.fixturePrediction.findMany({
       where: { fixtureId: { in: rows.map((row) => row.fixtureId) } },
       select: { fixtureId: true, leagueId: true, kickoff: true, homeName: true, awayName: true },
-    });
+    }) : [];
     const byFixture = new Map(predictions.map((row) => [row.fixtureId, row]));
     const filtered = rows.filter((row) => byFixture.has(row.fixtureId)).filter((row) => {
       if (!q.clv) return true;

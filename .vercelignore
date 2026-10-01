@@ -1,0 +1,9 @@
+# Local analysis data must never be uploaded as a deployment artifact.
+.cache/
+.runtime/
+.claude/
+docs/audits/
+playwright-report/
+test-results/
+coverage/
+*.tsbuildinfo

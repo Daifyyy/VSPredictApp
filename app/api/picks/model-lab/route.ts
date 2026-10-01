@@ -11,11 +11,13 @@ import { requestDiagnostics } from "@/lib/httpDiagnostics";
 import { strategyCohort } from "@/lib/picks/strategyCohort";
 import { loadModelStrategyLedger, MODEL_LAB_REPORT_VERSION } from "@/lib/data/modelStrategyLedger";
 import { PRESSURE_PERFORMANCE_CACHE_KEY } from "@/lib/data/pressurePerformanceStore";
+import { readModelLabDetail } from "@/lib/data/modelLabDetailStore";
 
 const querySchema = z.object({
   context: z.enum(["LEAGUE", "EURO_CUP", "NATIONAL"]).default("LEAGUE"),
   strategy: z.string().max(40).optional(),
   policyVersion: z.coerce.number().int().positive().optional(),
+  page: z.coerce.number().int().min(1).max(4).default(1),
   detail: z.enum(["true", "false"]).default("false").transform(value => value === "true"),
 });
 export const dynamic = "force-dynamic";
@@ -56,6 +58,16 @@ export async function GET(request: Request) {
     const payload = await cachedSummary(context);
     const cards = payload.cards.filter(item => (!strategy || item.strategy === strategy) && (!policyVersion || item.policyVersion === policyVersion));
     if (!detail) return diagnostic.json({ context, ...payload, cards, snapshot: true }, { headers: publicCache(300, 900) });
+    if (process.env.RESOURCE_SAVING_READS_ENABLED === 'true') {
+      if (!strategy || !policyVersion || !STRATEGY_CATALOG.some(item => item.strategy === strategy && item.policyVersion === policyVersion)) {
+        return NextResponse.json({ error: "Zvolte konkrétní strategii a verzi pravidel." }, { status: 400 });
+      }
+      const stored = await readModelLabDetail(context, strategy, policyVersion, parsed.data.page);
+      if (!stored) return NextResponse.json({
+        error: "Detail čeká na auditní souhrn.", asOf: null, stale: true, limitedReason: 'MODEL_LAB_DETAIL_NOT_CAPTURED',
+      }, { status: 503, headers: { 'Cache-Control': 'private, no-store', 'Retry-After': '900' } });
+      return diagnostic.json({ context, cards, ...stored }, { headers: { 'Cache-Control': 'private, no-store' } });
+    }
     const { ledger } = await loadModelStrategyLedger(context, strategy);
     const rows = ledger.filter(row => !policyVersion || row.policyVersion === policyVersion);
     const detailRows = rows.slice(-100).reverse().map(row => ({

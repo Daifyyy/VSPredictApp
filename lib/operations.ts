@@ -5,6 +5,8 @@ import { PUBLIC_CLUB_LEAGUE_IDS, EURO_LEAGUE_IDS } from "@/lib/data/catalog";
 import { closingSampleQuality, parseSeries } from "@/lib/picks/oddsSeries";
 import { withApiUsage } from "@/lib/apiUsage";
 import { MODEL_VERSION } from "@/lib/data/modelVersion";
+import { OPERATIONS_REPORT_KEY } from "@/lib/data/operationsReport";
+import { sharedReadCache } from "@/lib/boundedCache";
 
 export type CronHealthStatus = "HEALTHY" | "DEGRADED" | "FAILED";
 
@@ -251,7 +253,7 @@ export async function auditPipeline(now = new Date()) {
         kickoff: { lt: new Date(now.getTime() - 6 * 60 * 60_000) },
       },
     }),
-    prisma.cronRun.findMany({ orderBy: { startedAt: "desc" }, take: 40 }),
+    prisma.cronRun.findMany({ orderBy: { startedAt: "desc" }, take: 40, select: { id: true, job: true, status: true, startedAt: true, candidates: true, processed: true, errors: true, apiCalls: true, remaining: true } }),
     prisma.calibrationCheckpoint.findMany({
       where: { sourceModelVersion: MODEL_VERSION },
       orderBy: { modelContext: "asc" },
@@ -329,6 +331,12 @@ export async function auditPipeline(now = new Date()) {
 
   const startOfDay = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const apiCallsToday = latestRuns.filter((run) => run.startedAt >= startOfDay).reduce((sum, run) => sum + run.apiCalls, 0);
-  const openIncidents = await prisma.dataIncident.findMany({ where: { status: "OPEN" }, orderBy: { lastSeenAt: "desc" } });
-  return { asOf: now.toISOString(), coverage: rows, overdue, apiCallsToday, apiDailyLimit: API_DAILY_LIMIT, latestRuns, incidents: openIncidents, calibration };
+  const openIncidents = await prisma.dataIncident.findMany({ where: { status: "OPEN" }, orderBy: { lastSeenAt: "desc" }, take: 100, select: { id: true, severity: true, message: true } });
+  const report = { asOf: now.toISOString(), coverage: rows, overdue, apiCallsToday, apiDailyLimit: API_DAILY_LIMIT, latestRuns, incidents: openIncidents, calibration };
+  const payload = JSON.parse(JSON.stringify(report)) as Prisma.InputJsonValue;
+  if (Buffer.byteLength(JSON.stringify(payload), 'utf8') > 250_000) throw new Error('OPERATIONS_REPORT_TOO_LARGE');
+  const expiresAt = new Date(+now + 90 * 86400_000);
+  await prisma.apiCache.upsert({ where: { key: OPERATIONS_REPORT_KEY }, create: { key: OPERATIONS_REPORT_KEY, payload, expiresAt }, update: { payload, expiresAt } });
+  sharedReadCache.delete('operations:report');
+  return report;
 }

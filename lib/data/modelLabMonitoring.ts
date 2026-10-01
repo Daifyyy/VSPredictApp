@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { strategyCohort } from "../picks/strategyCohort";
 import { loadModelStrategyLedger, MODEL_LAB_REPORT_VERSION } from "./modelStrategyLedger";
 import { refreshPressurePerformance } from "./pressurePerformanceStore";
+import { persistModelLabDetail } from "./modelLabDetailStore";
 import { STRATEGY_CATALOG, modelLabSummary, resolveModelLabStatus } from "@/lib/picks/modelLab";
 import { upsertIncident, resolveIncident } from "@/lib/operations";
 import { PUBLIC_CLUB_LEAGUE_IDS } from "./catalog";
@@ -81,9 +82,15 @@ async function monitorCornerCapture(definitionId: string, modelVersion: number, 
 }
 
 /** Denní kontrola pouze čte zmrazený ledger. Vytváří reporty a doporučení, nikdy nemění politiku. */
-export async function monitorModelLab() {
+export async function monitorModelLab(options: { prepareDetails?: boolean } = {}) {
   let reports = 0, findings = 0;
   const now = new Date();
+  // Milestone reports are immutable (the existing upsert has update: {}).
+  // Read identities once; never rerun expensive summaries for an existing report.
+  const existingReviews = await prisma.modelStrategyReviewReport.findMany({
+    select: { definitionId: true, milestone: true },
+  });
+  const reviewKeys = new Set(existingReviews.map(row => `${row.definitionId}:${row.milestone}`));
   for (const context of ["LEAGUE", "EURO_CUP", "NATIONAL"] as const) {
   const { ledger } = await loadModelStrategyLedger(context);
   for (const item of STRATEGY_CATALOG) {
@@ -94,6 +101,7 @@ export async function monitorModelLab() {
       update: { title: item.title, rules: { text: item.rules }, minimumSample: item.minimumSample },
     });
     const rows = ledger.filter(row => row.strategy === item.strategy && row.policyVersion === item.policyVersion);
+    if (options.prepareDetails || process.env.RESOURCE_SAVING_READS_ENABLED === 'true') await persistModelLabDetail(context, item.strategy, item.policyVersion, rows, now);
     const summary = modelLabSummary(rows);
     const status = resolveModelLabStatus(item, definition.status);
     const card = { ...item, modelVersion, modelContext: context, status, reportVersion: MODEL_LAB_REPORT_VERSION, summary, currentCount: rows.filter(row => row.kickoff > now).length };
@@ -108,6 +116,7 @@ export async function monitorModelLab() {
     const settled = summary.portfolio.settled;
     for (const milestone of [50, 100, 200]) {
       if (settled < milestone) continue;
+      if (reviewKeys.has(`${definition.id}:${milestone}`)) { reports++; continue; }
       const ordered = rows.filter((row) => row.market === "CORNERS" || row.market === "CARDS" || row.market === "FOULS" ? row.actualCount != null : row.homeGoals != null && row.awayGoals != null).sort((a, b) => a.kickoff.getTime() - b.kickoff.getTime()).slice(0, milestone);
       const reportSummary = modelLabSummary(ordered);
       await prisma.modelStrategyReviewReport.upsert({

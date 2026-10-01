@@ -9,7 +9,7 @@ import { refreshDailyPlayerProfiles } from "@/lib/data/personnelShadow";
 export const maxDuration = 60;
 export async function GET(request: Request) {
   if (!isRealDataConfigured()) return NextResponse.json({ error: "Mock reĹľim" }, { status: 400 });
-  const denied = requireCronAuth(request); if (denied) return denied;
+  const denied = await requireCronAuth(request); if (denied) return denied;
   const params = new URL(request.url).searchParams;
   const limit = Math.max(1, Math.min(4, Number(params.get("limit")) || 2));
   const cursor = Math.max(0, Number(params.get("cursor")) || 0);

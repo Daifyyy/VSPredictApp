@@ -97,6 +97,7 @@ import { captureMainModelShadow } from "./mainModelShadowStore";
 import { captureIntuitionTickets, settleIntuitionTickets } from "./intuitionTicketStore";
 import { buildPerformancePressureShadowV5 } from "@/lib/picks/performancePressureShadowV5";
 import { buildPerformancePressureShadow } from "@/lib/picks/performancePressureShadow";
+import { scopedTeamProfiles, type ProfileLoadStats } from "@/lib/scopedTeamProfiles";
 
 /**
  * Orchestrace predikční pipeline (běží jen na pozadí / cron, real data).
@@ -216,6 +217,7 @@ export interface PredictUpcomingResult {
   errors: number;
   eligible24h: number;
   ready24h: number;
+  teamProfiles: ProfileLoadStats & { enabled: boolean };
 }
 
 /**
@@ -321,6 +323,12 @@ export async function runPredictUpcoming(
   let eligible24h = 0;
   let ready24h = 0;
   let pressureV5SpentMs = 0;
+  const teamProfiles = {
+    enabled: process.env.RESOURCE_PREDICTION_REUSE_ENABLED === 'true',
+    requests: 0, loads: 0, reused: 0, loadMs: 0,
+  };
+  const { resourceBudgetGuard } = await import('../resourceBudgetGuard');
+  const researchAllowed = !(await resourceBudgetGuard('pressure-research'));
   const pressureV5BudgetMs = Math.min(12_000, Math.max(500, budgetMs * .2));
   for (const leagueId of queue) {
     if (Date.now() >= deadline) {
@@ -378,183 +386,190 @@ export async function runPredictUpcoming(
         ? getCompareNationalHomeAwayTeamFromFixture(t.id, leagueId, meta)
         : getCompareNationalTeamFromFixture(t.id, leagueId, meta);
     };
-    for (const f of upcoming) {
-      if (isWomensCompetitionLabel(f.league.name, f.league.round, f.teams.home.name, f.teams.away.name)) continue;
-      fixtures++;
-      const within24h = new Date(f.fixture.date).getTime() <= Date.now() + 24 * 60 * 60_000;
-      if (within24h) eligible24h++;
-      try {
-        const [home, away] = await Promise.all([
-          buildSide(f.teams.home),
-          buildSide(f.teams.away),
-        ]);
-        if (!home || !away) continue;
-        // Ratingy jen když je má liga pro OBA týmy (nováček bez historie → okenní model).
-        const rh = ratings?.get(f.teams.home.id);
-        const ra = ratings?.get(f.teams.away.id);
-        const fixtureNeutral = neutral || (europeanCup && /(?:^|\s)final(?:\s|$)/i.test(f.league.round ?? ""));
-        const result = compareTeams(home, away, new Date(), {
-          baseline,
-          strength: rh && ra ? { home: rh, away: ra } : undefined,
-          neutral: fixtureNeutral,
-        });
-        const p = result.prediction;
-        if (!p) continue;
-        const pressureInput = {
-          homeValues: result.home.values,
-          awayValues: result.away.values,
-          currentLambdaHome: p.lambdaHomeBase,
-          currentLambdaAway: p.lambdaAwayBase,
-          currentOver25: p.over25,
-          mainMarketProbabilities: { OVER_25: p.over25, BTTS_YES: p.bttsYes },
-          context: modelContext,
-        };
-        const v5Allowed = process.env.PRESSURE_V5_ENABLED !== "false" && pressureV5SpentMs < pressureV5BudgetMs;
-        const pressureStarted = Date.now();
-        const performancePressure = v5Allowed ? buildPerformancePressureShadowV5(pressureInput) : buildPerformancePressureShadow(pressureInput);
-        if (v5Allowed) pressureV5SpentMs += Date.now() - pressureStarted;
-        // λ ROHŮ A KARET vedle gólové – **čistá matematika nad zápasy, které už máme
-        // v ruce, tedy 0 volání API navíc**. Do teď tyhle modely v produkci nikdy
-        // neběžely (volal je jen backtest), takže jsme na oba trhy sbírali kurzy
-        // a neměli je proti čemu měřit – a CLV byl jediný způsob, jak o nich rozhodnout.
-        // Reprezentace vynechané: `CORNERS_AGAINST`/`CARDS_AGAINST` okna by u nich
-        // stála hlavně na přátelácích.
-        const refereeName = f.fixture.referee?.trim() || null;
-        const refereeProfile = refereeName && !national && !europeanCup
-          ? await getRefereeProfile(refereeName, leagueId, new Date(f.fixture.date), modelContext)
-          : null;
-        const countLambdas = national || europeanCup
-          ? null
-          : countPredictionsFor(home, away, new Date(), counts, {
-              factor: refereeProfile?.factor ?? 1,
-              sample: refereeProfile?.sample ?? 0,
-            });
-        const h2hCapturedAt = new Date();
-        const h2hSnapshot = toPredictionSnapshot(
-          await getHeadToHead(f.teams.home.id, f.teams.away.id),
-          f.teams.home.id,
-          h2hCapturedAt
-        );
-        await upsertPrediction({
-          fixtureId: f.fixture.id,
-          leagueId,
-          season: f.league.season,
-          kickoff: f.fixture.date,
-          homeTeamId: f.teams.home.id,
-          awayTeamId: f.teams.away.id,
-          homeName: result.home.team.name,
-          awayName: result.away.team.name,
-          homeLogo: result.home.team.logoUrl,
-          awayLogo: result.away.team.logoUrl,
-          available: p.available,
-          // Ukládej ZÁKLADNÍ λ (před zostřením) – z něj jde predikci přepočítat při
-          // změně ρ/zostření (`npm run reprice`) bez resetu datasetu.
-          lambdaHome: p.lambdaHomeBase,
-          lambdaAway: p.lambdaAwayBase,
-          homeWin: p.homeWin,
-          draw: p.draw,
-          awayWin: p.awayWin,
-          bttsYes: p.bttsYes,
-          over25: p.over25,
-          lowConfidence: p.lowConfidence || (europeanCup && (home.leagueId === leagueId || away.leagueId === leagueId)),
-          readinessSample: europeanCup && (home.leagueId === leagueId || away.leagueId === leagueId)
-            ? Math.min(3, p.readiness.sample)
-            : p.readiness.sample,
-          modelVersion: MODEL_VERSION,
-          modelContext,
-          contextVersion: MODEL_CONTEXT_VERSION[modelContext],
-          lambdaCornersHome: countLambdas?.corners?.lambdaHome ?? null,
-          lambdaCornersAway: countLambdas?.corners?.lambdaAway ?? null,
-          lambdaCardsHome: countLambdas?.cards?.lambdaHome ?? null,
-          lambdaCardsAway: countLambdas?.cards?.lambdaAway ?? null,
-          lambdaFoulsHome: countLambdas?.fouls?.lambdaHome ?? null,
-          lambdaFoulsAway: countLambdas?.fouls?.lambdaAway ?? null,
-          foulModelVersion: countLambdas?.fouls?.version ?? null,
-          refereeFactor: countLambdas?.cards?.refereeFactor ?? null,
-          refereeSample: countLambdas?.cards?.refereeSample ?? null,
-          refereeName,
-          refereeKey: refereeName ? normalizeRefereeName(refereeName) : null,
-          lambdaCardsHomeBeforeRef: countLambdas?.cards?.lambdaHomeBeforeRef ?? null,
-          lambdaCardsAwayBeforeRef: countLambdas?.cards?.lambdaAwayBeforeRef ?? null,
-          h2hSnapshot,
-          h2hSnapshotVersion: H2H_SNAPSHOT_VERSION,
-          h2hCapturedAt: h2hCapturedAt.toISOString(),
-          inputSnapshot: {
-            competition: {
-              version: 1, fixtureId: f.fixture.id, leagueId: f.league.id, season: f.league.season,
-              kickoff: f.fixture.date, homeTeamId: f.teams.home.id, awayTeamId: f.teams.away.id,
-              round: f.league.round ?? null,
-            },
-            baseline: { home: baseline?.home ?? 1.5, away: baseline?.away ?? 1.2, source: baseline ? "league" : "default" },
-            strengthSource: rh && ra ? "opponent_adjusted_rating" : "window_fallback",
-            homeStrength: rh ? { attack: rh.attack, defense: rh.defense, sample: rh.sample } : null,
-            awayStrength: ra ? { attack: ra.attack, defense: ra.defense, sample: ra.sample } : null,
-            readinessSample: p.readiness.sample,
-            neutral: fixtureNeutral,
-            source: result.source,
-            capturedAt: new Date().toISOString(),
-            performancePressure,
-          },
-        });
+    const profiles = scopedTeamProfiles(buildSide, teamProfiles.enabled, teamProfiles);
+    try {
+      for (const f of upcoming) {
+        if (Date.now() >= deadline) { stopped = true; break; }
+        if (isWomensCompetitionLabel(f.league.name, f.league.round, f.teams.home.name, f.teams.away.name)) continue;
+        fixtures++;
+        const within24h = new Date(f.fixture.date).getTime() <= Date.now() + 24 * 60 * 60_000;
+        if (within24h) eligible24h++;
         try {
-          await captureCalibrationShadows({
+          const [home, away] = await Promise.all([
+            profiles.read(f.teams.home),
+            profiles.read(f.teams.away),
+          ]);
+          if (!home || !away) continue;
+          // Ratingy jen když je má liga pro OBA týmy (nováček bez historie → okenní model).
+          const rh = ratings?.get(f.teams.home.id);
+          const ra = ratings?.get(f.teams.away.id);
+          const fixtureNeutral = neutral || (europeanCup && /(?:^|\s)final(?:\s|$)/i.test(f.league.round ?? ""));
+          const result = compareTeams(home, away, new Date(), {
+            baseline,
+            strength: rh && ra ? { home: rh, away: ra } : undefined,
+            neutral: fixtureNeutral,
+          });
+          const p = result.prediction;
+          if (!p) continue;
+          const pressureInput = {
+            homeValues: result.home.values,
+            awayValues: result.away.values,
+            currentLambdaHome: p.lambdaHomeBase,
+            currentLambdaAway: p.lambdaAwayBase,
+            currentOver25: p.over25,
+            mainMarketProbabilities: { OVER_25: p.over25, BTTS_YES: p.bttsYes },
+            context: modelContext,
+          };
+          const v5Allowed = process.env.PRESSURE_V5_ENABLED !== "false" && pressureV5SpentMs < pressureV5BudgetMs;
+          const pressureStarted = Date.now();
+          const performancePressure = !researchAllowed ? undefined : v5Allowed ? buildPerformancePressureShadowV5(pressureInput) : buildPerformancePressureShadow(pressureInput);
+          if (v5Allowed) pressureV5SpentMs += Date.now() - pressureStarted;
+          // λ ROHŮ A KARET vedle gólové – **čistá matematika nad zápasy, které už máme
+          // v ruce, tedy 0 volání API navíc**. Do teď tyhle modely v produkci nikdy
+          // neběžely (volal je jen backtest), takže jsme na oba trhy sbírali kurzy
+          // a neměli je proti čemu měřit – a CLV byl jediný způsob, jak o nich rozhodnout.
+          // Reprezentace vynechané: `CORNERS_AGAINST`/`CARDS_AGAINST` okna by u nich
+          // stála hlavně na přátelácích.
+          const refereeName = f.fixture.referee?.trim() || null;
+          const refereeProfile = refereeName && !national && !europeanCup
+            ? await getRefereeProfile(refereeName, leagueId, new Date(f.fixture.date), modelContext)
+            : null;
+          const countLambdas = national || europeanCup
+            ? null
+            : countPredictionsFor(home, away, new Date(), counts, {
+                factor: refereeProfile?.factor ?? 1,
+                sample: refereeProfile?.sample ?? 0,
+              });
+          const h2hCapturedAt = new Date();
+          const h2hSnapshot = toPredictionSnapshot(
+            await getHeadToHead(f.teams.home.id, f.teams.away.id),
+            f.teams.home.id,
+            h2hCapturedAt
+          );
+          await upsertPrediction({
             fixtureId: f.fixture.id,
-            modelContext,
-            modelVersion: MODEL_VERSION,
-            predictedAt: new Date(),
+            leagueId,
+            season: f.league.season,
+            kickoff: f.fixture.date,
+            homeTeamId: f.teams.home.id,
+            awayTeamId: f.teams.away.id,
+            homeName: result.home.team.name,
+            awayName: result.away.team.name,
+            homeLogo: result.home.team.logoUrl,
+            awayLogo: result.away.team.logoUrl,
+            available: p.available,
+            // Ukládej ZÁKLADNÍ λ (před zostřením) – z něj jde predikci přepočítat při
+            // změně ρ/zostření (`npm run reprice`) bez resetu datasetu.
             lambdaHome: p.lambdaHomeBase,
             lambdaAway: p.lambdaAwayBase,
             homeWin: p.homeWin,
             draw: p.draw,
             awayWin: p.awayWin,
-            over25: p.over25,
             bttsYes: p.bttsYes,
+            over25: p.over25,
+            lowConfidence: p.lowConfidence || (europeanCup && (home.leagueId === leagueId || away.leagueId === leagueId)),
+            readinessSample: europeanCup && (home.leagueId === leagueId || away.leagueId === leagueId)
+              ? Math.min(3, p.readiness.sample)
+              : p.readiness.sample,
+            modelVersion: MODEL_VERSION,
+            modelContext,
+            contextVersion: MODEL_CONTEXT_VERSION[modelContext],
+            lambdaCornersHome: countLambdas?.corners?.lambdaHome ?? null,
+            lambdaCornersAway: countLambdas?.corners?.lambdaAway ?? null,
+            lambdaCardsHome: countLambdas?.cards?.lambdaHome ?? null,
+            lambdaCardsAway: countLambdas?.cards?.lambdaAway ?? null,
+            lambdaFoulsHome: countLambdas?.fouls?.lambdaHome ?? null,
+            lambdaFoulsAway: countLambdas?.fouls?.lambdaAway ?? null,
+            foulModelVersion: countLambdas?.fouls?.version ?? null,
+            refereeFactor: countLambdas?.cards?.refereeFactor ?? null,
+            refereeSample: countLambdas?.cards?.refereeSample ?? null,
+            refereeName,
+            refereeKey: refereeName ? normalizeRefereeName(refereeName) : null,
+            lambdaCardsHomeBeforeRef: countLambdas?.cards?.lambdaHomeBeforeRef ?? null,
+            lambdaCardsAwayBeforeRef: countLambdas?.cards?.lambdaAwayBeforeRef ?? null,
+            h2hSnapshot,
+            h2hSnapshotVersion: H2H_SNAPSHOT_VERSION,
+            h2hCapturedAt: h2hCapturedAt.toISOString(),
+            inputSnapshot: {
+              competition: {
+                version: 1, fixtureId: f.fixture.id, leagueId: f.league.id, season: f.league.season,
+                kickoff: f.fixture.date, homeTeamId: f.teams.home.id, awayTeamId: f.teams.away.id,
+                round: f.league.round ?? null,
+              },
+              baseline: { home: baseline?.home ?? 1.5, away: baseline?.away ?? 1.2, source: baseline ? "league" : "default" },
+              strengthSource: rh && ra ? "opponent_adjusted_rating" : "window_fallback",
+              homeStrength: rh ? { attack: rh.attack, defense: rh.defense, sample: rh.sample } : null,
+              awayStrength: ra ? { attack: ra.attack, defense: ra.defense, sample: ra.sample } : null,
+              readinessSample: p.readiness.sample,
+              neutral: fixtureNeutral,
+              source: result.source,
+              capturedAt: new Date().toISOString(),
+              performancePressure,
+            },
           });
-        } catch (error) {
-          // Shadow kalibrace je auditní paralelní stopa. Její výpadek nesmí zahodit
-          // primární předzápasový snapshot, ale musí zůstat viditelný v logu.
-          logError("predictions.calibration-shadow", error, { fixtureId: f.fixture.id, modelContext });
-        }
-        predicted++;
-        if (within24h) ready24h++;
-
-        // Interní benchmark: predikce API-Footballu (1X2) na týž řádek. Jen klubové
-        // ligy (reprezentace API predikce nemá), jen 1× za život zápasu (drží náklady
-        // i srovnatelný okamžik). Výpadek/null nesmí shodit náš řádek.
-        if (!national) {
           try {
-            if (!(await hasBenchmark(f.fixture.id))) {
-              const bench = await fetchPrediction(f.fixture.id);
-              if (bench) await saveBenchmark(f.fixture.id, bench);
-            }
-          } catch (e) {
-            // Benchmark je best-effort a jeho výpadek NESMÍ shodit náš řádek – ale
-            // „best-effort" znamená nezastavit běh, ne mlčet (viz rok bez kurzů).
-            // Do `errors` se nepočítá: náš vlastní řádek se uložil v pořádku.
-            logError("predictions.benchmark", e, { fixtureId: f.fixture.id });
+            await captureCalibrationShadows({
+              fixtureId: f.fixture.id,
+              modelContext,
+              modelVersion: MODEL_VERSION,
+              predictedAt: new Date(),
+              lambdaHome: p.lambdaHomeBase,
+              lambdaAway: p.lambdaAwayBase,
+              homeWin: p.homeWin,
+              draw: p.draw,
+              awayWin: p.awayWin,
+              over25: p.over25,
+              bttsYes: p.bttsYes,
+            });
+          } catch (error) {
+            // Shadow kalibrace je auditní paralelní stopa. Její výpadek nesmí zahodit
+            // primární předzápasový snapshot, ale musí zůstat viditelný v logu.
+            logError("predictions.calibration-shadow", error, { fixtureId: f.fixture.id, modelContext });
           }
+          predicted++;
+          if (within24h) ready24h++;
 
-          // Kurzy se tady ZÁMĚRNĚ neberou – vlastníkem obou snímků je
-          // `runSnapshotOdds` (`/api/cron/snapshot-odds`, hodinově). Denní běh by
-          // zavírací linii u večerních zápasů nikdy nestihl (viz `ODDS_CLOSING_HOURS`)
-          // a dva vlastníci téhož zápisu jsou zbytečná past.
+          // Interní benchmark: predikce API-Footballu (1X2) na týž řádek. Jen klubové
+          // ligy (reprezentace API predikce nemá), jen 1× za život zápasu (drží náklady
+          // i srovnatelný okamžik). Výpadek/null nesmí shodit náš řádek.
+          if (!national) {
+            try {
+              if (!(await hasBenchmark(f.fixture.id))) {
+                const bench = await fetchPrediction(f.fixture.id);
+                if (bench) await saveBenchmark(f.fixture.id, bench);
+              }
+            } catch (e) {
+              // Benchmark je best-effort a jeho výpadek NESMÍ shodit náš řádek – ale
+              // „best-effort" znamená nezastavit běh, ne mlčet (viz rok bez kurzů).
+              // Do `errors` se nepočítá: náš vlastní řádek se uložil v pořádku.
+              logError("predictions.benchmark", e, { fixtureId: f.fixture.id });
+            }
+
+            // Kurzy se tady ZÁMĚRNĚ neberou – vlastníkem obou snímků je
+            // `runSnapshotOdds` (`/api/cron/snapshot-odds`, hodinově). Denní běh by
+            // zavírací linii u večerních zápasů nikdy nestihl (viz `ODDS_CLOSING_HOURS`)
+            // a dva vlastníci téhož zápisu jsou zbytečná past.
+          }
+        } catch (e) {
+          errors++;
+          logError("predictions.runPredictUpcoming.fixture", e, {
+            leagueId,
+            fixtureId: f.fixture.id,
+          });
+          // přeskoč problémový zápas, pokračuj dál
         }
-      } catch (e) {
-        errors++;
-        logError("predictions.runPredictUpcoming.fixture", e, {
-          leagueId,
-          fixtureId: f.fixture.id,
-        });
-        // přeskoč problémový zápas, pokračuj dál
+        // Rozpočet se kontroluje i uvnitř ligy: jedna studená liga umí sama sníst celý běh.
+        if (Date.now() >= deadline) {
+          stopped = true;
+          break;
+        }
       }
-      // Rozpočet se kontroluje i uvnitř ligy: jedna studená liga umí sama sníst celý běh.
-      if (Date.now() >= deadline) {
-        stopped = true;
-        break;
-      }
+    } finally {
+      profiles.dispose();
     }
   }
-  return { leagues: queue.length, covered, fixtures, predicted, stopped, errors, eligible24h, ready24h };
+  teamProfiles.loadMs = Math.round(teamProfiles.loadMs);
+  return { leagues: queue.length, covered, fixtures, predicted, stopped, errors, eligible24h, ready24h, teamProfiles };
 }
 
 /**
@@ -605,7 +620,8 @@ export async function runSnapshotOdds(
   limit = SNAPSHOT_LIMIT,
   budgetMs = SNAPSHOT_BUDGET_MS,
   skipFixtureIds: readonly number[] = [],
-  mode: "full" | "priority" = "full"
+  mode: "full" | "priority" = "full",
+  closingOnly = false
 ): Promise<{
   due: number;
   open: number;
@@ -640,6 +656,7 @@ export async function runSnapshotOdds(
   const priorityRows = mode === "priority" ? await prisma.autonomousTipSnapshot.findMany({
     where: {
       strategy: { not: "OVER_25_LEGACY_SHADOW" },
+      ...(closingOnly ? { status: "candidate" } : {}),
       kickoff: { gt: now, lte: priorityHorizon },
       OR: [
         { status: "candidate" },
@@ -658,7 +675,7 @@ export async function runSnapshotOdds(
     distinct: ["fixtureId"],
   })).map((row) => row.fixtureId) : [];
   const p0 = new Set([...ticketFixtureIds, ...priorityRows.filter((row) => row.status === "candidate").map((row) => row.fixtureId)]);
-  const p1 = new Set(priorityRows.filter((row) => row.status !== "candidate").map((row) => row.fixtureId));
+  const p1 = new Set(closingOnly ? [] : priorityRows.filter((row) => row.status !== "candidate").map((row) => row.fixtureId));
   const candidates = await fixturesNeedingOdds({
     // Jen klubové ligy: reprezentace kurzy prakticky nemají a napříč konfederacemi
     // by stejně nebyly srovnatelné (týž důvod jako u benchmarku).
@@ -711,6 +728,19 @@ export async function runSnapshotOdds(
       // JEDEN fetch pro všechny tři účely – `/odds` vrací všechno naráz, takže
       // otevírací snímek, zavírací snímek i bod řady stojí dohromady jedno volání.
       const odds = await fetchOdds(item.fixtureId);
+      if (closingOnly) {
+        // Preserve existing accounting only: no new candidates, research, series or tickets.
+        if (!odds) { empty++; continue; }
+        const capturedAt = new Date();
+        if (capturedAt >= item.kickoff) continue;
+        await saveClosingOdds(item.fixtureId, capturedAt, odds);
+        await closeMarketSignals(item.fixtureId, odds.books ?? [], capturedAt);
+        await closeAutonomousPortfolio(item.fixtureId, odds.books ?? [], capturedAt);
+        await closeQuickOverviewSelections(item.fixtureId, odds.books ?? [], capturedAt);
+        await closeIntuitionTicketLegs(item.fixtureId, odds.books ?? [], capturedAt);
+        close++;
+        continue;
+      }
       if (!odds) {
         // API pro zápas kurzy nemá (běžné daleko před výkopem i u menších lig).
         // Rychlý přehled je nejprve sportovní výběr. Kvalitní modelový scénář

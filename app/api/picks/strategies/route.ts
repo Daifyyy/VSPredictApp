@@ -24,8 +24,17 @@ export async function GET(request: Request) {
 
   try {
     if (summary) return NextResponse.json({ date, catalog, locked: false, summary: await strategyHubDailySummary(date) }, { headers: { "Cache-Control": "private, no-store" } });
-    return NextResponse.json({ date, strategy, catalog, locked: false, data: await strategyHubData(strategy as StrategyHubId, date) }, { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=120" } });
+    const data = await strategyHubData(strategy as StrategyHubId, date);
+    return NextResponse.json({ date, strategy, catalog, locked: false, data,
+      asOf: 'asOf' in data ? data.asOf : new Date().toISOString(),
+      stale: 'stale' in data ? data.stale : false,
+      limitedReason: 'limitedReason' in data ? data.limitedReason : null,
+    }, { headers: { "Cache-Control": "private, max-age=60, stale-while-revalidate=120" } });
   } catch (error) {
+    if (error instanceof Error && error.message === 'STRATEGY_METRICS_NOT_CAPTURED') {
+      return NextResponse.json({ error: 'Historický souhrn dosud není připraven.', asOf: null, stale: true, limitedReason: error.message },
+        { status: 503, headers: { 'Cache-Control': 'private, no-store', 'Retry-After': '900' } });
+    }
     logError("api/picks/strategies", error, { date, strategy, summary });
     return NextResponse.json({ error: "Přehled strategií se nepodařilo načíst." }, { status: 502 });
   }

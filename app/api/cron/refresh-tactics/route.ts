@@ -9,7 +9,7 @@ export const maxDuration = 60;
 
 export async function GET(req: Request) {
   if (!isRealDataConfigured()) return NextResponse.json({ error: "Mock režim" }, { status: 400 });
-  const denied = requireCronAuth(req);
+  const denied = await requireCronAuth(req);
   if (denied) return denied;
   try {
     const stats = await backfillRecentTactics(30);

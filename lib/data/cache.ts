@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { sharedReadCache } from "../boundedCache";
 import type { MatchStat, Metric } from "@/lib/types";
 import type { PredictionRow } from "@/lib/types";
 import type { ActualCountTotals } from "@/lib/picks/performance";
@@ -75,8 +76,6 @@ export async function cachedJson<T>(
  * ne zdroj pravdy; DB TTL zůstává autoritativní. Používat jen pro malé, často čtené,
  * na uživateli nezávislé odpovědi (jinak roste paměť a hrozí stale mezi instancemi).
  */
-const memoryHits = new Map<string, { value: unknown; expires: number }>();
-const memoryPending = new Map<string, Promise<unknown>>();
 
 export async function cachedJsonMemo<T>(
   key: string,
@@ -84,21 +83,7 @@ export async function cachedJsonMemo<T>(
   dbTtlSeconds: number,
   fetcher: () => Promise<T>
 ): Promise<T> {
-  const now = Date.now();
-  const hit = memoryHits.get(key);
-  if (hit && hit.expires > now) return hit.value as T;
-  const pending = memoryPending.get(key);
-  if (pending) return pending as Promise<T>;
-  const request = cachedJson<T>(key, dbTtlSeconds, fetcher)
-    .then((value) => {
-      memoryHits.set(key, { value, expires: Date.now() + memTtlSeconds * 1000 });
-      return value;
-    })
-    .finally(() => {
-      memoryPending.delete(key);
-    });
-  memoryPending.set(key, request);
-  return request;
+  return sharedReadCache.read(`api:${key}`, memTtlSeconds * 1000, () => cachedJson<T>(key, dbTtlSeconds, fetcher));
 }
 
 /** Invalidates read-through fixture lists after a newly settled result. */
@@ -106,8 +91,7 @@ export async function invalidateCachedJson(keys: string[]): Promise<void> {
   const unique = [...new Set(keys.filter(Boolean))];
   if (!unique.length) return;
   for (const key of unique) {
-    memoryHits.delete(key);
-    memoryPending.delete(key);
+    sharedReadCache.delete(`api:${key}`);
   }
   await prisma.apiCache.deleteMany({ where: { key: { in: unique } } });
 }

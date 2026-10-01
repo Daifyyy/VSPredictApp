@@ -64,6 +64,7 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 }
 
 interface StatsSetters {
+  setStatsNotice: (v: string | null) => void;
   setTrack: (v: TrackRecord) => void;
   setBenchmark: (v: BenchmarkTrackRecord | null) => void;
   setMarketBench: (v: MarketBenchmark | null) => void;
@@ -141,13 +142,19 @@ async function loadStats(
   s: StatsSetters
 ): Promise<void> {
   s.setStatsState("loading");
+  s.setStatsNotice(null);
   try {
     const q = new URLSearchParams({ market, venue, minProb: String(minProb) });
     if (minEdge != null) q.set("minEdge", String(minEdge));
     const r = await fetch(`/api/picks/stats?${q.toString()}`);
-    if (!r.ok) throw new Error(String(r.status));
     const d = await r.json();
+    if (!r.ok) throw new Error(d.error || String(r.status));
     if (!isActive()) return;
+    s.setStatsNotice([
+      d.asOf ? `Stav statistik k ${new Date(d.asOf).toLocaleString("cs-CZ", { timeZone: "Europe/Prague" })}.` : null,
+      d.stale ? "Zobrazen je starší uložený souhrn." : null,
+      d.backtestLimitedReason ? "Úsporný režim: vlastní historický backtest a jeho CLV nejsou předpočítané. Dostupné jsou uložené předvolby; filtr dnešních příležitostí se nemění." : null,
+    ].filter(Boolean).join(" ") || null);
     if (d.trackRecord) s.setTrack(d.trackRecord);
     s.setBenchmark(d.benchmark ?? null);
     s.setMarketBench(d.market ?? null);
@@ -160,8 +167,8 @@ async function loadStats(
     s.setClvByMarket(d.clvByMarket ?? []);
     s.setChecklist(d.checklist ?? null);
     s.setStatsState("ok");
-  } catch {
-    if (isActive()) s.setStatsState("error");
+  } catch (error) {
+    if (isActive()) { s.setStatsState("error"); s.setStatsNotice(error instanceof Error ? error.message : "Statistiky nejsou dostupné."); }
   }
 }
 
@@ -193,6 +200,7 @@ export function PicksApp({ user: initialUser }: { user: SessionUser | null }) {
   const [clvByMarket, setClvByMarket] = useState<MarketClvSummary[]>([]);
   const [checklist, setChecklist] = useState<ChecklistPerformance | null>(null);
   const [statsState, setStatsState] = useState<"loading" | "ok" | "error">("loading");
+  const [statsNotice, setStatsNotice] = useState<string | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -234,6 +242,7 @@ export function PicksApp({ user: initialUser }: { user: SessionUser | null }) {
   // dělal ze spadlého requestu „zatím nemáme data".
   // Settery z `useState` jsou stabilní, takže objekt smí vzniknout na místě.
   const statsSetters = (): StatsSetters => ({
+    setStatsNotice,
     setTrack,
     setBenchmark,
     setMarketBench,
@@ -296,6 +305,7 @@ export function PicksApp({ user: initialUser }: { user: SessionUser | null }) {
           track={track}
           benchmark={benchmark}
           state={statsState}
+          statsNotice={statsNotice}
           european={european}
           publishedTips={publishedTips}
           countAccuracy={countAccuracy}
@@ -357,6 +367,7 @@ function ModelView({
   venue,
   minProb,
   onRetry,
+  statsNotice,
 }: {
   isPro: boolean;
   isAdmin: boolean;
@@ -376,6 +387,7 @@ function ModelView({
   venue: Venue;
   minProb: number;
   onRetry: () => void;
+  statsNotice: string | null;
 }) {
   // Verdikt se smí vykreslit až nad načtenými daty. Brána sama o sobě `null` vstupy snese
   // (vrátí „ZATÍM NEVÍME"), jenže to je tvrzení o modelu – ne o tom, že se ještě načítá.
@@ -385,6 +397,7 @@ function ModelView({
     return (
       <div className="mt-4 space-y-3">
         {primaryLab}
+        {statsNotice && <p role="status" className="text-xs text-muted">{statsNotice}</p>}
         <Empty>
           <p>Doplňkovou historickou diagnostiku se nepodařilo načíst.</p>
           <button
@@ -413,6 +426,7 @@ function ModelView({
   return (
     <div className="mt-4 space-y-3">
       {primaryLab}
+      {statsNotice && <p role="status" className="text-xs text-muted">{statsNotice}</p>}
       <nav className="flex gap-2 overflow-x-auto rounded-xl border border-border bg-surface p-1" aria-label="Části výkonnosti">
         {[["performance-detail", "Doplňková diagnostika"], ["performance-research", "Výzkum a archiv"], ["performance-quality", "Všechny prognózy"]].map(([href, label]) => <a key={href} href={`#${href}`} className="min-h-11 shrink-0 rounded-lg px-3 py-2.5 text-xs font-semibold text-foreground transition hover:bg-background">{label}</a>)}
       </nav>
