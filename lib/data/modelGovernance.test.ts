@@ -16,7 +16,7 @@ describe("v5 governance cohort", () => {
   beforeEach(() => vi.resetAllMocks());
   it("uses actual v5 probabilities for scores, recent rows and deltas; requests v5 flow", async () => {
     vi.mocked(prisma.modelStrategyDefinition.findMany).mockResolvedValue([]);
-    vi.mocked(prisma.modelStrategyMetricSnapshot.findMany).mockResolvedValue([{ strategy: "OVER_25", policyVersion: 2, modelVersion: 7, metrics: { reportVersion: 2, summary: { portfolio: { settled: 7 } } } }] as never);
+    vi.mocked(prisma.modelStrategyMetricSnapshot.findMany).mockResolvedValue([{ strategy: "OVER_25", policyVersion: 2, modelVersion: 7, metrics: { reportVersion: 3, summary: { portfolio: { settled: 7 } } } }] as never);
     vi.mocked(prisma.calibrationCheckpoint.findMany).mockResolvedValue([]);
     vi.mocked(prisma.dataIncident.findMany).mockResolvedValue([]);
     vi.mocked(prisma.autonomousTipSnapshot.groupBy).mockResolvedValue([]);

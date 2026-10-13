@@ -14,6 +14,16 @@ function row(overrides: Partial<ModelLabLedgerRow> = {}): ModelLabLedgerRow {
 }
 
 describe("Model Lab", () => {
+  it("preserves team profits but rejects them as validation evidence", () => {
+    const input = row({ strategy: "TEAM_GOALS", market: "TEAM_HOME_15", policyVersion: 3, storedHit: true });
+    const summary = modelLabSummary([input]);
+    expect(summary.portfolio.profit).toBe(1);
+    expect(summary.dataWarnings).toBe(1);
+    expect(summary.gates.dataQuality).toBe(false);
+    expect(summary.probability.model.n).toBe(0);
+    expect(input.dataWarning).toBeUndefined();
+    expect(resolveModelLabStatus(STRATEGY_CATALOG.find(x => x.strategy === "TEAM_GOALS" && x.policyVersion === 3)!, "VALIDATED")).toBe("REJECTED");
+  });
   it("retains a published loss but excludes an identity mismatch from model validation", () => {
     const summary = modelLabSummary([row({ storedHit: false, dataWarning: "FIXTURE_IDENTITY_MISMATCH" })]);
     expect(summary.portfolio.settled).toBe(1);

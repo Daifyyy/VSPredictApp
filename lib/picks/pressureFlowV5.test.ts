@@ -10,7 +10,7 @@ describe("pressure flow v5 policy", () => {
     const rows = pressureFlowCandidates(pressure, books as never, new Date("2026-09-17T08:00:00Z"));
     expect(rows.filter((row) => row.market === "OVER_25")).toHaveLength(1);
     expect(rows.filter((row) => row.market === "BTTS")).toHaveLength(1);
-    expect(rows.filter((row) => row.market.startsWith("TEAM_"))).toHaveLength(1);
+    expect(rows.filter((row) => row.market.startsWith("TEAM_"))).toHaveLength(0);
     expect(rows.every((row) => row.eligible)).toBe(true);
   });
   it("rejects output with insufficient feature coverage", () => {

@@ -1,9 +1,10 @@
 import { prisma } from "../db";
+import { isQuarantinedTeamMarket, TEAM_GOALS_QUARANTINE_REASON } from "../picks/teamMarketSafety";
 import { STRATEGY_CATALOG, type ModelLabContext, type ModelLabLedgerRow } from "../picks/modelLab";
 import { teamGoalOpportunityDecision } from "../picks/marketSignals";
 import { strategyCohort, ledgerClv } from "../picks/strategyCohort";
 
-export const MODEL_LAB_REPORT_VERSION = 2;
+export const MODEL_LAB_REPORT_VERSION = 3;
 const TEAM_MARKETS = ["TEAM_HOME_05", "TEAM_HOME_15", "TEAM_AWAY_05", "TEAM_AWAY_15"];
 // Historical reporting never needs frozen model JSON or complete odds time series.
 const commonSelect = {
@@ -62,6 +63,7 @@ export async function loadModelStrategyLedger(context: ModelLabContext, strategy
       marketProbability: signal.openMarketProbability, closingMarketProbability: signal.closeMarketProbability,
       qualifiedAt: signal.openedAt, stake: 1, decimalOdds: signal.policyVersion === 1 ? null : signal.decimalOdds,
       homeGoals: fixture?.homeGoals ?? null, awayGoals: fixture?.awayGoals ?? null,
+      ...(isQuarantinedTeamMarket(signal.market) ? { dataWarning: TEAM_GOALS_QUARANTINE_REASON } : {}),
     });
   }
   return { ledger, byFixture };

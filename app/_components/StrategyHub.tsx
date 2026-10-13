@@ -8,11 +8,13 @@ import type { StrategyHubMetrics, StrategyHubOpportunity, StrategyHubPrediction,
 import { AppHeader } from "./AppHeader";
 import { useCurrentUser } from "./useCurrentUser";
 import { PressureFlowPredictions, type PressureFlowView } from "./PressureFlowPredictions";
+import { TEAM_GOALS_QUARANTINE_MESSAGE } from "@/lib/picks/teamMarketSafety";
 
 type CatalogItem = StrategyHubDefinition & { statusLabel: string };
 type Payload = { asOf?: string | null; stale?: boolean; limitedReason?: string | null; date: string; strategy: StrategyHubId; catalog: CatalogItem[]; locked: boolean; data?: { opportunities: StrategyHubOpportunity[]; predictions?: StrategyHubPrediction[]; tickets: StrategyHubTicket[]; metrics: StrategyHubMetrics; coverage: { candidates: number; priced: number; tickets: number }; emptyReason: string | null } };
 
 const emptyLabels: Record<string, string> = {
+  TEAM_MARKET_DATA_QUARANTINE: TEAM_GOALS_QUARANTINE_MESSAGE,
   NOT_ENOUGH_VALUE_LEGS: "Pro tento den nevznikly alespoň tři samostatně kvalitní VALUE nohy.",
   NOT_ENOUGH_CONTEXTUAL_LEGS: "Pro tento den nevznikly alespoň tři kontextově obhajitelné ELO příležitosti.",
   NOT_ENOUGH_BALANCED_LEGS: "Kandidáti existují, ale netvoří vyvážený tiket s alespoň dvěma nosnými nohami. Více drahých outsiderů do jedné akumulace neskládáme.",
@@ -36,6 +38,7 @@ function Metric({ label, value, note }: { label: string; value: string; note?: s
 }
 
 function Stats({ metrics, definition }: { metrics: StrategyHubMetrics; definition: CatalogItem }) {
+  if (metrics.limitedReason === "TEAM_MARKET_DATA_QUARANTINE") return <p className="mt-4 rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm">{TEAM_GOALS_QUARANTINE_MESSAGE} Archiv zůstává v Řízení modelů; nejde o nulovou bilanci.</p>;
   const all = metrics.all;
   const recent = metrics.recent;
   const noun = metrics.unit === "TICKETS" ? "tiketů" : "výběrů";
@@ -121,7 +124,7 @@ export function StrategyHub() {
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface p-3"><button disabled={date <= minDate} onClick={() => navigate(strategy, shiftDate(date, -1))} className="min-h-10 rounded-lg px-3 font-bold disabled:opacity-30" aria-label="Předchozí den">←</button><label className="text-center"><span className="block text-[10px] font-bold uppercase text-muted">Herní den</span><input type="date" min={minDate} max={maxDate} value={date} onChange={(event) => navigate(strategy, event.target.value)} className="mt-1 rounded-lg border border-border bg-background px-3 py-2 text-sm font-bold" /><span className="ml-2 hidden text-sm capitalize sm:inline">{dateLabel(date)}</span></label><button disabled={date >= maxDate} onClick={() => navigate(strategy, shiftDate(date, 1))} className="min-h-10 rounded-lg px-3 font-bold disabled:opacity-30" aria-label="Další den">→</button></div>
       {locked ? <section className="ui-panel mt-4 border-dashed p-8 text-center"><p className="page-kicker">Obsah PRO</p><h2 className="mt-2 text-xl font-bold">Denní příležitosti a přesná bilance jsou uzamčené</h2><p className="mx-auto mt-2 max-w-xl text-sm text-muted">Veřejně vidíš princip a stav strategie. PRO zpřístupní zmrazené výběry, kurzy, výsledky a ROI.</p><button type="button" disabled={checkoutLoading} onClick={() => void unlock()} className="mt-5 inline-flex min-h-11 items-center rounded-xl bg-accent px-5 font-bold text-accent-ink disabled:opacity-60">{checkoutLoading ? "Otevírám…" : user ? "Odemknout PRO" : "Přihlásit přes Google"}</button></section> : data && <>
         <section className="mt-6"><div className="flex flex-wrap items-end justify-between gap-2"><div><p className="page-kicker">{dateLabel(date)}</p><h2 className="mt-1 text-xl font-bold">Příležitosti pro vybraný den</h2></div><p className="text-xs text-muted">{data.coverage.candidates} vybráno · {data.coverage.priced} s kurzem</p></div>
-          {displayedOpportunities.length ? <div className="mt-3 grid gap-3 lg:grid-cols-2">{displayedOpportunities.map((item) => <OpportunityCard key={item.id} item={item} />)}</div> : <div className="ui-panel mt-3 border-dashed p-7 text-center"><strong className="text-base">Dnes tato strategie nic nevybrala</strong><p className="mx-auto mt-2 max-w-xl text-sm text-muted">{emptyLabels[data.emptyReason ?? ""] ?? "Nejsou dostupné kvalifikované příležitosti."}</p></div>}
+          {displayedOpportunities.length ? <div className="mt-3 grid gap-3 lg:grid-cols-2">{displayedOpportunities.map((item) => <OpportunityCard key={item.id} item={item} />)}</div> : <div className="ui-panel mt-3 border-dashed p-7 text-center"><strong className="text-base">{data.emptyReason === "TEAM_MARKET_DATA_QUARANTINE" ? "Dočasně datově blokováno" : "Dnes tato strategie nic nevybrala"}</strong><p className="mx-auto mt-2 max-w-xl text-sm text-muted">{emptyLabels[data.emptyReason ?? ""] ?? "Nejsou dostupné kvalifikované příležitosti."}</p></div>}
         </section>{strategy === "PRESSURE_FLOW_V5" && data.predictions ? <PressureFlowPredictions rows={data.predictions} view={pressureView} onViewChange={(view) => navigate(strategy, date, view)} /> : null}<Tickets tickets={data.tickets} />{!definition.accumulator && <p className="mt-4 rounded-xl bg-background p-3 text-xs text-muted">Tato strategie sleduje jednotlivé výběry a akumulační tiket neskládá.</p>}
       </>}
     </>}

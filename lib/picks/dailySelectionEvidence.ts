@@ -2,6 +2,7 @@ import { modelLabSummary, probabilityMetrics, type ModelLabLedgerRow } from "./m
 import { resolvedStrategyOutcome } from "./strategyOutcome";
 import type { DailyEvidence } from "./dailySelection";
 import { localDateKey } from "../competitionGrouping";
+import { isQuarantinedTeamMarket } from "./teamMarketSafety";
 
 export const dailyEvidenceCohortKey = (r: Pick<ModelLabLedgerRow,"strategy"|"market"|"policyVersion"|"modelVersion"|"modelContext"> & {contextVersion?:number;countModelVersion?:number|null}) =>
   JSON.stringify([r.strategy,r.market,r.policyVersion,r.modelVersion,r.modelContext,r.contextVersion??1,r.countModelVersion??null]);
@@ -10,7 +11,7 @@ export const dailyEvidenceCohortKey = (r: Pick<ModelLabLedgerRow,"strategy"|"mar
 export function buildDailyEvidence(rows: Array<ModelLabLedgerRow & {settledAt:Date|null;contextVersion?:number;countModelVersion?:number|null}>, cohortKey: string, cutoff: Date,
   approval: {cohortKey:string;at:Date} | null, research: boolean): DailyEvidence {
   const probability = (p:number) => Number.isFinite(p) && p>0 && p<1;
-  const cohort=rows.filter(r=>dailyEvidenceCohortKey(r)===cohortKey &&
+  const cohort=rows.filter(r=>!r.dataWarning && !isQuarantinedTeamMarket(r.market) && dailyEvidenceCohortKey(r)===cohortKey &&
     r.qualifiedAt!=null && r.qualifiedAt<r.kickoff && r.kickoff<cutoff && r.settledAt!=null && r.settledAt<cutoff &&
     r.decimalOdds!=null && Number.isFinite(r.decimalOdds) && r.decimalOdds>=1.5 && r.decimalOdds<=3 &&
     probability(r.modelProbability) && probability(r.marketProbability) &&

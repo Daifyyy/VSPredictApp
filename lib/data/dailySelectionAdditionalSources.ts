@@ -1,4 +1,5 @@
 import "server-only";
+import { isQuarantinedTeamMarket, TEAM_GOALS_QUARANTINE_REASON } from "../picks/teamMarketSafety";
 import { prisma } from "../db";
 import { pragueDateBounds } from "../recentWindow";
 import { PUBLIC_CLUB_LEAGUE_IDS } from "./catalog";
@@ -31,6 +32,7 @@ export async function loadDailyAdditionalSources(date:string,now:Date) {
     if(d.eligible&&(!teamWinners.has(r.fixtureId)||d.score>teamWinners.get(r.fixtureId)!.score))teamWinners.set(r.fixtureId,{id:r.id,score:d.score});
   }
   for(const row of signals) {
+    if(isQuarantinedTeamMarket(row.market)){rejected.push({id:`SIGNAL:${row.id}`,reason:TEAM_GOALS_QUARANTINE_REASON});continue;}
     const f=byFixture.get(row.fixtureId),v5=row.policyVersion===PRESSURE_FLOW_V5_POLICY_VERSION;
     const reject=(reason:string)=>rejected.push({id:`SIGNAL:${row.id}`,reason});
     if(!v5&&teamWinners.get(row.fixtureId)?.id!==row.id){reject("NOT_IN_SOURCE_SHORTLIST");continue;}

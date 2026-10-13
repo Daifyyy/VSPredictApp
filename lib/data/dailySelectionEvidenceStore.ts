@@ -1,4 +1,5 @@
 import "server-only";
+import { isQuarantinedTeamMarket, TEAM_GOALS_QUARANTINE_REASON } from "../picks/teamMarketSafety";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../db";
 import { buildDailyEvidence, dailyEvidenceCohortKey } from "../picks/dailySelectionEvidence";
@@ -32,6 +33,7 @@ export async function refreshDailyAutonomousEvidence(cutoff=new Date(), persist=
     if(d.eligible&&(!teamWinners.has(r.fixtureId)||d.score>teamWinners.get(r.fixtureId)!.score))teamWinners.set(r.fixtureId,{id:r.id,score:d.score});
   }
   for(const r of signals){
+    if(isQuarantinedTeamMarket(r.market)){rejected.push({sourceId:r.id,fixtureId:r.fixtureId,reason:TEAM_GOALS_QUARANTINE_REASON});continue;}
     const f=byFixture.get(r.fixtureId),v5=r.policyVersion===PRESSURE_FLOW_V5_POLICY_VERSION;
     if(!v5&&teamWinners.get(r.fixtureId)?.id!==r.id)continue;
     if(!f||!["FT","AET","PEN"].includes(f.status)||!f.settledAt||f.settledAt>=cutoff)continue;

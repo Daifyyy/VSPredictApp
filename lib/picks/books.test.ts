@@ -247,27 +247,20 @@ describe("týmové totaly", () => {
   ];
 
   it("čte linie z vlastního pole trhu, nemíchá strany ani trhy", () => {
-    expect(mainLine(TOTAL_BOOKS, "totalHome")).toBe(1.5);
-    expect(mainLine(TOTAL_BOOKS, "totalAway")).toBe(1.5);
+    expect(mainLine(TOTAL_BOOKS, "totalHome")).toBeNull();
+    expect(mainLine(TOTAL_BOOKS, "totalAway")).toBeNull();
     expect(mainLine(TOTAL_BOOKS, "corners")).toBe(10.5);
     // Hosté mají jen jednu knihu, domácí dvě – kdyby se to sečetlo, byla by tu 2.
-    expect(marketLines(TOTAL_BOOKS, "totalAway")[0].books).toBe(1);
-    expect(marketLines(TOTAL_BOOKS, "totalHome")[0].books).toBe(2);
+    expect(marketLines(TOTAL_BOOKS, "totalAway")).toEqual([]);
+    expect(marketLines(TOTAL_BOOKS, "totalHome")).toEqual([]);
   });
 
   it("nejlepší cena se hledá uvnitř trhu I linie", () => {
-    const b = bestLinePrice(TOTAL_BOOKS, "totalHome", 1.5, "over")!;
-    expect(b.odds).toBe(2.08);
-    expect(b.bookmaker).toBe("Akční");
-    // Kurz 3.6 je na lince 2.5 a 2.02 je na rozích – ani jeden se sem nesmí dostat.
-    expect(b.odds).toBeLessThan(3.6);
+    expect(bestLinePrice(TOTAL_BOOKS, "totalHome", 1.5, "over")).toBeNull();
   });
 
   it("sharp férová cena bere knihu s nejnižší marží daného trhu", () => {
-    const f = sharpLineFair(TOTAL_BOOKS, "totalHome", 1.5)!;
-    expect(f.over + f.under).toBeCloseTo(1, 9);
-    // Pinnacle 1/1.95+1/1.9 = 1.039; Akční 1/2.08+1/1.78 = 1.043 → Pinnacle.
-    expect(f.bookmaker).toBe("Pinnacle");
+    expect(sharpLineFair(TOTAL_BOOKS, "totalHome", 1.5)).toBeNull();
   });
 
   it("trh, který kniha nenabízí, vrací null (ne prázdné číslo)", () => {
@@ -277,8 +270,8 @@ describe("týmové totaly", () => {
 
   it("přežije kolečko přes JSON", () => {
     const parsed = parseBooks(JSON.parse(JSON.stringify(TOTAL_BOOKS)));
-    expect(bestLinePrice(parsed, "totalHome", 1.5, "over")!.odds).toBe(2.08);
-    expect(mainLine(parsed, "totalAway")).toBe(1.5);
+    expect(bestLinePrice(parsed, "totalHome", 1.5, "over")).toBeNull();
+    expect(mainLine(parsed, "totalAway")).toBeNull();
     expect(mainLine(parsed, "corners")).toBe(10.5);
   });
 });
@@ -328,7 +321,7 @@ describe("karty jako trh s linkami", () => {
     expect(bestLinePrice(parsed, "cards", 3.5, "under")!.odds).toBe(2.45);
     // Ostatní trhy zůstaly na svém.
     expect(mainLine(parsed, "corners")).toBe(10.5);
-    expect(mainLine(parsed, "totalHome")).toBe(2.5);
+    expect(mainLine(parsed, "totalHome")).toBeNull();
   });
 });
 

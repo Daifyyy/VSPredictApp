@@ -1,5 +1,6 @@
 import type { BookOdds, LineOdds } from "@/lib/data/apiFootball";
 import { devig } from "./market";
+import { isQuarantinedTeamMarket } from "./teamMarketSafety";
 
 /**
  * Práce s **kurzy všech sázkovek** jednoho zápasu (sloupce `oddsBooks`/`oddsCloseBooks`).
@@ -55,6 +56,13 @@ export function parseBooks(value: unknown): BookOdds[] {
     const fouls = parseLines(b.fouls);
     const totalHome = parseLines(b.totalHome);
     const totalAway = parseLines(b.totalAway);
+    const teamGoalSources: NonNullable<BookOdds["teamGoalSources"]> = b.teamGoalQuoteVersion === 2 && Array.isArray(b.teamGoalSources)
+      ? b.teamGoalSources.flatMap((source: unknown) => {
+        if (!source || typeof source !== "object") return [];
+        const s = source as Record<string, unknown>;
+        return typeof s.id === "number" && Number.isInteger(s.id) && typeof s.name === "string" && (s.side === "home" || s.side === "away") && s.period === "FULL_TIME"
+          ? [{ id: s.id, name: s.name, side: s.side, period: "FULL_TIME" as const }] : [];
+      }) : [];
     const resultTotals = parseResultTotals(b.resultTotals);
     const matchTotals = parseLines(b.matchTotals);
     out.push({
@@ -74,6 +82,7 @@ export function parseBooks(value: unknown): BookOdds[] {
       ...(fouls.length ? { fouls } : {}),
       ...(totalHome.length ? { totalHome } : {}),
       ...(totalAway.length ? { totalAway } : {}),
+      ...(teamGoalSources.length ? { teamGoalQuoteVersion: 2 as const, teamGoalSources } : {}),
     });
   }
   return out;
@@ -202,7 +211,7 @@ export function sharpFair(
  */
 export type LineMarket = "corners" | "cards" | "fouls" | "totalHome" | "totalAway" | "matchTotals";
 
-const linesOf = (b: BookOdds, market: LineMarket): LineOdds[] => b[market] ?? [];
+const linesOf = (b: BookOdds, market: LineMarket): LineOdds[] => isQuarantinedTeamMarket(market) ? [] : b[market] ?? [];
 
 /** Které linie jsou v nabídce a kolik knih je kotuje (sestupně dle pokrytí). */
 export function marketLines(

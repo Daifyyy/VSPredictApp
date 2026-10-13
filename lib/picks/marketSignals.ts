@@ -195,6 +195,7 @@ export function marketProbabilityAt(
 export function teamMarketProbabilityAtBookmaker(
   books: BookOdds[], market: SignalMarket, side: SignalSide, line: number | null, bookmaker: string | null
 ): number | null {
+  if (market.startsWith("TEAM_")) return null; // Quarantined identity cannot supply a comparable closing.
   if (!market.startsWith("TEAM_") || line == null || !bookmaker) return marketProbabilityAt(books, market, side, line);
   const book = books.find((item) => item.name === bookmaker);
   const quote = (market.startsWith("TEAM_HOME") ? book?.totalHome : book?.totalAway)?.find((item) => item.line === line);

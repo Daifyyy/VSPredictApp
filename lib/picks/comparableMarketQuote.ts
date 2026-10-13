@@ -1,4 +1,5 @@
 import type { BookOdds, LineOdds } from "@/lib/data/apiFootball";
+import { isQuarantinedTeamMarket } from "./teamMarketSafety";
 
 export const CLV_METHOD_VERSION = 2;
 export const PRIMARY_CLOSE_MAX_MINUTES = 30;
@@ -31,6 +32,7 @@ const median = (values: number[]) => {
 };
 
 function lineQuote(book: BookOdds, market: ComparableMarket, line: number | null): LineOdds | null {
+  if (isQuarantinedTeamMarket(market)) return null;
   if (line == null) return null;
   const key = market === "CORNERS" ? "corners" : market === "CARDS" ? "cards" : market === "FOULS" ? "fouls" : market === "TEAM_HOME" ? "totalHome" : market === "TEAM_AWAY" ? "totalAway" : "matchTotals";
   return book[key]?.find((item) => item.line === line) ?? null;

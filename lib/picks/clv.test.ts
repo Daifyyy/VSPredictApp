@@ -203,9 +203,8 @@ describe("sharp konsenzus a rohy", () => {
       ],
     });
     const t = rowClv(r, "totalHomeOver")!;
-    expect(t.line).toBe(1.5);
+    expect(t).toBeNull();
     // Domácí přes 1.5 zlevnilo (2.0 → 1.8) → kladné CLV.
-    expect(t.clv).toBeGreaterThan(0);
     // Rohy se hnuly OPAČNĚ – kdyby se trhy pletly, vyšlo by tu záporné číslo.
     expect(rowClv(r, "cornersOver")!.clv).toBeLessThan(0);
   });
@@ -215,7 +214,7 @@ describe("sharp konsenzus a rohy", () => {
       oddsBooks: [{ name: "S", totalAway: [{ line: 1.5, over: 2.6, under: 1.48 }] }],
       oddsCloseBooks: [{ name: "S", totalAway: [{ line: 1.5, over: 2.4, under: 1.56 }] }],
     });
-    expect(rowClv(r, "totalAwayOver")!.clv).toBeGreaterThan(0);
+    expect(rowClv(r, "totalAwayOver")).toBeNull();
     // Domácí total ta kniha nenabízí → není z čeho počítat.
     expect(rowClv(r, "totalHomeOver")).toBeNull();
   });

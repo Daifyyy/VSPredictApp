@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Metric } from "@/lib/types";
 import { schedule } from "./rateLimiter";
 import { countApiCall } from "@/lib/apiUsage";
+import { coherentTeamLines } from "@/lib/picks/teamMarketSafety";
 
 /**
  * Klient API-Football v3 (přímé API api-sports.io, hlavička x-apisports-key).
@@ -682,6 +683,8 @@ export interface BookOdds {
    */
   totalHome?: LineOdds[];
   totalAway?: LineOdds[];
+  teamGoalQuoteVersion?: 2;
+  teamGoalSources?: { id: number; name: string; side: "home" | "away"; period: "FULL_TIME" }[];
   /**
    * **Karty celkem** Over/Under. Trh, kde má model nejvíc doloženého skillu
    * (`lib/picks/cards.ts`: +0.010…+0.023 log-lossu nad konstantou na hold-outu, z toho
@@ -915,11 +918,10 @@ export function isCardBet(bet: { id: number; name?: string }): boolean {
 export function teamTotalSide(bet: { name?: string }): "home" | "away" | null {
   const n = bet.name;
   if (!n) return null;
-  if (/corner|card|booking|offside|foul|shot|throw/i.test(n)) return null;
-  if (!/total|goals/i.test(n)) return null;
-  if (/home/i.test(n)) return "home";
-  if (/away/i.test(n)) return "away";
-  return null; // „Goals Over/Under" = total zápasu, ne týmový
+  // Fail closed: periods, combinations and unknown names must not alias full-time goals.
+  const name = n.trim().replace(/\s+/g, " ");
+  const match = /^(?:total\s*-\s*(home|away)|(home|away)(?: team)? total(?: goals)?|total goals\s*-\s*(home|away))$/i.exec(name);
+  return match ? (match[1] ?? match[2] ?? match[3]).toLowerCase() as "home" | "away" : null;
 }
 
 /** „Over 10.5" / „Under 9.5" → linie a strana. `null` u čehokoli jiného. */
@@ -937,7 +939,8 @@ function parseOverUnderLabel(
 /** Over/Under kurzy vybraných trhů jedné knihy, seskupené po linkách. */
 function lineOddsOf(
   bets: { id: number; name?: string; values: { value: string; odd: string }[] }[],
-  pick: (bet: { id: number; name?: string }) => boolean
+  pick: (bet: { id: number; name?: string }) => boolean,
+  strict = false
 ): LineOdds[] {
   const byLine = new Map<number, LineOdds>();
   for (const bet of bets) {
@@ -945,13 +948,14 @@ function lineOddsOf(
     for (const v of bet.values) {
       const parsed = parseOverUnderLabel(v.value);
       if (!parsed) continue;
-      const odd = parseFloat(v.odd);
+      const odd = strict ? Number(v.odd) : parseFloat(v.odd);
       if (!Number.isFinite(odd) || odd <= 1) continue;
       const entry = byLine.get(parsed.line) ?? {
         line: parsed.line,
         over: null,
         under: null,
       };
+      if (strict && entry[parsed.side] != null && entry[parsed.side] !== odd) return [];
       entry[parsed.side] = odd;
       byLine.set(parsed.line, entry);
     }
@@ -1007,8 +1011,18 @@ export function bookOddsOf(book: {
   const corners = lineOddsOf(book.bets, isCornerBet);
   const cards = lineOddsOf(book.bets, isCardBet);
   const fouls = lineOddsOf(book.bets, isFoulBet);
-  const totalHome = lineOddsOf(book.bets, (b) => teamTotalSide(b) === "home");
-  const totalAway = lineOddsOf(book.bets, (b) => teamTotalSide(b) === "away");
+  const teamLines = (side: "home" | "away") => {
+    const markets = book.bets.filter(b => teamTotalSide(b) === side);
+    // Never merge two provider market identities into one full-time ladder.
+    return markets.length === 1 ? coherentTeamLines(lineOddsOf(markets, () => true, true)) : [];
+  };
+  const totalHome = teamLines("home");
+  const totalAway = teamLines("away");
+  const teamGoalSources = book.bets.flatMap(b => {
+    const side = teamTotalSide(b);
+    return side && (side === "home" ? totalHome : totalAway).length
+      ? [{ id: b.id, name: b.name!, side, period: "FULL_TIME" as const }] : [];
+  });
   const resultTotals = resultTotalOddsOf(book.bets);
   const matchTotals = lineOddsOf(book.bets, (b) => b.id === 5);
   return {
@@ -1028,6 +1042,7 @@ export function bookOddsOf(book: {
     ...(fouls.length ? { fouls } : {}),
     ...(totalHome.length ? { totalHome } : {}),
     ...(totalAway.length ? { totalAway } : {}),
+    ...(teamGoalSources.length ? { teamGoalQuoteVersion: 2 as const, teamGoalSources } : {}),
   };
 }
 

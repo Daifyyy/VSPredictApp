@@ -62,7 +62,8 @@ const pressureMarketFilter = (value?: string): PressureMarketFilter | null | und
 export function formatTips(payload: TelegramDay, requested?: StrategyHubId, limit = TELEGRAM_TOP_LIMIT, skip = 0, marketFilter?: PressureMarketFilter) {
   const blocks = [`📅 <b>Výběry na ${payload.date}</b>`];
   for (const { strategy, data } of payload.strategies.filter((row) => !requested || row.strategy === requested)) {
-    const eligible = data.opportunities.filter((item) => strategy !== "PRESSURE_FLOW_V5" || pressureMarketMatches(item.market, marketFilter));
+    if (strategy === "TEAM_GOALS" || data.emptyReason === "TEAM_MARKET_DATA_QUARANTINE" || (strategy === "PRESSURE_FLOW_V5" && marketFilter === "TEAM_GOALS")) { blocks.push(`${strategyIcon(strategy)} <b>${esc(title(strategy))}</b>\nDočasně blokováno: ověřujeme identitu kurzů. Nejde o nedostatek příležitostí.`); continue; }
+    const eligible = data.opportunities.filter((item) => !item.market?.startsWith("TEAM_") && (strategy !== "PRESSURE_FLOW_V5" || pressureMarketMatches(item.market, marketFilter)));
     const picks = eligible.slice(skip, skip + limit); blocks.push(picks.length ? `${strategyIcon(strategy)} <b>${esc(title(strategy))}</b>` : empty(strategy), ...picks.map(opportunity));
   }
   return splitTelegramBlocks(blocks);

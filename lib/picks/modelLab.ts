@@ -2,6 +2,7 @@ import { freshClosing } from "./evaluation";
 import { AUTONOMOUS_POLICY_VERSION, LEGACY_OVER_SHADOW_STRATEGY, LEGACY_OVER_SHADOW_POLICY_VERSION } from "./autonomousPortfolio";
 import { summarizePortfolio, type PortfolioSummary } from "./portfolioStats";
 import { resolvedStrategyOutcome } from "./strategyOutcome";
+import { isQuarantinedTeamMarket, TEAM_GOALS_QUARANTINE_REASON } from "./teamMarketSafety";
 
 export const MODEL_LAB_STATUSES = ["RESEARCH", "LIVE_TEST", "CANDIDATE", "VALIDATED", "REJECTED", "RETIRED"] as const;
 export type ModelLabStatus = typeof MODEL_LAB_STATUSES[number];
@@ -28,7 +29,7 @@ export const STRATEGY_CATALOG: StrategyCatalogItem[] = [
   { strategy: "CORNERS", policyVersion: 1, market: "CORNERS", title: "Rohy Over/Under v1", status: "RESEARCH", minimumSample: 200, rules: "60 % · edge 5 p. b. · EV 3 % · skutečná půlková linie", decision: "Po pre-launch auditu prospektivní ROI, čerstvé CLV a kalibrace proti stejnému trhu" },
   { strategy: "CARDS_REF", policyVersion: 1, market: "CARDS", title: "Karty · s rozhodčím", status: "RESEARCH", minimumSample: 200, rules: "Oddělená verze s auditním faktorem rozhodčího", decision: "Kalibrace a benchmark pouze v rámci stejné verze" },
   { strategy: "FOULS", policyVersion: 1, market: "FOULS", title: "Fauly", status: "RESEARCH", minimumSample: 200, rules: "Přímý match-total Over/Under s neměnnou cenou", decision: "Kalibrace, CLV a ROI až nad prospektivně zachycenými výběry" },
-  { strategy: "TEAM_GOALS", policyVersion: 3, market: "TEAM_TOTAL", title: "Týmové góly 0,5 / 1,5 v3", status: "RESEARCH", minimumSample: 200, rules: "Hratelná přímá cena, konzervativní EV a nejvýše jeden výběr na zápas", decision: "Vyhodnotit až na nové prospektivní kohortě" },
+  { strategy: "TEAM_GOALS", policyVersion: 3, market: "TEAM_TOTAL", title: "Týmové góly 0,5 / 1,5 v3", status: "REJECTED", minimumSample: 200, rules: "Datová karanténa kurzů; historická bilance není validační důkaz", decision: "Ověřit identitu trhu, potom nová policy a prospektivní kohorta" },
   { strategy: "TEAM_GOALS", policyVersion: 2, market: "TEAM_TOTAL", title: "Týmové góly 0,5 / 1,5 v2", status: "RETIRED", minimumSample: 0, rules: "Všechny dostupné týmové trhy se zmrazenou cenou", decision: "Historie zůstává oddělená; neprezentovat jako doporučení" },
   { strategy: "TEAM_GOALS", policyVersion: 1, market: "TEAM_TOTAL", title: "Týmové góly v1", status: "RETIRED", minimumSample: 0, rules: "Historická sportovní diagnostika bez zmrazené ceny", decision: "Kalibrace ano, ROI se zpětně nepočítá" },
   { strategy: "CHECKLIST", policyVersion: 1, market: "MIXED", title: "Checklist v1", status: "RETIRED", minimumSample: 0, rules: "Historická ukončená politika", decision: "Pouze neměnný archiv" },
@@ -50,6 +51,7 @@ for (const definition of STRATEGY_CATALOG) {
 /** Catalog retirement is authoritative even when persisted status predates a policy change. */
 export function resolveModelLabStatus(item: StrategyCatalogItem, storedStatus?: string | null): ModelLabStatus {
   if (item.status === "RETIRED") return "RETIRED";
+  if (item.strategy === "TEAM_GOALS") return "REJECTED";
   if (item.strategy === LEGACY_OVER_SHADOW_STRATEGY) {
     return storedStatus === "RETIRED" || storedStatus === "REJECTED" ? storedStatus : "RESEARCH";
   }
@@ -157,6 +159,7 @@ function segmentLabel(row: ModelLabLedgerRow, kind: string) {
 }
 
 export function modelLabSummary(rows: ModelLabLedgerRow[]) {
+  rows = rows.map(row => isQuarantinedTeamMarket(row.market) ? { ...row, dataWarning: TEAM_GOALS_QUARANTINE_REASON } : row);
   const settled = rows.flatMap((row) => {
     const hit = outcomeOf(row);
     return hit == null || row.dataWarning ? [] : [{ row, hit }];

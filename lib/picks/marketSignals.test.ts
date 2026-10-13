@@ -45,7 +45,7 @@ const row = {
 describe("freezeMarketSignals", () => {
   it("zmrazí hlavní i čtyři týmové gólové trhy", () => {
     const signals = freezeMarketSignals(row, books);
-    expect(signals.map((signal) => signal.market)).toEqual(["1X2", "OVER_25", "CORNERS", "CARDS", "FOULS", "TEAM_HOME_05", "TEAM_HOME_15", "TEAM_AWAY_05", "TEAM_AWAY_15"]);
+    expect(signals.map((signal) => signal.market)).toEqual(["1X2", "OVER_25", "CORNERS", "CARDS", "FOULS"]);
     expect(signals.find((signal) => signal.market === "1X2")).toMatchObject({ side: "HOME", publishedTip: true });
     expect(signals.find((signal) => signal.market === "CORNERS")?.line).toBe(9.5);
     expect(signals.find((signal) => signal.market === "FOULS")?.line).toBe(24.5);
@@ -55,7 +55,7 @@ describe("freezeMarketSignals", () => {
     expect(marketProbabilityAt(books, "CORNERS", "OVER", 9.5)).toBeCloseTo(0.5);
     expect(marketProbabilityAt(books, "CORNERS", "OVER", 10.5)).toBeNull();
     expect(marketProbabilityAt(books, "FOULS", "OVER", 24.5)).toBeCloseTo(0.5);
-    expect(marketProbabilityAt(books, "TEAM_HOME_15", "OVER", 1.5)).toBeCloseTo(1 / 2.1 / (1 / 2.1 + 1 / 1.7));
+    expect(marketProbabilityAt(books, "TEAM_HOME_15", "OVER", 1.5)).toBeNull();
   });
 
   it("oddělí prospektivní týmové góly v3 od historické politiky", () => {
@@ -76,7 +76,7 @@ describe("freezeMarketSignals", () => {
   });
 
   it("closing týmových gólů nepřevezme z jiného bookmakera", () => {
-    expect(teamMarketProbabilityAtBookmaker(books, "TEAM_HOME_15", "OVER", 1.5, "Sharp")).toBeCloseTo(1 / 2.1 / (1 / 2.1 + 1 / 1.7));
+    expect(teamMarketProbabilityAtBookmaker(books, "TEAM_HOME_15", "OVER", 1.5, "Sharp")).toBeNull();
     expect(teamMarketProbabilityAtBookmaker(books, "TEAM_HOME_15", "OVER", 1.5, "Jiná kniha")).toBeNull();
   });
 });

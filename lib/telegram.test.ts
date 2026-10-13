@@ -12,7 +12,7 @@ const emptyMetrics = { all: {}, recent: {}, selectionAccuracy: null, unit: "SELE
 function day(): TelegramDay {
   return {
     date: "2026-09-13", generatedAt: "2026-09-13T07:00:00.000Z",
-    strategies: [{ strategy: "TEAM_GOALS", data: {
+    strategies: [{ strategy: "CORNERS", data: {
       opportunities: [0, 1, 2, 3].map((index) => ({ id: String(index), fixtureId: index, leagueId: 1, leagueName: "Liga", kickoff: "2026-09-13T12:00:00Z", homeName: index === 0 ? "A < B" : `Domácí ${index}`, awayName: `Hosté ${index}`, selection: "více než 1,5", reason: "Důvod & kontext", risk: "Riziko", probability: .61, marketProbability: .55, edge: .06, expectedValue: .1, confidence: 12, odds: 1.82, bookmaker: "Book", priceKind: index === 0 ? "SYNTHETIC" : "DIRECT", outcome: "PENDING", score: null, ticketSlots: [] })),
       tickets: [], metrics: emptyMetrics, coverage: { candidates: 4, priced: 4, tickets: 0 }, emptyReason: null,
     } as never }],
@@ -20,6 +20,13 @@ function day(): TelegramDay {
 }
 
 describe("telegram formatting", () => {
+  it("blocks cached team recommendations but preserves result formatting", () => {
+    const payload = day();
+    payload.strategies[0].strategy = "TEAM_GOALS";
+    expect(formatTips(payload).join(" ")).not.toContain("1.82");
+    payload.strategies[0].data.opportunities[0].outcome = "WON";
+    expect(formatResults(payload).join(" ")).toContain("1.82");
+  });
   beforeEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks(); mocks.cursorFind.mockResolvedValue(null); mocks.cursorUpsert.mockResolvedValue({}); mocks.strategyData.mockResolvedValue(day().strategies[0].data); });
   it("uses Prague time across summer and winter", () => {
     expect(pragueClock(new Date("2026-07-10T07:00:00Z"))).toEqual({ date: "2026-07-10", hour: 9 });
@@ -57,7 +64,7 @@ describe("telegram formatting", () => {
     vi.stubEnv("TELEGRAM_ALLOWED_USER_IDS", "12, 34"); expect(telegramConfig().enabled).toBe(false); expect(telegramConfig().allowedUsers.has("34")).toBe(true);
   });
   it("starts /dalsi after the published top three and persists its cursor", async () => {
-    const messages = await handleTelegramCommand("12", "/dalsi tymove_goly", new Date("2026-09-13T08:00:00Z"));
+    const messages = await handleTelegramCommand("12", "/dalsi rohy", new Date("2026-09-13T08:00:00Z"));
     const text = messages.join("\n"); expect(text).toContain("Domácí 3"); expect(text).not.toContain("A &lt; B");
     expect(mocks.cursorUpsert).toHaveBeenCalledWith(expect.objectContaining({ create: expect.objectContaining({ offset: 4 }) }));
   });

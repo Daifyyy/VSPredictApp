@@ -9,6 +9,15 @@ import { strategyHubData } from './strategyHubStore';
 import { summarizePortfolio } from '../picks/portfolioStats';
 afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks(); });
 describe('stored strategy accounting', () => {
+  it('blocks team tips before any cache or database read', async () => {
+    vi.stubEnv('RESOURCE_SAVING_READS_ENABLED', 'true');
+    const data = await strategyHubData('TEAM_GOALS', '2026-10-13');
+    expect(data.emptyReason).toBe('TEAM_MARKET_DATA_QUARANTINE');
+    expect(data.opportunities).toEqual([]);
+    expect(data.metrics.limitedReason).toBe('TEAM_MARKET_DATA_QUARANTINE');
+    expect(mocks.cache).not.toHaveBeenCalled();
+    expect(mocks.signals).not.toHaveBeenCalled();
+  });
   it('renders the same v5 card from the small projection without fetching full snapshots', async () => {
     vi.stubEnv('RESOURCE_SAVING_READS_ENABLED', 'true');
     const metrics = { all: summarizePortfolio([]), recent: summarizePortfolio([]), selectionAccuracy: null, unit: 'SELECTIONS' };
