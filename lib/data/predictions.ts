@@ -90,7 +90,7 @@ import { FOUL_MODEL_VERSION, predictFouls } from "@/lib/picks/fouls";
 import { captureAutonomousPortfolio, closeAutonomousPortfolio, settleAutonomousPortfolio, repairAutonomousGoalSettlements } from "./autonomousPortfolioStore";
 import { captureQuickOverviewDay, closeQuickOverviewSelections, settleQuickOverviewSelections } from "./quickOverviewStore";
 import { closeIntuitionTicketLegs } from "./intuitionTicketStore";
-import { priorityOrder } from "@/lib/picks/oddsCronPolicy";
+import { priorityOrder, priorityCaptureWhere, closingPrioritySets } from "@/lib/picks/oddsCronPolicy";
 import { invalidateCachedJson } from "./cache";
 import { captureCalibrationShadows } from "./calibrationShadowStore";
 import { captureMainModelShadow } from "./mainModelShadowStore";
@@ -654,18 +654,8 @@ export async function runSnapshotOdds(
   const now = new Date();
   const priorityHorizon = new Date(now.getTime() + 90 * 60_000);
   const priorityRows = mode === "priority" ? await prisma.autonomousTipSnapshot.findMany({
-    where: {
-      strategy: { not: "OVER_25_LEGACY_SHADOW" },
-      ...(closingOnly ? { status: "candidate" } : {}),
-      kickoff: { gt: now, lte: priorityHorizon },
-      OR: [
-        { status: "candidate" },
-        // Watch řádky nejblíže hraně. Přesná kvalifikace zůstává v policy modulu;
-        // zde jde jen o levnější opakovaný vzorek, nikdy o publikaci tipu.
-        { status: "watch", edge: { gte: -0.02 } },
-      ],
-    },
-    select: { fixtureId: true, status: true, kickoff: true },
+    where: priorityCaptureWhere(now, closingOnly),
+    select: { fixtureId: true, strategy: true, status: true, kickoff: true },
     orderBy: [{ status: "asc" }, { kickoff: "asc" }],
     take: 100,
   }) : [];
@@ -674,8 +664,7 @@ export async function runSnapshotOdds(
     select: { fixtureId: true },
     distinct: ["fixtureId"],
   })).map((row) => row.fixtureId) : [];
-  const p0 = new Set([...ticketFixtureIds, ...priorityRows.filter((row) => row.status === "candidate").map((row) => row.fixtureId)]);
-  const p1 = new Set(closingOnly ? [] : priorityRows.filter((row) => row.status !== "candidate").map((row) => row.fixtureId));
+  const { p0, p1 } = closingPrioritySets(priorityRows, ticketFixtureIds, closingOnly);
   const candidates = await fixturesNeedingOdds({
     // Jen klubové ligy: reprezentace kurzy prakticky nemají a napříč konfederacemi
     // by stejně nebyly srovnatelné (týž důvod jako u benchmarku).
