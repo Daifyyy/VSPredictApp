@@ -41,7 +41,7 @@ export function isStrategyHubId(value: string | null): value is StrategyHubId {
 }
 
 export function isAllowedStrategyDate(date: string, today: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+  if (!isDateKey(date)) return false;
   const day = new Date(`${date}T12:00:00Z`).getTime();
   const base = new Date(`${today}T12:00:00Z`).getTime();
   const delta = Math.round((day - base) / 86400_000);

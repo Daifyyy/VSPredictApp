@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+afterEach(() => vi.unstubAllEnvs());
 import type { Prisma } from "@prisma/client";
 vi.mock("@/lib/db", () => ({ prisma: {
   fixturePrediction: { findUnique: vi.fn() },
@@ -49,6 +50,26 @@ beforeEach(() => {
 });
 
 describe("prospective legacy Over capture", () => {
+  it("still settles already captured BTTS after focus pause", async () => {
+    vi.stubEnv("STRATEGY_FOCUS_MODE_ENABLED", "true");
+    vi.mocked(prisma.fixturePrediction.findUnique).mockResolvedValue({ status: "FT", homeGoals: 2, awayGoals: 1 } as never);
+    vi.mocked(prisma.autonomousTipSnapshot.findMany).mockResolvedValueOnce([]).mockResolvedValueOnce([
+      { id: "btts-before-pause", strategy: "BTTS_YES", market: "BTTS", side: "OVER", line: null, decimalOdds: 1.8, stake: 1 },
+    ] as never);
+    vi.mocked(prisma.autonomousTipSnapshot.updateMany).mockResolvedValue({ count: 1 });
+    expect(await settleAutonomousPortfolio(1, at)).toBe(1);
+    expect(prisma.autonomousTipSnapshot.updateMany).toHaveBeenCalledWith({ where: { id: "btts-before-pause", settledAt: null }, data: { hit: true, profit: .8, settlementStatus: "SETTLED", settledAt: at } });
+  });
+  it("focus mode keeps both Over branches but does not write new BTTS or count records", async () => {
+    vi.stubEnv("STRATEGY_FOCUS_MODE_ENABLED", "true");
+    await captureAutonomousPortfolio(1, books, at);
+    const strategies = [...stored.values()].map(row => row.strategy);
+    expect(strategies).toContain("OVER_25");
+    expect(strategies).toContain("OVER_25_LEGACY_SHADOW");
+    for (const paused of ["BTTS_YES", "CORNERS", "CARDS_REF", "FOULS"]) expect(strategies).not.toContain(paused);
+    const queries = vi.mocked(prisma.modelStrategyDefinition.findUnique).mock.calls;
+    expect(JSON.stringify(queries)).not.toMatch(/CORNERS|CARDS_REF|FOULS/);
+  });
   it("captures a new research cohort, not retired history; current v2 still rejects readiness 6", async () => {
     await captureAutonomousPortfolio(1, books, at);
     expect(stored.get("1:OVER_25:2")?.status).toBe("watch");

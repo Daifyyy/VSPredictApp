@@ -53,6 +53,7 @@ type PredictionRowSource = Omit<FixturePrediction, "oddsSeries" | "oddsSeriesAt"
 
 function toRow(p: PredictionRowSource): PredictionRow {
   return {
+    modelCalculatedAt: p.predictedAt.toISOString(),
     fixtureId: p.fixtureId,
     leagueId: p.leagueId,
     season: p.season,

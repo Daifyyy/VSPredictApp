@@ -5,10 +5,46 @@ vi.mock('@/lib/db', () => ({ prisma: {
   $queryRaw: mocks.query, marketSignalSnapshot: { findMany: mocks.signals },
 } }));
 vi.mock('@/lib/data/intuitionTicketStore', () => ({ previewIntuitionTickets: vi.fn() }));
-import { strategyHubData } from './strategyHubStore';
+import { strategyHubData, strategyMetricsKey } from './strategyHubStore';
+import { sharedReadCache } from '../boundedCache';
 import { summarizePortfolio } from '../picks/portfolioStats';
 afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks(); });
 describe('stored strategy accounting', () => {
+  it('isolates all Over cache identities and rejects foreign cohorts', () => {
+    expect(new Set(['current', 'original', 'archive'].map(variant => strategyMetricsKey('OVER_25', variant as 'current' | 'original' | 'archive'))).size).toBe(3);
+    expect(() => strategyMetricsKey('VALUE', 'original')).toThrow('INVALID_STRATEGY_COHORT');
+  });
+  it('reads original research only from its own policy and bounded day', async () => {
+    vi.stubEnv('RESOURCE_SAVING_READS_ENABLED', 'false');
+    const key = strategyMetricsKey('OVER_25', 'original');
+    sharedReadCache.delete(key);
+    const metrics = { all: summarizePortfolio([]), recent: summarizePortfolio([]), selectionAccuracy: null, unit: 'SELECTIONS' };
+    mocks.cache.mockResolvedValue({ payload: { metrics, asOf: new Date().toISOString() } });
+    mocks.tips.mockResolvedValue([]);
+    const data = await strategyHubData('OVER_25', '2026-10-18', 'original');
+    expect(data.metrics).toEqual(metrics);
+    expect(mocks.cache).toHaveBeenCalledWith({ where: { key }, select: { payload: true } });
+    expect(mocks.tips.mock.calls[0][0].where).toMatchObject({ strategy: 'OVER_25_LEGACY_SHADOW', policyVersion: 1, modelContext: 'LEAGUE', kickoff: { gte: expect.any(Date), lt: expect.any(Date) } });
+  });
+  it('serves archive accounting without querying fixtures or inventing daily opportunities', async () => {
+    const key = strategyMetricsKey('OVER_25', 'archive');
+    sharedReadCache.delete(key);
+    const metrics = { all: summarizePortfolio([]), recent: summarizePortfolio([]), selectionAccuracy: null, unit: 'SELECTIONS' };
+    mocks.cache.mockResolvedValue({ payload: { metrics, asOf: new Date().toISOString() } });
+    const data = await strategyHubData('OVER_25', '2026-10-18', 'archive');
+    expect(data.metrics).toEqual(metrics);
+    expect(data.emptyReason).toBe('HISTORICAL_COHORT');
+    expect(data.opportunities).toEqual([]);
+    expect(mocks.tips).not.toHaveBeenCalled();
+    expect(mocks.fixtures).not.toHaveBeenCalled();
+  });
+  it('never rebuilds missing original metrics even with saving reads disabled', async () => {
+    sharedReadCache.delete(strategyMetricsKey('OVER_25', 'original'));
+    vi.stubEnv('RESOURCE_SAVING_READS_ENABLED', 'false');
+    mocks.cache.mockResolvedValue(null);
+    await expect(strategyHubData('OVER_25', '2026-10-19', 'original')).rejects.toThrow('STRATEGY_METRICS_NOT_CAPTURED');
+    expect(mocks.tips).not.toHaveBeenCalled();
+  });
   it('blocks team tips before any cache or database read', async () => {
     vi.stubEnv('RESOURCE_SAVING_READS_ENABLED', 'true');
     const data = await strategyHubData('TEAM_GOALS', '2026-10-13');

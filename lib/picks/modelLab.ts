@@ -1,5 +1,6 @@
 import { freshClosing } from "./evaluation";
-import { AUTONOMOUS_POLICY_VERSION, LEGACY_OVER_SHADOW_STRATEGY, LEGACY_OVER_SHADOW_POLICY_VERSION } from "./autonomousPortfolio";
+import { AUTONOMOUS_POLICY_VERSION, LEGACY_OVER_SHADOW_STRATEGY } from "./autonomousPortfolio";
+import { OVER_COHORTS } from "./overCohorts";
 import { summarizePortfolio, type PortfolioSummary } from "./portfolioStats";
 import { resolvedStrategyOutcome } from "./strategyOutcome";
 import { isQuarantinedTeamMarket, TEAM_GOALS_QUARANTINE_REASON } from "./teamMarketSafety";
@@ -20,11 +21,10 @@ export interface StrategyCatalogItem {
 }
 
 export const STRATEGY_CATALOG: StrategyCatalogItem[] = [
+  ...OVER_COHORTS.map(({ strategy, policyVersion, title, status, rules, decision }) => ({ strategy, policyVersion, market: "OVER_25", title, status, minimumSample: 200, rules, decision })),
   { strategy: "ONE_X_TWO_GUARDED", policyVersion: 1, market: "1X2", title: "1X2 · konzervativní filtr", status: "RESEARCH", minimumSample: 200, rules: "Samostatná neměnná kohorta konzervativního 1X2 výběru", decision: "Výsledek filtrovaných sázek není výkon všech predikcí hlavního modelu." },
-  { strategy: LEGACY_OVER_SHADOW_STRATEGY, policyVersion: LEGACY_OVER_SHADOW_POLICY_VERSION, market: "OVER_25", title: "Over 2,5 · původní brána (research)", status: "RESEARCH", minimumSample: 200, rules: "60 % · připravenost 6 · edge ≥ 4 p. b. bez stropu · EV ≥ 2 % · 3 vzorky · 15 minut", decision: "Nová prospektivní srovnávací kohorta na opravených datech; nemíchat s historickou OVER_25 v1 ani distribuovat jako tipy." },
   { strategy: "PRESSURE_FLOW_V5", policyVersion: 501, market: "GOAL_FLOW", title: "Průběh v5", status: "RESEARCH", minimumSample: 200, rules: "Přímý kurz 1,50–3,50 · coverage 75 % · pravděpodobnost 55 % · edge 4 p. b. · EV 3 %", decision: "Oddělená kalibrace Over 2,5, BTTS a týmových gólů na prospektivní kohortě" },
   { strategy: "ONE_X_TWO", policyVersion: 2, market: "1X2", title: "1X2 v2", status: "LIVE_TEST", minimumSample: 200, rules: "58 % · náskok 10 p. b. · edge 4 p. b. · EV 2 %", decision: "ROI, closing benchmark a kalibrace na stejné kohortě" },
-  { strategy: "OVER_25", policyVersion: 1, market: "OVER_25", title: "Over 2,5 v1", status: "LIVE_TEST", minimumSample: 200, rules: "60 % · edge 4 p. b. · EV 2 %", decision: "Časový holdout, kladné CLV a stabilní kalibrace" },
   { strategy: "BTTS_YES", policyVersion: 1, market: "BTTS", title: "BTTS Ano v1", status: "LIVE_TEST", minimumSample: 200, rules: "60 % · edge 2 p. b. · EV 2 %", decision: "Časový holdout, kladné CLV a stabilita napříč ligami" },
   { strategy: "CORNERS", policyVersion: 1, market: "CORNERS", title: "Rohy Over/Under v1", status: "RESEARCH", minimumSample: 200, rules: "60 % · edge 5 p. b. · EV 3 % · skutečná půlková linie", decision: "Po pre-launch auditu prospektivní ROI, čerstvé CLV a kalibrace proti stejnému trhu" },
   { strategy: "CARDS_REF", policyVersion: 1, market: "CARDS", title: "Karty · s rozhodčím", status: "RESEARCH", minimumSample: 200, rules: "Oddělená verze s auditním faktorem rozhodčího", decision: "Kalibrace a benchmark pouze v rámci stejné verze" },
@@ -36,15 +36,13 @@ export const STRATEGY_CATALOG: StrategyCatalogItem[] = [
   { strategy: "PUBLISHED_1X2", policyVersion: 1, market: "1X2", title: "Publikované 1X2 v1", status: "RETIRED", minimumSample: 0, rules: "55 % · náskok 10 p. b.", decision: "Pouze neměnný archiv" },
 ];
 
-// Uživatel smí v aktivním přehledu vidět pouze novou bezpečnější gólovou kohortu.
+// BTTS zachovává historickou policy odděleně; kohorty Overu řídí společný registr.
 for (const definition of STRATEGY_CATALOG) {
-  if ((definition.strategy === "OVER_25" || definition.strategy === "BTTS_YES") && definition.status !== "RETIRED") {
+  if (definition.strategy === "BTTS_YES" && definition.status !== "RETIRED") {
     STRATEGY_CATALOG.push({ ...definition, status: "RETIRED", decision: "Historická policy v1; výsledky se nepřepočítávají novými pravidly." });
     definition.policyVersion = AUTONOMOUS_POLICY_VERSION[definition.strategy];
-    definition.title = definition.strategy === "OVER_25" ? "Over 2,5 v2" : "BTTS Ano v2";
-    definition.rules = definition.strategy === "OVER_25"
-      ? "60 % · vzorek 8 · edge 4–12 p. b. · EV 2 %"
-      : "60 % · vzorek 8 · edge 2–12 p. b. · EV 2 %";
+    definition.title = "BTTS Ano v2";
+    definition.rules = "60 % · vzorek 8 · edge 2–12 p. b. · EV 2 %";
   }
 }
 

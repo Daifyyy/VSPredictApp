@@ -1,4 +1,5 @@
 import "server-only";
+import { strategyLifecycle } from "../picks/strategyLifecycle";
 import { createHash } from "node:crypto";
 import { prisma } from "../db";
 import { pragueDateBounds } from "../recentWindow";
@@ -27,6 +28,8 @@ export async function loadDailyAutonomousSources(date:string, now=new Date()) {
   const evidence=new Map(cached.map(c=>[c.key,c.payload as unknown as DailyEvidence]));
   const rejected:Array<{id:string;reason:string}>=[];
   const candidates=rows.flatMap(row=>{
+    const lifecycle = strategyLifecycle(row.strategy);
+    if (!lifecycle.publish) { rejected.push({id:`AUTONOMOUS:${row.id}`,reason:lifecycle.reason!}); return []; }
     const fixture=byFixture.get(row.fixtureId);
     if(!fixture){rejected.push({id:`AUTONOMOUS:${row.id}`,reason:"MISSING_FIXTURE"});return [];}
     const definition=definitions.find(d=>d.strategy===row.strategy&&d.policyVersion===row.policyVersion&&d.modelVersion===row.modelVersion&&d.modelContext===row.modelContext);

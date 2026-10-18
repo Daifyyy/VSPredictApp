@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { loadTelegramDay } from "./telegram";
 
 const mocks = vi.hoisted(() => ({ strategyData: vi.fn(), cursorFind: vi.fn(), cursorUpsert: vi.fn(), captureWindow: vi.fn() }));
 vi.mock("@/lib/db", () => ({ prisma: { telegramCommandCursor: { findUnique: mocks.cursorFind, upsert: mocks.cursorUpsert } } }));
@@ -20,6 +21,20 @@ function day(): TelegramDay {
 }
 
 describe("telegram formatting", () => {
+  it("does not republish paused candidates but still shows their results", async () => {
+    vi.stubEnv("STRATEGY_FOCUS_MODE_ENABLED", "true");
+    const payload = day();
+    expect(formatTips(payload).join(" ")).not.toContain("1.82");
+    payload.strategies[0].data.opportunities[0].outcome = "WON";
+    expect(formatResults(payload).join(" ")).toContain("1.82");
+    const publish = await loadTelegramDay(payload.date, "PUBLISH");
+    expect(publish.strategies.find(row => row.strategy === "CORNERS")?.data).toMatchObject({ opportunities: [], metrics: null });
+    expect(mocks.strategyData).not.toHaveBeenCalledWith("CORNERS", payload.date);
+    expect(mocks.strategyData).toHaveBeenCalledWith("VALUE", payload.date);
+    expect(mocks.strategyData).toHaveBeenCalledWith("ELO_INTUITION", payload.date);
+    await loadTelegramDay(payload.date, "READ");
+    expect(mocks.strategyData).toHaveBeenCalledWith("CORNERS", payload.date);
+  });
   it("blocks cached team recommendations but preserves result formatting", () => {
     const payload = day();
     payload.strategies[0].strategy = "TEAM_GOALS";

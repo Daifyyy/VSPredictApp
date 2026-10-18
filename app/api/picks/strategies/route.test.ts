@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+afterEach(() => vi.unstubAllEnvs());
 
 const mocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
@@ -18,6 +19,37 @@ vi.mock("@/lib/rateLimit", () => ({ allowRequest: mocks.allowRequest, clientKey:
 import { GET } from "./route";
 
 describe("GET /api/picks/strategies", () => {
+  it("labels paused collection without hiding history or exposing protected picks", async () => {
+    vi.stubEnv("STRATEGY_FOCUS_MODE_ENABLED", "true");
+    const response = await GET(new Request("http://localhost/api/picks/strategies?strategy=CORNERS"));
+    const body = await response.json();
+    expect(body.catalog.find((item: {id: string}) => item.id === "CORNERS").statusLabel).toBe("Pozastavený sběr");
+    expect(body.catalog.find((item: {id: string}) => item.id === "VALUE").statusLabel).toBe("Experiment");
+    expect(body.locked).toBe(true);
+    expect(body.data).toBeUndefined();
+    expect(mocks.strategyHubData).not.toHaveBeenCalled();
+  });
+  it("keeps research protected and exposes only public cohort metadata", async () => {
+    const response = await GET(new Request("http://localhost/api/picks/strategies?strategy=OVER_25&cohort=original"));
+    const body = await response.json();
+    expect(body.locked).toBe(true);
+    expect(body.cohort.strategy).toBe("OVER_25_LEGACY_SHADOW");
+    expect(body.data).toBeUndefined();
+    expect(mocks.strategyHubData).not.toHaveBeenCalled();
+  });
+  it("passes an explicit original cohort to the store only for PRO", async () => {
+    mocks.getEntitlement.mockReturnValue({ pro: true });
+    mocks.strategyHubData.mockResolvedValue({ opportunities: [], tickets: [] });
+    const response = await GET(new Request("http://localhost/api/picks/strategies?strategy=OVER_25&cohort=original"));
+    expect(response.status).toBe(200);
+    expect(mocks.strategyHubData).toHaveBeenCalledWith("OVER_25", "2026-09-12", "original");
+  });
+  it.each(["strategy=VALUE&cohort=original", "strategy=OVER_25&cohort=other", "strategy=OVER_25&cohort=original&summary=1"])("rejects invalid cohort requests: %s", async query => {
+    const response = await GET(new Request(`http://localhost/api/picks/strategies?${query}`));
+    expect(response.status).toBe(400);
+    expect(mocks.strategyHubData).not.toHaveBeenCalled();
+    expect(mocks.strategyHubDailySummary).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.allowRequest.mockReturnValue(true);

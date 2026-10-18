@@ -1,4 +1,7 @@
 import type { BookOdds } from "./apiFootball";
+import { openingForecastAudit } from "../picks/openingForecastAudit";
+import { captureMarketAllowed } from "../picks/strategyLifecycle";
+import { pressureV5OpportunitiesEnabled } from "../picks/pressureCollectionPolicy";
 import { prisma } from "@/lib/db";
 import { getPredictionByFixture } from "./predictionStore";
 import {
@@ -49,6 +52,7 @@ export async function openMarketSignals(
   const row = await getPredictionByFixture(fixtureId);
   if (!row) return;
   const signals = freezeMarketSignals(row, books).filter((signal) =>
+    captureMarketAllowed(signal.market) &&
     (options.includeCounts !== false || !["CORNERS", "CARDS", "FOULS"].includes(signal.market)) &&
     (options.includeTeamGoals !== false || !signal.market.startsWith("TEAM_"))
   );
@@ -58,6 +62,8 @@ export async function openMarketSignals(
       const quote = immutableQuote(books, signal.market, signal.line);
       const auditQuote = v2Quote(books, signal.market, signal.side, signal.line, at);
       return {
+      ...(signal.market === "1X2" && process.env.OPENING_FORECAST_AUDIT_ENABLED === "true"
+        ? { openingForecastAudit: openingForecastAudit(row, books, at) ?? undefined } : {}),
       fixtureId,
       leagueId: row.leagueId,
       kickoff: new Date(row.kickoff),
@@ -93,7 +99,7 @@ export async function openMarketSignals(
     }; })(),
     update: {},
   })));
-  if (process.env.PRESSURE_V5_OPPORTUNITIES_ENABLED === "true") {
+  if (pressureV5OpportunitiesEnabled()) {
     const pressure = row.inputSnapshot?.performancePressure as PerformancePressureShadowV5 | null | undefined;
     if (pressure?.version === 5) {
       const research = pressureFlowCandidates(pressure, books, at);

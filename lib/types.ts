@@ -946,6 +946,8 @@ export interface InsightReport {
  * predikční záložka, track-record i kalibrace. `kickoff` je ISO 8601.
  */
 export interface PredictionRow {
+  /** Actual model calculation time; optional only for legacy/mock rows. */
+  modelCalculatedAt?: string;
   fixtureId: number;
   leagueId: number;
   season: number;

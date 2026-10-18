@@ -13,6 +13,7 @@ import { sharedReadCache } from "@/lib/boundedCache";
 import { createHash } from "node:crypto";
 import { localDateKey } from "@/lib/competitionGrouping";
 import { TEAM_GOALS_QUARANTINE_REASON } from "@/lib/picks/teamMarketSafety";
+import { overCohortDefinition, type OverCohort } from "@/lib/picks/overCohorts";
 
 export interface StrategyHubOpportunity {
   id: string;
@@ -97,24 +98,34 @@ function teamGoalSelection(market: string, home: string, away: string) {
 }
 
 
-function metricsKey(strategy: StrategyHubId) {
+function hubCohort(strategy: StrategyHubId, variant: OverCohort) {
+  return strategy === "OVER_25" && variant === "archive"
+    ? { modelContext: "LEAGUE" as const, modelVersion: 7, contextVersion: 1, countModelVersion: null }
+    : strategyCohort(strategy);
+}
+
+export function strategyMetricsKey(strategy: StrategyHubId, variant: OverCohort = "current") {
   const policy = STRATEGY_HUB_CATALOG.find(item => item.id === strategy)!.policyVersion;
-  const cohort = JSON.stringify({ policy, ...strategyCohort(strategy) });
+  if (variant !== "current" && strategy !== "OVER_25") throw new Error("INVALID_STRATEGY_COHORT");
+  const selected = overCohortDefinition(variant);
+  const cohort = JSON.stringify({ policy: strategy === "OVER_25" ? selected.policyVersion : policy, ...hubCohort(strategy, variant),
+    ...(variant !== "current" ? { source: selected.strategy } : {}) });
   return `strategy-metrics:v1:${strategy}:${createHash('sha256').update(cohort).digest('hex').slice(0, 16)}`;
 }
 
 /** Shared domain payload only; authorization stays in API/page callers. */
-export async function strategyHubData(strategy: StrategyHubId, date: string) {
+export async function strategyHubData(strategy: StrategyHubId, date: string, variant: OverCohort = "current") {
+  const key = strategyMetricsKey(strategy, variant);
   if (strategy === "TEAM_GOALS") return quarantinedTeamData();
-  if (process.env.RESOURCE_SAVING_READS_ENABLED !== 'true') return computeStrategyHubData(strategy, date);
-  return sharedReadCache.read(`strategy-day:${metricsKey(strategy)}:${date}`, 60_000, async () => {
-    const stored = await sharedReadCache.read(metricsKey(strategy), 15 * 60_000, async () => {
-      const row = await prisma.apiCache.findUnique({ where: { key: metricsKey(strategy) }, select: { payload: true } });
+  if (variant === "current" && process.env.RESOURCE_SAVING_READS_ENABLED !== 'true') return computeStrategyHubData(strategy, date);
+  return sharedReadCache.read(`strategy-day:${key}:${date}`, 60_000, async () => {
+    const stored = await sharedReadCache.read(key, 15 * 60_000, async () => {
+      const row = await prisma.apiCache.findUnique({ where: { key }, select: { payload: true } });
       return row?.payload as unknown as { metrics: StrategyHubMetrics; asOf: string } | null;
     });
     // Missing historical data is not a zero balance, and a read never rebuilds history.
     if (!stored?.metrics || !Number.isFinite(Date.parse(stored.asOf))) throw new Error('STRATEGY_METRICS_NOT_CAPTURED');
-    const data = await computeStrategyHubData(strategy, date, stored.metrics);
+    const data = await computeStrategyHubData(strategy, date, stored.metrics, variant);
     const stale = Date.now() - Date.parse(stored.asOf) > 26 * 3600_000;
     return { ...data, asOf: stored.asOf, stale, limitedReason: stale ? 'STRATEGY_METRICS_STALE' : null };
   });
@@ -122,21 +133,39 @@ export async function strategyHubData(strategy: StrategyHubId, date: string) {
 
 /** Explicit administrative/cron work, never called by a read or build. */
 export async function refreshStrategyHubMetrics(now = new Date()) {
+  const startedAt = Date.now();
   const date = localDateKey(now);
-  for (const definition of STRATEGY_HUB_CATALOG) {
-    const data = await computeStrategyHubData(definition.id, date);
+  const targets = STRATEGY_HUB_CATALOG.map(definition => ({ id: definition.id, variant: "current" as OverCohort }));
+  targets.push({ id: "OVER_25", variant: "original" }, { id: "OVER_25", variant: "archive" });
+  for (const definition of targets) {
+    const key = strategyMetricsKey(definition.id, definition.variant);
+    if (definition.variant !== "current") {
+      // Optional historical views may not consume the remainder of a busy audit.
+      if (Date.now() - startedAt > 20_000) continue;
+      const existing = await prisma.apiCache.findUnique({ where: { key }, select: { payload: true } });
+      const report = existing?.payload as unknown as { asOf?: string; metrics?: StrategyHubMetrics } | null;
+      const age = now.getTime() - Date.parse(report?.asOf ?? "");
+      if (report?.metrics && age >= 0 && age < 24 * 3600_000) continue;
+    }
+    const data = await computeStrategyHubData(definition.id, date, undefined, definition.variant);
     const payload = JSON.parse(JSON.stringify({ metrics: data.metrics, asOf: now.toISOString() })) as Prisma.InputJsonValue;
     if (Buffer.byteLength(JSON.stringify(payload), 'utf8') > 250_000) throw new Error('STRATEGY_METRICS_TOO_LARGE');
-    const key = metricsKey(definition.id), expiresAt = new Date(+now + 90 * 86400_000);
+    const expiresAt = new Date(+now + 90 * 86400_000);
     await prisma.apiCache.upsert({ where: { key }, create: { key, payload, expiresAt }, update: { payload, expiresAt } });
     sharedReadCache.delete(key);
     sharedReadCache.delete(`strategy-day:${key}:${date}`);
   }
 }
 
-async function computeStrategyHubData(strategy: StrategyHubId, date: string, cachedMetrics?: StrategyHubMetrics) {
+async function computeStrategyHubData(strategy: StrategyHubId, date: string, cachedMetrics?: StrategyHubMetrics, variant: OverCohort = "current") {
   if (strategy === "TEAM_GOALS") return quarantinedTeamData();
-  const definition = STRATEGY_HUB_CATALOG.find((item) => item.id === strategy)!;
+  if (variant === "archive" && cachedMetrics) return {
+    opportunities: [] as StrategyHubOpportunity[], tickets: [] as StrategyHubTicket[], metrics: cachedMetrics,
+    coverage: { candidates: 0, priced: 0, tickets: 0 }, emptyReason: "HISTORICAL_COHORT",
+  };
+  const baseDefinition = STRATEGY_HUB_CATALOG.find((item) => item.id === strategy)!;
+  const definition = strategy === "OVER_25" && variant === "original"
+    ? { ...baseDefinition, status: "RESEARCH" as const } : baseDefinition;
   const bounds = pragueDateBounds(date);
   const recentFrom = new Date(Date.now() - 30 * 86400_000);
   const dayWhere = cachedMetrics ? { kickoff: { gte: bounds.start, lt: bounds.end } } : {};
@@ -212,7 +241,9 @@ async function computeStrategyHubData(strategy: StrategyHubId, date: string, cac
   }
 
   const rows = await prisma.autonomousTipSnapshot.findMany({
-    where: { strategy, policyVersion: definition.policyVersion, status: "candidate", ...strategyCohort(strategy), ...dayWhere },
+    where: { strategy: strategy === "OVER_25" ? overCohortDefinition(variant).strategy : strategy,
+      policyVersion: strategy === "OVER_25" ? overCohortDefinition(variant).policyVersion : definition.policyVersion,
+      status: "candidate", ...hubCohort(strategy, variant), ...dayWhere },
     orderBy: { qualifiedAt: "asc" },
     select: { id: true, fixtureId: true, leagueId: true, kickoff: true, homeTeamId: true, awayTeamId: true, homeName: true, awayName: true, market: true, side: true, line: true, modelProbability: true, marketProbability: true, edge: true, expectedValue: true, decimalOdds: true, bookmaker: true, sampleCount: true, stake: true, reason: true, qualifiedAt: true, closingMarketProbability: true, closedAt: true, closingFreshness: true, closingBenchmarkQuality: true, priceClv: true, probabilityClv: true, sameBookClv: true, clvMethodVersion: true, closingBenchmarkProbability: true, openingBookmaker: true, settlementStatus: true, actualCount: true, hit: true },
   });

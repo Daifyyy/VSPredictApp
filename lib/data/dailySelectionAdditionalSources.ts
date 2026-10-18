@@ -1,4 +1,5 @@
 import "server-only";
+import { pressureV5OpportunitiesEnabled } from "../picks/pressureCollectionPolicy";
 import { isQuarantinedTeamMarket, TEAM_GOALS_QUARANTINE_REASON } from "../picks/teamMarketSafety";
 import { prisma } from "../db";
 import { pragueDateBounds } from "../recentWindow";
@@ -48,7 +49,7 @@ export async function loadDailyAdditionalSources(date:string,now:Date) {
     if(!quote.bookmaker||quote.decimalOdds==null||quote.fairProbability==null){reject("NO_DIRECT_MARKET");continue;}
     if(v5){
       const pressure=snapshot.performancePressure;
-      if(process.env.PRESSURE_V5_OPPORTUNITIES_ENABLED!=="true"||pressure?.version!==5){reject("RESEARCH_DISABLED");continue;}
+      if(!pressureV5OpportunitiesEnabled()||pressure?.version!==5){reject("RESEARCH_DISABLED");continue;}
       const current=pressureFlowCandidates(pressure,books,f.oddsCurrentAt).find(c=>c.market===row.market&&c.side===row.side&&c.line===row.line);
       if(!current||Math.abs(current.modelProbability-p)>1e-8){reject("CURRENT_PRICE_SOURCE_REJECTED");continue;}
     }else{

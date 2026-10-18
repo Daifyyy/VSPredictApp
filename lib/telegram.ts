@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { strategyLifecycle } from "./picks/strategyLifecycle";
 import { Prisma } from "@prisma/client";
 import { localDateKey } from "@/lib/competitionGrouping";
 import { strategyHubData, type StrategyHubMetrics, type StrategyHubOpportunity, type StrategyHubTicket } from "@/lib/data/strategyHubStore";
@@ -13,7 +14,7 @@ export const TELEGRAM_PAGE_SIZE = 5;
 const TEXT_LIMIT = 3900;
 type Kind = "RESULTS" | "TICKETS" | "STRATEGIES";
 type TelegramOpportunity = StrategyHubOpportunity & { flowDiagnosis?: MatchFlowDiagnosis | null };
-type HubData = { opportunities: TelegramOpportunity[]; tickets: StrategyHubTicket[]; metrics: StrategyHubMetrics; coverage: { candidates: number; priced: number; tickets: number }; emptyReason: string | null };
+type HubData = { opportunities: TelegramOpportunity[]; tickets: StrategyHubTicket[]; metrics: StrategyHubMetrics | null; coverage: { candidates: number; priced: number; tickets: number }; emptyReason: string | null };
 export type TelegramDay = { date: string; generatedAt: string; strategies: Array<{ strategy: StrategyHubId; data: HubData }> };
 const asJson = (value: unknown) => value as Prisma.InputJsonValue;
 const esc = (value: unknown) => String(value ?? "").slice(0, 900).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
@@ -31,7 +32,15 @@ export function pragueClock(now = new Date()) {
 
 export function shiftDateKey(date: string, days: number) { const value = new Date(`${date}T12:00:00Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); }
 export function isTelegramDateAllowed(date: string, today = localDateKey(new Date())) { if (!isDateKey(date)) return false; const delta = (Date.parse(`${date}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / 86400_000; return delta >= -30 && delta <= 7; }
-export async function loadTelegramDay(date: string): Promise<TelegramDay> { return { date, generatedAt: new Date().toISOString(), strategies: await Promise.all(STRATEGY_HUB_IDS.map(async (strategy) => ({ strategy, data: await strategyHubData(strategy, date) as HubData }))) }; }
+export async function loadTelegramDay(date: string, purpose: "READ" | "PUBLISH" = "READ"): Promise<TelegramDay> {
+  return { date, generatedAt: new Date().toISOString(), strategies: await Promise.all(STRATEGY_HUB_IDS.map(async (strategy) => {
+    const lifecycle = strategyLifecycle(strategy);
+    const data: HubData = purpose === "PUBLISH" && !lifecycle.publish
+      ? { opportunities: [], tickets: [], metrics: null, coverage: { candidates: 0, priced: 0, tickets: 0 }, emptyReason: lifecycle.reason }
+      : await strategyHubData(strategy, date) as HubData;
+    return { strategy, data };
+  })) };
+}
 const title = (id: StrategyHubId) => STRATEGY_HUB_CATALOG.find((item) => item.id === id)?.title ?? id;
 const strategyIcon = (id: StrategyHubId) => ({ VALUE: "💎", ELO_INTUITION: "🧠", PRESSURE_FLOW_V5: "🧪", ONE_X_TWO: "🏆", OVER_25: "⚽", BTTS_YES: "🥅", TEAM_GOALS: "🎯", CORNERS: "🚩", CARDS_REF: "🟨", FOULS: "📋" })[id];
 const outcomeIcon = (value: StrategyHubOpportunity["outcome"]) => value === "PENDING" ? "⏳" : value === "WON" ? "✅" : value === "LOST" ? "❌" : "↩️";
@@ -62,6 +71,7 @@ const pressureMarketFilter = (value?: string): PressureMarketFilter | null | und
 export function formatTips(payload: TelegramDay, requested?: StrategyHubId, limit = TELEGRAM_TOP_LIMIT, skip = 0, marketFilter?: PressureMarketFilter) {
   const blocks = [`📅 <b>Výběry na ${payload.date}</b>`];
   for (const { strategy, data } of payload.strategies.filter((row) => !requested || row.strategy === requested)) {
+    if (strategyLifecycle(strategy).state === "PAUSED") { blocks.push(`${strategyIcon(strategy)} <b>${esc(title(strategy))}</b>\nSběr pozastaven. Historické výběry se dále vyhodnocují.`); continue; }
     if (strategy === "TEAM_GOALS" || data.emptyReason === "TEAM_MARKET_DATA_QUARANTINE" || (strategy === "PRESSURE_FLOW_V5" && marketFilter === "TEAM_GOALS")) { blocks.push(`${strategyIcon(strategy)} <b>${esc(title(strategy))}</b>\nDočasně blokováno: ověřujeme identitu kurzů. Nejde o nedostatek příležitostí.`); continue; }
     const eligible = data.opportunities.filter((item) => !item.market?.startsWith("TEAM_") && (strategy !== "PRESSURE_FLOW_V5" || pressureMarketMatches(item.market, marketFilter)));
     const picks = eligible.slice(skip, skip + limit); blocks.push(picks.length ? `${strategyIcon(strategy)} <b>${esc(title(strategy))}</b>` : empty(strategy), ...picks.map(opportunity));
@@ -127,7 +137,7 @@ export async function publishTelegramMorning(now = new Date(), options: { dryRun
     prisma.telegramUpdateReceipt.deleteMany({ where: { createdAt: { lt: new Date(now.getTime() - 30 * 86400_000) } } }),
   ]);
   await captureIntuitionWindow(clock.date, now, true);
-  const today = await loadTelegramDay(clock.date); const entries: Array<{ kind: Kind; payload: TelegramDay }> = [{ kind: "RESULTS", payload: await publishedResults(shiftDateKey(clock.date, -1), config.channelId) }, { kind: "TICKETS", payload: today }, { kind: "STRATEGIES", payload: today }];
+  const today = await loadTelegramDay(clock.date, "PUBLISH"); const entries: Array<{ kind: Kind; payload: TelegramDay }> = [{ kind: "RESULTS", payload: await publishedResults(shiftDateKey(clock.date, -1), config.channelId) }, { kind: "TICKETS", payload: today }, { kind: "STRATEGIES", payload: today }];
   if (options.dryRun || !config.enabled) return { dryRun: true, date: clock.date, messages: entries.flatMap((entry) => messagesFor(entry.kind, entry.payload)) };
   if (!config.channelId || !config.token) throw new Error("Telegram kanál nebo token není nakonfigurován"); const sent: string[] = [];
   for (const entry of entries) {
@@ -164,11 +174,11 @@ export async function handleTelegramCommand(userId: string, text: string, now = 
   if (command === "/vysledky") { const date = args[0] ?? shiftDateKey(today, -1); return isTelegramDateAllowed(date, today) ? formatResults(await loadTelegramDay(date)) : ["Neplatné nebo nepovolené datum."]; }
   if (command === "/stav") return formatStatus(await loadTelegramDay(today));
   if (command === "/tiket") { const strategy = telegramStrategyAlias(args[0]); return strategy === "VALUE" || strategy === "ELO_INTUITION" ? formatTickets(await loadTelegramDay(today), strategy, true) : ["Použij /tiket value nebo /tiket elo."]; }
-  if (command === "/datum") { const strategy = telegramStrategyAlias(args[1]); if (!args[0] || !isTelegramDateAllowed(args[0], today)) return ["Použij /datum YYYY-MM-DD [strategie]. Povolen je včerejšek až +7 dní."]; if (args[1] && !strategy) return ["Neznámá strategie."]; return formatTips(await loadTelegramDay(args[0]), strategy ?? undefined); }
-  if (command === "/tipy") { const strategy = telegramStrategyAlias(args[0]); const market = strategy === "PRESSURE_FLOW_V5" ? pressureMarketFilter(args[1]) : undefined; if (args[0] && !strategy) return ["Neznámá strategie."]; if (market === null) return ["Použij /tipy prubeh over25, btts nebo tymove_goly."]; return formatTips(await loadTelegramDay(today), strategy ?? undefined, TELEGRAM_TOP_LIMIT, 0, market); }
+  if (command === "/datum") { const strategy = telegramStrategyAlias(args[1]); if (!args[0] || !isTelegramDateAllowed(args[0], today)) return ["Použij /datum YYYY-MM-DD [strategie]. Povolen je včerejšek až +7 dní."]; if (args[1] && !strategy) return ["Neznámá strategie."]; return formatTips(await loadTelegramDay(args[0], "PUBLISH"), strategy ?? undefined); }
+  if (command === "/tipy") { const strategy = telegramStrategyAlias(args[0]); const market = strategy === "PRESSURE_FLOW_V5" ? pressureMarketFilter(args[1]) : undefined; if (args[0] && !strategy) return ["Neznámá strategie."]; if (market === null) return ["Použij /tipy prubeh over25, btts nebo tymove_goly."]; return formatTips(await loadTelegramDay(today, "PUBLISH"), strategy ?? undefined, TELEGRAM_TOP_LIMIT, 0, market); }
   if (command === "/dalsi") {
     const all = args.includes("vse"); const strategyArg = args.find((arg) => arg !== "vse"); const strategy = telegramStrategyAlias(strategyArg); if (strategyArg && !strategy) return ["Neznámá strategie."]; const key = strategy ?? "ALL";
-    const cursor = await prisma.telegramCommandCursor.findUnique({ where: { userId_dateKey_strategy: { userId, dateKey: today, strategy: key } } }); const offset = cursor?.offset ?? TELEGRAM_TOP_LIMIT; const payload = await loadTelegramDay(today); const available = strategy ? payload.strategies.find((row) => row.strategy === strategy)?.data.opportunities.length ?? 0 : Math.max(0, ...payload.strategies.map((row) => row.data.opportunities.length)); if (offset >= available) return ["Další kvalifikované výběry už nejsou."];
+    const cursor = await prisma.telegramCommandCursor.findUnique({ where: { userId_dateKey_strategy: { userId, dateKey: today, strategy: key } } }); const offset = cursor?.offset ?? TELEGRAM_TOP_LIMIT; const payload = await loadTelegramDay(today, "PUBLISH"); const available = strategy ? payload.strategies.find((row) => row.strategy === strategy)?.data.opportunities.length ?? 0 : Math.max(0, ...payload.strategies.map((row) => row.data.opportunities.length)); if (offset >= available) return ["Další kvalifikované výběry už nejsou."];
     const limit = all ? 1000 : TELEGRAM_PAGE_SIZE; const messages = formatTips(payload, strategy ?? undefined, limit, offset); await prisma.telegramCommandCursor.upsert({ where: { userId_dateKey_strategy: { userId, dateKey: today, strategy: key } }, create: { userId, dateKey: today, strategy: key, offset: Math.min(available, offset + limit) }, update: { offset: Math.min(available, offset + limit) } }); return messages;
   }
   return ["Neznámý příkaz. Použij /help."];

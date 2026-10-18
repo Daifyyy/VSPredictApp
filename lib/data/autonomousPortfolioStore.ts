@@ -1,4 +1,5 @@
 import type { BookOdds } from "./apiFootball";
+import { captureMarketAllowed, strategyLifecycle } from "../picks/strategyLifecycle";
 import type { Prisma } from "@prisma/client";
 import { PINNACLE_FIRST_BOOKMAKERS } from "./apiFootball";
 import { prisma } from "@/lib/db";
@@ -26,6 +27,7 @@ async function captureUnqualifiedRow(data: Prisma.AutonomousTipSnapshotCreateMan
 const countActivationCache = new Map<string, { enabled: boolean; expiresAt: number }>();
 
 async function countResearchEnabled(strategy: "CORNERS" | "CARDS_REF" | "FOULS" | typeof LEGACY_OVER_SHADOW_STRATEGY, modelVersion: number, at: Date, modelContext = "LEAGUE"): Promise<boolean> {
+  if (!strategyLifecycle(strategy).capture) return false;
   const cacheKey = `${strategy}:${modelVersion}:${modelContext}`;
   const cached = countActivationCache.get(cacheKey);
   if (cached && cached.expiresAt > at.getTime()) return cached.enabled;
@@ -84,8 +86,8 @@ export async function captureAutonomousPortfolio(fixtureId: number, books: BookO
   const minutesToKickoff = (prediction.kickoff.getTime() - at.getTime()) / 60_000;
   const signals = await prisma.marketSignalSnapshot.findMany({
     where: { fixtureId, OR: [
-      { market: { in: ["1X2", "OVER_25", "BTTS"] }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
-      { market: { in: ["CORNERS", "CARDS", "FOULS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
+      { market: { in: ["1X2", "OVER_25", "BTTS"].filter(captureMarketAllowed) }, policyVersion: MARKET_SIGNAL_POLICY_VERSION },
+      { market: { in: ["CORNERS", "CARDS", "FOULS"].filter(captureMarketAllowed) }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
     ] },
   });
   const byMarket = new Map(signals.map((signal) => [signal.market, signal]));
@@ -134,6 +136,7 @@ export async function captureAutonomousPortfolio(fixtureId: number, books: BookO
   if (legacyOverEnabled) inputs.push({ ...overInput, strategy: LEGACY_OVER_SHADOW_STRATEGY });
   let created = 0;
   for (const input of inputs) {
+    if (!strategyLifecycle(input.strategy).capture) continue;
     if (input.marketProbability == null) continue;
     const legacyShadow = input.strategy === LEGACY_OVER_SHADOW_STRATEGY;
     const version = legacyShadow ? LEGACY_OVER_SHADOW_POLICY_VERSION : AUTONOMOUS_POLICY_VERSION[input.strategy as AutonomousStrategy];

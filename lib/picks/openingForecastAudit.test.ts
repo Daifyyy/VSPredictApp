@@ -1,0 +1,10 @@
+import {expect,it} from "vitest";
+import type {PredictionRow} from "../types";
+import type {BookOdds} from "../data/apiFootball";
+import {openingForecastAudit} from "./openingForecastAudit";
+const row={fixtureId:1,homeTeamId:10,awayTeamId:20,kickoff:"2026-10-20T18:00:00Z",modelCalculatedAt:"2026-10-20T10:00:00Z",status:"NS",available:true,homeWin:.5,draw:.3,awayWin:.2,modelVersion:7,contextVersion:1,modelContext:"LEAGUE"} as PredictionRow;
+const at=new Date("2026-10-20T12:00:00Z");
+const books=[{id:4,name:"Pinnacle",home:2,draw:3,away:4},{id:8,name:"Bet365",home:2.1,draw:3.2,away:3.5}] as BookOdds[];
+it("freezes coherent full vectors and raw quotes with explicit time provenance",()=>{const a=openingForecastAudit(row,books,at)!;expect(a.model).toEqual([.5,.3,.2]);expect(a.market!.reduce((s,p)=>s+p,0)).toBeCloseTo(1);expect(a.quality).toBe("PANEL");expect(a.quotes).toHaveLength(2);expect(a.providerUpdatedAt).toBeNull();expect(a.predictedAt).toBe(row.modelCalculatedAt);expect(JSON.stringify(a).length).toBeLessThan(2500);});
+it("requires a real prematch model timestamp and valid identities",()=>{for(const change of [{modelCalculatedAt:undefined},{modelCalculatedAt:"2026-10-20T13:00:00Z"},{kickoff:at.toISOString()},{status:"FT"},{homeTeamId:20},{homeWin:.7}])expect(openingForecastAudit({...row,...change},books,at)).toBeNull();});
+it("rejects incomplete and duplicated sources and distinguishes a single book",()=>{expect(openingForecastAudit(row,[books[0]],at)!.quality).toBe("PINNACLE_SINGLE");expect(openingForecastAudit(row,[books[1]],at)!.market).toBeNull();expect(openingForecastAudit(row,[books[0],books[0]],at)).toBeNull();expect(openingForecastAudit(row,[{...books[0],draw:null}],at)).toBeNull();expect(openingForecastAudit(row,[{...books[0],away:Infinity}],at)).toBeNull();});

@@ -47,6 +47,7 @@ import {
   FINISHED_STATUSES,
 } from "./apiFootball";
 import { fullTimeGoals, knockoutResult } from "./fixtures";
+import { pressureShadowMode } from "../picks/pressureCollectionPolicy";
 import {
   upsertPrediction,
   getUnsettledPredictions,
@@ -420,10 +421,10 @@ export async function runPredictUpcoming(
             mainMarketProbabilities: { OVER_25: p.over25, BTTS_YES: p.bttsYes },
             context: modelContext,
           };
-          const v5Allowed = process.env.PRESSURE_V5_ENABLED !== "false" && pressureV5SpentMs < pressureV5BudgetMs;
+          const pressureMode = pressureShadowMode(researchAllowed, pressureV5SpentMs < pressureV5BudgetMs);
           const pressureStarted = Date.now();
-          const performancePressure = !researchAllowed ? undefined : v5Allowed ? buildPerformancePressureShadowV5(pressureInput) : buildPerformancePressureShadow(pressureInput);
-          if (v5Allowed) pressureV5SpentMs += Date.now() - pressureStarted;
+          const performancePressure = pressureMode === "NONE" ? undefined : pressureMode === "V5" ? buildPerformancePressureShadowV5(pressureInput) : buildPerformancePressureShadow(pressureInput);
+          if (pressureMode === "V5") pressureV5SpentMs += Date.now() - pressureStarted;
           // λ ROHŮ A KARET vedle gólové – **čistá matematika nad zápasy, které už máme
           // v ruce, tedy 0 volání API navíc**. Do teď tyhle modely v produkci nikdy
           // neběžely (volal je jen backtest), takže jsme na oba trhy sbírali kurzy

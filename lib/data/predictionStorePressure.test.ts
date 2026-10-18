@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import { frozenPerformancePressure } from "./predictionStore";
 
 describe("frozenPerformancePressure", () => {
+  it("preserves captured history when collection is paused and no new shadow arrives", () => {
+    const v5 = { version: 5 };
+    expect(frozenPerformancePressure(v5, undefined, true)).toBe(v5);
+    expect(frozenPerformancePressure(v5, undefined, false)).toBe(v5);
+    expect(frozenPerformancePressure(null, undefined, true)).toBeUndefined();
+  });
   const v1 = { version: 1 };
   const v2 = { version: 2 };
   const v3 = { version: 3 };

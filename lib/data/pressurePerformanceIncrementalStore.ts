@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { pressureV5CollectionEnabled, pressureV5OpportunitiesEnabled } from '../picks/pressureCollectionPolicy';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../db';
 import type { PressurePerformanceRow } from '../picks/pressurePerformance';
@@ -73,7 +74,7 @@ export async function refreshIncrementalPressurePerformance(now: Date, reportKey
       const complete = rows.length < BATCH_SIZE;
       if (complete) {
         const report = { ...pressureAccumulatorReport(current.accumulator), asOf: now.toISOString(),
-          collectionEnabled: process.env.PRESSURE_V5_ENABLED !== 'false', opportunitiesEnabled: process.env.PRESSURE_V5_OPPORTUNITIES_ENABLED === 'true' };
+          collectionEnabled: pressureV5CollectionEnabled(), opportunitiesEnabled: pressureV5OpportunitiesEnabled() };
         const payload = json(report);
         await tx.apiCache.upsert({ where: { key: reportKey }, create: { key: reportKey, payload, expiresAt }, update: { payload, expiresAt } });
       }

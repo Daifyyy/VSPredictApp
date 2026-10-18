@@ -571,6 +571,8 @@ model FixturePrediction {
 /// Neměnný předzápasový názor modelu na konkrétní trh. Odděluje tehdejší signál
 /// od pozdějších změn modelu a dovoluje poctivě měřit pohyb k uzavírací linii.
 model MarketSignalSnapshot {
+  /// First observed complete 1X2 model/market audit; never backfilled or updated.
+  openingForecastAudit Json?
   id                     String    @id @default(cuid())
   fixtureId              Int
   leagueId               Int
