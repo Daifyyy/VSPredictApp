@@ -9,6 +9,7 @@ import { upsertIncident } from "@/lib/operations";
 import { STRATEGY_HUB_CATALOG, STRATEGY_HUB_IDS, isDateKey, type StrategyHubId } from "@/lib/picks/strategyHub";
 import { MATCH_FLOW_EVALUATION_VERSION, type MatchFlowDiagnosis } from "@/lib/picks/matchFlowEvaluation";
 import { captureIntuitionWindow } from "@/lib/data/intuitionTicketStore";
+import { formatCurrentTips } from "./picks/telegramCurrent";
 
 export const TELEGRAM_TOP_LIMIT = 3;
 export const TELEGRAM_PAGE_SIZE = 5;
@@ -171,6 +172,25 @@ const ALIASES: Record<string, StrategyHubId> = { value: "VALUE", elo: "ELO_INTUI
 export const telegramStrategyAlias = (value?: string) => value ? ALIASES[value.toLowerCase()] ?? null : null;
 export async function handleTelegramCommand(userId: string, text: string, now = new Date()) {
   const [raw, ...args] = text.trim().split(/\s+/); const command = raw.toLowerCase().split("@")[0]; const today = localDateKey(now);
+  if (command === "/tipy" || command === "/dalsi") {
+    if (!telegramConfig().allowedUsers.has(userId)) return [];
+    if (args[0]?.toLowerCase() === "ai") return ["🧪 AI výzkum\nBASE Over je zatím lokální experiment. Produkční AI predikce a výběry ještě nejsou aktivní. Nejde o původní Over; ten najdeš přes /tipy over25."];
+    const strategyArg = args.find(arg => arg !== "vse");
+    const strategy = telegramStrategyAlias(strategyArg);
+    if (strategyArg && !strategy) return ["Neznámá strategie. Použij /tipy, /tipy over25 nebo /tipy ai."];
+    const market = strategy === 'PRESSURE_FLOW_V5' ? pressureMarketFilter(args[1]) : undefined;
+    if (market === null || args.length > (strategy === 'PRESSURE_FLOW_V5' ? 2 : 1)) return ["Použij /tipy [strategie] nebo /tipy prubeh over25|btts|tymove_goly."];
+    const { readCurrentTelegramTips } = await import('./data/telegramCurrentStore');
+    const payload = await readCurrentTelegramTips(today);
+    const key = `CURRENT:${strategy ?? 'ALL'}`;
+    const cursor = command === "/dalsi" ? await prisma.telegramCommandCursor.findUnique({ where: { userId_dateKey_strategy: { userId, dateKey: today, strategy: key } } }) : null;
+    const offset = command === "/dalsi" ? cursor?.offset ?? TELEGRAM_TOP_LIMIT : 0;
+    const limit = command === "/dalsi" ? TELEGRAM_PAGE_SIZE : TELEGRAM_TOP_LIMIT;
+    const messages = formatCurrentTips(payload, now, strategy ?? undefined, offset, limit, market);
+    if (messages.length > 1) await prisma.telegramCommandCursor.upsert({ where: { userId_dateKey_strategy: { userId, dateKey: today, strategy: key } },
+      create: { userId, dateKey: today, strategy: key, offset: offset + limit }, update: { offset: offset + limit } });
+    return splitTelegramBlocks(messages);
+  }
   if (command === "/vyber") {
     if (!telegramConfig().allowedUsers.has(userId)) return [];
     const {dailySelectionConfig}=await import("./dailySelectionConfig");
@@ -181,16 +201,10 @@ export async function handleTelegramCommand(userId: string, text: string, now = 
     const {formatDailySelection}=await import("./dailySelectionTelegram");
     return formatDailySelection(await readDailySelection(date,true),date<today);
   }
-  if (command === "/help") return ["<b>Příkazy</b>\n/vyber [YYYY-MM-DD]\n/tipy [strategie]\n/dalsi [strategie|vse]\n/tiket value|elo\n/vysledky [YYYY-MM-DD]\n/datum YYYY-MM-DD [strategie]\n/stav"];
+  if (command === "/help") return ["<b>Příkazy</b>\n/tipy — aktuální uložené tipy\n/tipy over25 — původní Over\n/tipy ai — stav AI výzkumu\n/dalsi [strategie] — další aktuální tipy\n/vyber [YYYY-MM-DD] — neměnný Denní výběr\n/tiket value|elo\n/vysledky [YYYY-MM-DD]\n/datum YYYY-MM-DD [strategie]\n/stav"];
   if (command === "/vysledky") { const date = args[0] ?? shiftDateKey(today, -1); return isTelegramDateAllowed(date, today) ? formatResults(await loadTelegramDay(date)) : ["Neplatné nebo nepovolené datum."]; }
   if (command === "/stav") return formatStatus(await loadTelegramDay(today));
   if (command === "/tiket") { const strategy = telegramStrategyAlias(args[0]); return strategy === "VALUE" || strategy === "ELO_INTUITION" ? formatTickets(await loadTelegramDay(today), strategy, true) : ["Použij /tiket value nebo /tiket elo."]; }
   if (command === "/datum") { const strategy = telegramStrategyAlias(args[1]); if (!args[0] || !isTelegramDateAllowed(args[0], today)) return ["Použij /datum YYYY-MM-DD [strategie]. Povolen je včerejšek až +7 dní."]; if (args[1] && !strategy) return ["Neznámá strategie."]; return formatTips(await loadTelegramDay(args[0], "PUBLISH"), strategy ?? undefined); }
-  if (command === "/tipy") { const strategy = telegramStrategyAlias(args[0]); const market = strategy === "PRESSURE_FLOW_V5" ? pressureMarketFilter(args[1]) : undefined; if (args[0] && !strategy) return ["Neznámá strategie."]; if (market === null) return ["Použij /tipy prubeh over25, btts nebo tymove_goly."]; return formatTips(await loadTelegramDay(today, "PUBLISH"), strategy ?? undefined, TELEGRAM_TOP_LIMIT, 0, market); }
-  if (command === "/dalsi") {
-    const all = args.includes("vse"); const strategyArg = args.find((arg) => arg !== "vse"); const strategy = telegramStrategyAlias(strategyArg); if (strategyArg && !strategy) return ["Neznámá strategie."]; const key = strategy ?? "ALL";
-    const cursor = await prisma.telegramCommandCursor.findUnique({ where: { userId_dateKey_strategy: { userId, dateKey: today, strategy: key } } }); const offset = cursor?.offset ?? TELEGRAM_TOP_LIMIT; const payload = await loadTelegramDay(today, "PUBLISH"); const available = strategy ? payload.strategies.find((row) => row.strategy === strategy)?.data.opportunities.length ?? 0 : Math.max(0, ...payload.strategies.map((row) => row.data.opportunities.length)); if (offset >= available) return ["Další kvalifikované výběry už nejsou."];
-    const limit = all ? 1000 : TELEGRAM_PAGE_SIZE; const messages = formatTips(payload, strategy ?? undefined, limit, offset); await prisma.telegramCommandCursor.upsert({ where: { userId_dateKey_strategy: { userId, dateKey: today, strategy: key } }, create: { userId, dateKey: today, strategy: key, offset: Math.min(available, offset + limit) }, update: { offset: Math.min(available, offset + limit) } }); return messages;
-  }
   return ["Neznámý příkaz. Použij /help."];
 }

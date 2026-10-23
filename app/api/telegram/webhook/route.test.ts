@@ -9,6 +9,18 @@ import { POST } from "./route";
 
 const update = { update_id: 7, message: { text: "/help", from: { id: 12 }, chat: { id: 12, type: "private" } } };
 describe("telegram webhook", () => {
+  it.each(["/tipy", "/tipy ai", "/dalsi"])("does not blindly retry %s after delivery started", async text => {
+    mocks.send.mockRejectedValueOnce(new Error('timeout'));
+    const request = new Request('http://local/api/telegram/webhook', { method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 'secret' }, body: JSON.stringify({ ...update, message: { ...update.message, text } }) });
+    expect((await POST(request)).status).toBe(502);
+    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'UNKNOWN' }) }));
+  });
+  it('allows retry of a failure before any delivery attempt', async () => {
+    mocks.command.mockRejectedValueOnce(new Error('database unavailable'));
+    await POST(new Request('http://local/api/telegram/webhook', { method: 'POST', headers: { 'x-telegram-bot-api-secret-token': 'secret' }, body: JSON.stringify(update) }));
+    expect(mocks.send).not.toHaveBeenCalled();
+    expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'FAILED' }) }));
+  });
   beforeEach(() => { vi.clearAllMocks(); mocks.config.mockReturnValue({ webhookSecret: "secret", allowedUsers: new Set(["12"]) }); mocks.command.mockResolvedValue(["help"]); mocks.send.mockResolvedValue([1]); mocks.create.mockResolvedValue({ payload: [], messageIds: [], status: "PROCESSING" }); mocks.update.mockResolvedValue({}); });
   it("rejects an invalid Telegram secret", async () => { const response = await POST(new Request("http://local/api/telegram/webhook", { method: "POST", body: JSON.stringify(update) })); expect(response.status).toBe(401); expect(mocks.command).not.toHaveBeenCalled(); });
   it("silently ignores unauthorized users", async () => { mocks.config.mockReturnValue({ webhookSecret: "secret", allowedUsers: new Set() }); const response = await POST(new Request("http://local/api/telegram/webhook", { method: "POST", headers: { "x-telegram-bot-api-secret-token": "secret" }, body: JSON.stringify(update) })); expect(response.status).toBe(200); expect(mocks.command).not.toHaveBeenCalled(); });

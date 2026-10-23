@@ -6,6 +6,10 @@ vi.mock("@/lib/db", () => ({ prisma: { telegramCommandCursor: { findUnique: mock
 vi.mock("@/lib/operations", () => ({ upsertIncident: vi.fn() }));
 vi.mock("@/lib/data/strategyHubStore", () => ({ strategyHubData: mocks.strategyData }));
 vi.mock("@/lib/data/intuitionTicketStore", () => ({ captureIntuitionWindow: mocks.captureWindow }));
+vi.mock("@/lib/data/telegramCurrentStore", () => ({ readCurrentTelegramTips: vi.fn(async () => ({
+  version: 1, date: '2026-09-13', asOf: '2026-09-13T08:00:00Z',
+  items: [0, 1, 2, 3].map(i => ({ id: String(i), fixtureId: i, strategy: 'CORNERS', marketKey: '["CORNERS","OVER",9.5]', kickoff: '2026-09-13T12:00:00Z', homeName: `Domácí ${i}`, awayName: 'Hosté', selection: 'Rohy', odds: 1.82, oddsAt: '2026-09-13T08:00:00Z', bookmaker: 'Book' }))
+})) }));
 
 import { formatResults, formatTickets, formatTips, handleTelegramCommand, isTelegramDateAllowed, pragueClock, shiftDateKey, splitTelegramBlocks, telegramConfig, telegramStrategyAlias, type TelegramDay } from "./telegram";
 
@@ -105,8 +109,9 @@ describe("telegram formatting", () => {
     vi.stubEnv("TELEGRAM_ALLOWED_USER_IDS", "12, 34"); expect(telegramConfig().enabled).toBe(false); expect(telegramConfig().allowedUsers.has("34")).toBe(true);
   });
   it("starts /dalsi after the published top three and persists its cursor", async () => {
+    vi.stubEnv('TELEGRAM_ALLOWED_USER_IDS', '12');
     const messages = await handleTelegramCommand("12", "/dalsi rohy", new Date("2026-09-13T08:00:00Z"));
     const text = messages.join("\n"); expect(text).toContain("Domácí 3"); expect(text).not.toContain("A &lt; B");
-    expect(mocks.cursorUpsert).toHaveBeenCalledWith(expect.objectContaining({ create: expect.objectContaining({ offset: 4 }) }));
+    expect(mocks.cursorUpsert).toHaveBeenCalledWith(expect.objectContaining({ create: expect.objectContaining({ offset: 8 }) }));
   });
 });

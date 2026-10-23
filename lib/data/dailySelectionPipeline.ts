@@ -70,6 +70,14 @@ export async function runDailySelection(now=new Date(),options:{dryRun?:boolean;
     const hour=Number(new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/Prague",hour:"2-digit",hourCycle:"h23"}).format(now));
     if(hour<9)return {status:"BEFORE_PUBLICATION"};
     const sources=await loadDailySources(localDateKey(now),now);
+    if (!options.dryRun) {
+      const { saveCurrentTelegramTips } = await import('./telegramCurrentStore');
+      await saveCurrentTelegramTips(localDateKey(now), sources.candidates, now).catch(async error => {
+        await upsertIncident({ fingerprint: 'telegram:current-projection', kind: 'TELEGRAM_DELIVERY', severity: 'WARNING',
+          message: 'Aktuální Telegram přehled se nepodařilo uložit; Denní výběr pokračuje.',
+          details: { error: error instanceof Error ? error.message : String(error) } }).catch(() => undefined);
+      });
+    }
     if(!options.dryRun)await auditPublished(sources.candidates,now,sources.rejected);
     const result=await appendDailySelection(sources.candidates,now,options.dryRun,sources.rejected);
     if(!options.dryRun&&"added" in result&&result.added)await refreshDailySelectionBalances(now);

@@ -22,19 +22,20 @@ export async function POST(request: Request) {
     const claimed = await prisma.telegramUpdateReceipt.updateMany({ where: { updateId: BigInt(updateId), status: "FAILED" }, data: { status: "PROCESSING", lastError: null } });
     if (!claimed.count) return NextResponse.json({ ok: true });
   }
+  let deliveryStarted = false;
   try {
     const stored = Array.isArray(receipt.payload) ? receipt.payload.filter((item): item is string => typeof item === "string") : [];
     const messages = stored.length ? stored : await handleTelegramCommand(userId, text);
     if (!stored.length) await prisma.telegramUpdateReceipt.update({ where: { updateId: BigInt(updateId) }, data: { payload: messages } });
     const messageIds = Array.isArray(receipt.messageIds) ? receipt.messageIds.filter((item): item is number => typeof item === "number") : [];
+    deliveryStarted = messages.length > messageIds.length;
     await sendTelegramMessages(chatId, messages.slice(messageIds.length), async (messageId) => { messageIds.push(messageId); await prisma.telegramUpdateReceipt.update({ where: { updateId: BigInt(updateId) }, data: { messageIds } }); });
     await prisma.telegramUpdateReceipt.update({ where: { updateId: BigInt(updateId) }, data: { status: "SENT", messageIds } });
     return NextResponse.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const dailyCommand=/^\/vyber(?:@\S+)?(?:\s|$)/i.test(text);
-    await prisma.telegramUpdateReceipt.update({ where: { updateId: BigInt(updateId) }, data: { status: dailyCommand?"UNKNOWN":"FAILED", lastError: message } }).catch(() => undefined);
-    if(dailyCommand)await upsertIncident({fingerprint:`daily-selection:command:${updateId}`,kind:"TELEGRAM_DELIVERY",severity:"WARNING",message:"Odpověď /vyber nemá potvrzené doručení; nebude automaticky zopakována.",details:{updateId}}).catch(()=>undefined);
+    await prisma.telegramUpdateReceipt.update({ where: { updateId: BigInt(updateId) }, data: { status: deliveryStarted?"UNKNOWN":"FAILED", lastError: message } }).catch(() => undefined);
+    if(deliveryStarted)await upsertIncident({fingerprint:`telegram:command:${updateId}`,kind:"TELEGRAM_DELIVERY",severity:"WARNING",message:"Odpověď nemá potvrzené doručení; nebude automaticky zopakována.",details:{updateId}}).catch(()=>undefined);
     logError("telegram/webhook", error, { updateId, userId });
     return NextResponse.json({ error: "Zpracování příkazu selhalo." }, { status: 502 });
   }
