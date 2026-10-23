@@ -10,6 +10,9 @@ import { STRATEGY_HUB_CATALOG, STRATEGY_HUB_IDS, isDateKey, type StrategyHubId }
 import { MATCH_FLOW_EVALUATION_VERSION, type MatchFlowDiagnosis } from "@/lib/picks/matchFlowEvaluation";
 import { captureIntuitionWindow } from "@/lib/data/intuitionTicketStore";
 import { formatCurrentTips } from "./picks/telegramCurrent";
+import { aiFlags } from './picks/aiResearch';
+import { aiTipPicks, formatAITips, formatAIResults } from './picks/aiTelegram';
+import type { AIResearchDay } from './data/aiResearchStore';
 
 export const TELEGRAM_TOP_LIMIT = 3;
 export const TELEGRAM_PAGE_SIZE = 5;
@@ -17,7 +20,7 @@ const TEXT_LIMIT = 3900;
 type Kind = "RESULTS" | "TICKETS" | "STRATEGIES";
 type TelegramOpportunity = StrategyHubOpportunity & { flowDiagnosis?: MatchFlowDiagnosis | null };
 type HubData = { opportunities: TelegramOpportunity[]; tickets: StrategyHubTicket[]; metrics: StrategyHubMetrics | null; coverage: { candidates: number; priced: number; tickets: number }; emptyReason: string | null };
-export type TelegramDay = { date: string; generatedAt: string; strategies: Array<{ strategy: StrategyHubId; data: HubData }> };
+export type TelegramDay = { date: string; generatedAt: string; ai?: AIResearchDay | null; strategies: Array<{ strategy: StrategyHubId; data: HubData }> };
 const asJson = (value: unknown) => value as Prisma.InputJsonValue;
 const esc = (value: unknown) => String(value ?? "").slice(0, 900).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 const odd = (value: number | null) => value == null ? "—" : value.toFixed(2);
@@ -35,7 +38,8 @@ export function pragueClock(now = new Date()) {
 export function shiftDateKey(date: string, days: number) { const value = new Date(`${date}T12:00:00Z`); value.setUTCDate(value.getUTCDate() + days); return value.toISOString().slice(0, 10); }
 export function isTelegramDateAllowed(date: string, today = localDateKey(new Date())) { if (!isDateKey(date)) return false; const delta = (Date.parse(`${date}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / 86400_000; return delta >= -30 && delta <= 7; }
 export async function loadTelegramDay(date: string, purpose: "READ" | "PUBLISH" = "READ"): Promise<TelegramDay> {
-  return { date, generatedAt: new Date().toISOString(), strategies: await Promise.all(STRATEGY_HUB_IDS.map(async (strategy) => {
+  const ai = aiFlags().telegram ? await (await import('./data/aiResearchStore')).readAIResearchDay(date) : undefined;
+  return { date, generatedAt: new Date().toISOString(), ...(ai === undefined ? {} : { ai }), strategies: await Promise.all(STRATEGY_HUB_IDS.map(async (strategy) => {
     const lifecycle = strategyLifecycle(activeStrategySource(strategy));
     const data: HubData = purpose === "PUBLISH" && !lifecycle.publish
       ? { opportunities: [], tickets: [], metrics: null, coverage: { candidates: 0, priced: 0, tickets: 0 }, emptyReason: lifecycle.reason }
@@ -79,6 +83,7 @@ export function formatTips(payload: TelegramDay, requested?: StrategyHubId, limi
     const eligible = data.opportunities.filter((item) => !item.market?.startsWith("TEAM_") && (strategy !== "PRESSURE_FLOW_V5" || pressureMarketMatches(item.market, marketFilter)));
     const picks = eligible.slice(skip, skip + limit); blocks.push(picks.length ? `${strategyIcon(strategy)} <b>${esc(title(strategy))}</b>` : empty(strategy), ...picks.map(opportunity));
   }
+  if (!requested && 'ai' in payload) blocks.push(...formatAITips(payload.ai, new Date(payload.generatedAt)));
   return splitTelegramBlocks(blocks);
 }
 export function formatTickets(payload: TelegramDay, requested?: "VALUE" | "ELO_INTUITION", includeReserves = false) {
@@ -101,6 +106,7 @@ export function formatResults(payload: TelegramDay) {
     const settled = data.opportunities.filter((item) => item.outcome !== "PENDING"); const tickets = data.tickets.filter((item) => item.outcome !== "PENDING");
     if (settled.length || tickets.length) blocks.push(`${strategyIcon(strategy)} <b>${esc(title(strategy))}</b>`, ...settled.map(opportunity), ...tickets.map((ticket) => `${ticketOutcomeIcon(ticket.outcome)} <b>Tiket ${ticket.slot === 1 ? "A" : "B"}</b> · kurz ${odd(ticket.odds)}`));
   }
+  blocks.push(...formatAIResults(payload.ai));
   if (blocks.length === 1) blocks.push("Zatím není uzavřen žádný publikovaný výběr."); return splitTelegramBlocks(blocks);
 }
 export function formatStatus(payload: TelegramDay) { return splitTelegramBlocks([`<b>Stav dat · ${payload.date}</b>\nAktualizováno ${esc(payload.generatedAt)}`, ...payload.strategies.map(({ strategy, data }) => `<b>${esc(title(strategy))}</b>: ${data.opportunities.length} výběrů, ${data.coverage.priced} s kurzem${data.emptyReason ? ` · ${esc(data.emptyReason)}` : ""}`)]); }
@@ -114,10 +120,12 @@ const messagesFor = (kind: Kind, payload: TelegramDay) => kind === "RESULTS" ? f
 
 export async function publishedResults(date: string, channelId: string) {
   const prior = channelId ? await prisma.telegramPublication.findMany({ where: { dateKey: date, channelId, kind: { in: ["STRATEGIES", "TICKETS"] }, status: "SENT" }, select: { kind: true, payload: true } }) : [];
-  const current = await loadTelegramDay(date); if (!prior.length) return { ...current, strategies: current.strategies.map((row) => ({ ...row, data: { ...row.data, opportunities: [], tickets: [] } })) };
+  const current = await loadTelegramDay(date); if (!prior.length) return { ...current, ai: null, strategies: current.strategies.map((row) => ({ ...row, data: { ...row.data, opportunities: [], tickets: [] } })) };
+  const aiIds = new Set<string>();
   const ids = new Map<StrategyHubId, Set<string>>(); const slots = new Map<StrategyHubId, Set<number>>();
   for (const publication of prior) {
     const snapshot = publication.payload as unknown as TelegramDay;
+    if (publication.kind === 'STRATEGIES') for (const p of aiTipPicks(snapshot.ai, new Date(snapshot.generatedAt))) aiIds.add(p.id);
     for (const row of snapshot.strategies) {
       if (publication.kind === "STRATEGIES" && row.strategy !== "VALUE" && row.strategy !== "ELO_INTUITION") ids.set(row.strategy, new Set(row.data.opportunities.slice(0, TELEGRAM_TOP_LIMIT).map((item) => item.id)));
       if (publication.kind === "TICKETS" && (row.strategy === "VALUE" || row.strategy === "ELO_INTUITION")) { const ticketSlots = new Set(row.data.tickets.map((item) => item.slot)); slots.set(row.strategy, ticketSlots); ids.set(row.strategy, new Set(row.data.opportunities.filter((item) => item.ticketSlots.some((slot) => ticketSlots.has(slot))).map((item) => item.id))); }
@@ -132,7 +140,8 @@ export async function publishedResults(date: string, channelId: string) {
     const known = new Set(over.data.opportunities.map(item => item.id));
     over.data = { ...over.data, opportunities: [...over.data.opportunities, ...retired.opportunities.filter(item => publishedOverIds.has(item.id) && !known.has(item.id))] };
   }
-  const filtered = { ...current, strategies: current.strategies.map((row) => ({ ...row, data: { ...row.data, opportunities: row.data.opportunities.filter((item) => ids.get(row.strategy)?.has(item.id)), tickets: row.data.tickets.filter((item) => slots.get(row.strategy)?.has(item.slot)) } })) };
+  const aiCurrent = aiIds.size ? await (await import('./data/aiResearchStore')).readAIResearchDay(date) : null;
+  const filtered = { ...current, ai: aiCurrent ? { ...aiCurrent, picks: aiCurrent.picks.filter(p => aiIds.has(p.id)) } : null, strategies: current.strategies.map((row) => ({ ...row, data: { ...row.data, opportunities: row.data.opportunities.filter((item) => ids.get(row.strategy)?.has(item.id)), tickets: row.data.tickets.filter((item) => slots.get(row.strategy)?.has(item.slot)) } })) };
   const fixtureIds = [...new Set(filtered.strategies.flatMap((row) => row.data.opportunities.map((item) => item.fixtureId)))];
   const flows = fixtureIds.length ? await prisma.matchFlowEvaluationSnapshot.findMany({ where: { fixtureId: { in: fixtureIds }, evaluationVersion: MATCH_FLOW_EVALUATION_VERSION, status: "SETTLED" }, select: { fixtureId: true, evaluation: true } }) : [];
   const diagnoses = new Map(flows.flatMap((row) => { const diagnosis = (row.evaluation as unknown as { diagnosis?: MatchFlowDiagnosis } | null)?.diagnosis; return diagnosis ? [[row.fixtureId, diagnosis] as const] : []; }));
@@ -144,7 +153,7 @@ export async function publishTelegramMorning(now = new Date(), options: { dryRun
   if (await resourceBudgetGuard('telegram-digest')) return { status: 'RESOURCE_LIMITED' };
   const config = telegramConfig(); const clock = pragueClock(now); if (!options.force && (clock.hour < 9 || clock.hour > 10)) return { skipped: "OUTSIDE_PRAGUE_MORNING_WINDOW", date: clock.date };
   await Promise.all([
-    prisma.telegramPublication.updateMany({ where: { status: "SENDING", NOT: {kind:{startsWith:"DAILY_"}}, updatedAt: { lt: new Date(now.getTime() - 15 * 60_000) } }, data: { status: "FAILED", lastError: "Obnova po přerušeném odesílání" } }),
+    prisma.telegramPublication.updateMany({ where: { status: "SENDING", NOT: {kind:{startsWith:"DAILY_"}}, updatedAt: { lt: new Date(now.getTime() - 15 * 60_000) } }, data: { status: "UNKNOWN", lastError: "Nejisté doručení po přerušení; neopakovat automaticky" } }),
     prisma.telegramCommandCursor.deleteMany({ where: { updatedAt: { lt: new Date(now.getTime() - 30 * 86400_000) } } }),
     prisma.telegramUpdateReceipt.deleteMany({ where: { createdAt: { lt: new Date(now.getTime() - 30 * 86400_000) } } }),
   ]);
@@ -163,7 +172,7 @@ export async function publishTelegramMorning(now = new Date(), options: { dryRun
       await sendTelegramMessages(config.channelId, content.slice(existingIds.length), async (messageId) => { messageIds.push(messageId); await prisma.telegramPublication.update({ where: { id: row.id }, data: { messageIds } }); });
       await prisma.telegramPublication.update({ where: { id: row.id }, data: { status: "SENT", messageIds, sentAt: new Date() } }); sent.push(entry.kind);
     }
-    catch (error) { const message = error instanceof Error ? error.message : String(error); await prisma.telegramPublication.update({ where: { id: row.id }, data: { status: "FAILED", lastError: message } }); await upsertIncident({ fingerprint: `telegram:${clock.date}:${entry.kind}`, kind: "TELEGRAM_DELIVERY", severity: "CRITICAL", message: `Telegram ${entry.kind} se nepodařilo odeslat.`, details: { message } }); throw error; }
+    catch (error) { const message = error instanceof Error ? error.message : String(error); await prisma.telegramPublication.update({ where: { id: row.id }, data: { status: "UNKNOWN", lastError: message } }); await upsertIncident({ fingerprint: `telegram:${clock.date}:${entry.kind}`, kind: "TELEGRAM_DELIVERY", severity: "CRITICAL", message: `Telegram ${entry.kind} se nepodařilo odeslat.`, details: { message } }); throw error; }
   }
   return { date: clock.date, sent };
 }
@@ -174,7 +183,11 @@ export async function handleTelegramCommand(userId: string, text: string, now = 
   const [raw, ...args] = text.trim().split(/\s+/); const command = raw.toLowerCase().split("@")[0]; const today = localDateKey(now);
   if (command === "/tipy" || command === "/dalsi") {
     if (!telegramConfig().allowedUsers.has(userId)) return [];
-    if (args[0]?.toLowerCase() === "ai") return ["🧪 AI výzkum\nBASE Over je zatím lokální experiment. Produkční AI predikce a výběry ještě nejsou aktivní. Nejde o původní Over; ten najdeš přes /tipy over25."];
+    if (args[0]?.toLowerCase() === "ai") {
+      if (!aiFlags().telegram) return ['🧪 AI výzkum není zapnutý pro Telegram. Původní Over: /tipy over25.'];
+      const { readAIResearchDay } = await import('./data/aiResearchStore');
+      return splitTelegramBlocks(formatAITips(await readAIResearchDay(today), now));
+    }
     const strategyArg = args.find(arg => arg !== "vse");
     const strategy = telegramStrategyAlias(strategyArg);
     if (strategyArg && !strategy) return ["Neznámá strategie. Použij /tipy, /tipy over25 nebo /tipy ai."];
@@ -187,6 +200,10 @@ export async function handleTelegramCommand(userId: string, text: string, now = 
     const offset = command === "/dalsi" ? cursor?.offset ?? TELEGRAM_TOP_LIMIT : 0;
     const limit = command === "/dalsi" ? TELEGRAM_PAGE_SIZE : TELEGRAM_TOP_LIMIT;
     const messages = formatCurrentTips(payload, now, strategy ?? undefined, offset, limit, market);
+    if (command === '/tipy' && !strategy && aiFlags().telegram) {
+      const { readAIResearchDay } = await import('./data/aiResearchStore');
+      messages.push(...formatAITips(await readAIResearchDay(today), now));
+    }
     if (messages.length > 1) await prisma.telegramCommandCursor.upsert({ where: { userId_dateKey_strategy: { userId, dateKey: today, strategy: key } },
       create: { userId, dateKey: today, strategy: key, offset: offset + limit }, update: { offset: offset + limit } });
     return splitTelegramBlocks(messages);

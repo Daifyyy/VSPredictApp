@@ -33,7 +33,7 @@ export async function quickOverviewCaptureAudit(now = new Date()) {
   });
   const fixtureIds = predictions.map((row) => row.fixtureId);
   const [signalRows, frozenRows] = fixtureIds.length ? await Promise.all([
-    prisma.marketSignalSnapshot.findMany({ where: { fixtureId: { in: fixtureIds } }, orderBy: { openedAt: "desc" } }),
+    prisma.marketSignalSnapshot.findMany({ where: { policyVersion: { not: 1001 }, fixtureId: { in: fixtureIds } }, orderBy: { openedAt: "desc" } }),
     prisma.quickOverviewSelection.findMany({ where: { fixtureId: { in: fixtureIds }, policyVersion: QUICK_OVERVIEW_POLICY_VERSION } }),
   ]) : [[], []];
   const signals = new Map<number, QuickMarketSignal[]>();

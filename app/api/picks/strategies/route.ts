@@ -10,6 +10,7 @@ import { isAllowedStrategyDate, isStrategyHubId, STRATEGY_HUB_CATALOG, type Stra
 import { activeStrategySource, defaultStrategyCohort, isOverCohort, OVER_COHORTS, overCohortDefinition } from "@/lib/picks/overCohorts";
 import { loadOneXTwoDailyForecasts } from "@/lib/data/oneXTwoDailyProjection";
 import { loadOneXTwoEvaluation } from "@/lib/data/oneXTwoEvaluationStore";
+import { aiFlags } from '@/lib/picks/aiResearch';
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,14 @@ export async function GET(request: Request) {
   if (!pro) return NextResponse.json({ ...metadata, locked: true }, { headers: { "Cache-Control": "private, no-store" } });
 
   try {
+    if (url.searchParams.get('research') === 'ai') {
+      if (strategy !== 'OVER_25' || !aiFlags().ui) return NextResponse.json({ ...metadata, locked: false, ai: null, limitedReason: 'AI_UI_DISABLED' }, { headers: { 'Cache-Control': 'private, no-store' } });
+      const { readAIResearchDay } = await import('@/lib/data/aiResearchStore');
+      const ai = await readAIResearchDay(date);
+      const age = Date.now() - Date.parse(ai?.asOf ?? '');
+      const stale = !ai || !Number.isFinite(age) || age < 0 || age > 90 * 60_000;
+      return NextResponse.json({ ...metadata, locked: false, ai, asOf: ai?.asOf ?? null, stale, limitedReason: !ai ? 'AI_NOT_CAPTURED' : stale ? 'AI_STALE' : null }, { headers: { 'Cache-Control': 'private, no-store' } });
+    }
     if (summary) return NextResponse.json({ date, catalog, locked: false, summary: await strategyHubDailySummary(date) }, { headers: { "Cache-Control": "private, no-store" } });
     const baseData = await strategyHubData(strategy as StrategyHubId, date, variant).catch((error: unknown) => {
       if (strategy !== "ONE_X_TWO" || !(error instanceof Error) || error.message !== "STRATEGY_METRICS_NOT_CAPTURED") throw error;

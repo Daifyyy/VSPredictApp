@@ -36,7 +36,7 @@ export async function captureQuickOverviewDay(fixtureId: number, books: BookOdds
     ).map((fixture) => fixture.fixture.id));
     rows = rows.filter((row) => official.has(row.fixtureId));
   }
-  const marketRows = await prisma.marketSignalSnapshot.findMany({ where: { fixtureId: { in: rows.map((row) => row.fixtureId) } }, orderBy: { openedAt: "desc" } });
+  const marketRows = await prisma.marketSignalSnapshot.findMany({ where: { policyVersion: { not: 1001 }, fixtureId: { in: rows.map((row) => row.fixtureId) } }, orderBy: { openedAt: "desc" } });
   const signals = new Map<number, QuickMarketSignal[]>();
   for (const row of marketRows) {
     const list = signals.get(row.fixtureId) ?? [];

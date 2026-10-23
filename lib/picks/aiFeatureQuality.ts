@@ -37,8 +37,19 @@ function validMetrics(goals: number, raw?: Record<string, number>): Partial<Reco
 
 /** v1 is retained for replay reproducibility. This wrapper is a new, incompatible schema. */
 export class AIFreshFeatureBuilder {
-  private readonly legacy = new AIFeatureBuilder();
-  private readonly teams = new Map<string, TeamHistory>();
+  private legacy = new AIFeatureBuilder();
+  private teams = new Map<string, TeamHistory>();
+  checkpoint() {
+    return { version: 2 as const, legacy: this.legacy.checkpoint(), teams: [...this.teams].map(([key, value]) =>
+      [key, { ...value, metrics: [...value.metrics] }] as const) };
+  }
+  static restore(state: ReturnType<AIFreshFeatureBuilder['checkpoint']>) {
+    if (state.version !== 2) throw Error('INVALID_AI_CHECKPOINT');
+    const copy = structuredClone(state), builder = new AIFreshFeatureBuilder();
+    builder.legacy = AIFeatureBuilder.restore(copy.legacy);
+    builder.teams = new Map(copy.teams.map(([key, value]) => [key, { ...value, metrics: new Map(value.metrics) }]));
+    return builder;
+  }
   private key(league: number, team: number) { return `${league}:${team}`; }
 
   ingest(m: AIMatch) {

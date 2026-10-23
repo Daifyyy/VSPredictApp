@@ -30,6 +30,16 @@ export class AIFeatureBuilder {
   private seen = new Set<number>();
   private latest = 0;
   private lastOrigin = 0;
+  checkpoint() {
+    return { version: 1 as const, profiles: [...this.profiles], leagues: [...this.leagues], seen: [...this.seen], latest: this.latest, lastOrigin: this.lastOrigin };
+  }
+  static restore(state: ReturnType<AIFeatureBuilder['checkpoint']>) {
+    if (state.version !== 1 || !Number.isFinite(state.latest) || state.seen.length !== new Set(state.seen).size) throw Error('INVALID_AI_CHECKPOINT');
+    const copy = structuredClone(state), builder = new AIFeatureBuilder();
+    builder.profiles = new Map(copy.profiles); builder.leagues = new Map(copy.leagues); builder.seen = new Set(copy.seen);
+    builder.latest = copy.latest; builder.lastOrigin = copy.lastOrigin;
+    return builder;
+  }
   private key(league: number, team: number) { return `${league}:${team}`; }
   ingest(m: AIMatch) {
     const time = Date.parse(m.date);

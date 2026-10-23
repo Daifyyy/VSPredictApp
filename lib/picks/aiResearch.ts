@@ -23,7 +23,7 @@ export interface AIModelArtifact {
   kind: 'LOGISTIC' | 'CATBOOST_NUMERIC'; coefficients?: number[][]; intercept?: number[];
   trees?: Array<{ splits: Array<{ feature: number; border: number }>; leaves: number[][] }>;
   bias?: number[]; multiplier?: number;
-  datasetHash: string; protocolHash: string; status: 'SHADOW_APPROVED' | 'RESEARCH_CANDIDATE';
+  datasetHash: string; protocolHash: string; status: 'SHADOW_APPROVED' | 'RESEARCH_CANDIDATE' | 'MANUAL_RESEARCH';
 }
 export function aiFlags() {
   return { inference: process.env.AI_RESEARCH_INFERENCE_ENABLED === 'true', ui: process.env.AI_RESEARCH_UI_ENABLED === 'true',
@@ -32,8 +32,8 @@ export function aiFlags() {
 
 const softmax = (z: number[]) => { const mx = Math.max(...z), e = z.map(x => Math.exp(x - mx)), sum = e.reduce((a, b) => a + b, 0); return e.map(x => x / sum); };
 /** Compact numeric-only runtime. No fitting, filesystem, Python or database access. */
-export function inferAI(a: AIModelArtifact, values: Array<number | null>, options?: { parityOnly: true }) {
-  if (a.version !== 1 || !(a.status === 'SHADOW_APPROVED' || options?.parityOnly && a.status === 'RESEARCH_CANDIDATE') || !['ONE_X_TWO', 'OVER_25'].includes(a.market)
+export function inferAI(a: AIModelArtifact, values: Array<number | null>, options?: { parityOnly?: true; manualResearch?: true }) {
+  if (a.version !== 1 || !(a.status === 'SHADOW_APPROVED' || options?.parityOnly && a.status === 'RESEARCH_CANDIDATE' || options?.manualResearch && a.status === 'MANUAL_RESEARCH') || !['ONE_X_TWO', 'OVER_25'].includes(a.market)
     || !Number.isFinite(a.temperature) || a.temperature <= 0 || values.length !== a.featureNames.length) throw Error('INVALID_AI_ARTIFACT');
   const x = a.selectedFeatures.map((index, i) => {
     if (!Number.isInteger(index) || index < 0 || index >= values.length || !Number.isFinite(a.impute[i])) throw Error('INVALID_AI_FEATURE');

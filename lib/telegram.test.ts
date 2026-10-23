@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { loadTelegramDay, publishedResults } from "./telegram";
 
-const mocks = vi.hoisted(() => ({ strategyData: vi.fn(), cursorFind: vi.fn(), cursorUpsert: vi.fn(), captureWindow: vi.fn(), publications: vi.fn(), flows: vi.fn() }));
+const mocks = vi.hoisted(() => ({ aiDay: vi.fn(), strategyData: vi.fn(), cursorFind: vi.fn(), cursorUpsert: vi.fn(), captureWindow: vi.fn(), publications: vi.fn(), flows: vi.fn() }));
+vi.mock('./data/aiResearchStore', () => ({ readAIResearchDay: mocks.aiDay }));
 vi.mock("@/lib/db", () => ({ prisma: { telegramCommandCursor: { findUnique: mocks.cursorFind, upsert: mocks.cursorUpsert }, telegramPublication: { findMany: mocks.publications }, matchFlowEvaluationSnapshot: { findMany: mocks.flows } } }));
 vi.mock("@/lib/operations", () => ({ upsertIncident: vi.fn() }));
 vi.mock("@/lib/data/strategyHubStore", () => ({ strategyHubData: mocks.strategyData }));
@@ -25,6 +26,26 @@ function day(): TelegramDay {
 }
 
 describe("telegram formatting", () => {
+  it('authorizes AI commands before reading the stored projection', async () => {
+    vi.stubEnv('TELEGRAM_ALLOWED_USER_IDS', '12');
+    vi.stubEnv('AI_RESEARCH_TELEGRAM_ENABLED', 'true');
+    mocks.aiDay.mockResolvedValue(null);
+    expect(await handleTelegramCommand('99', '/tipy ai')).toEqual([]);
+    expect(mocks.aiDay).not.toHaveBeenCalled();
+    expect((await handleTelegramCommand('12', '/tipy ai')).join(' ')).toContain('neověřená');
+    expect(mocks.aiDay).toHaveBeenCalledTimes(1);
+    expect(mocks.strategyData).not.toHaveBeenCalled();
+  });
+  it('includes only the originally published AI TOP3 in morning results', async () => {
+    const ai = { version: 1 as const, date: '2026-09-13', asOf: day().generatedAt, artifactId: 'base', research: true as const, forecasts: [], rejected: [],
+      picks: [1, 2, 3, 4].map(i => ({ id: `ai-${i}`, fixtureId: i, homeName: 'Home', awayName: 'Away', kickoff: '2026-09-13T12:00:00Z',
+        probability: .6, odds: 1.9, bookmaker: 'Book', quotedAt: day().generatedAt, outcome: 'PENDING', profit: null, priceClv: null, currentEligible: true })) };
+    mocks.publications.mockResolvedValue([{ kind: 'STRATEGIES', payload: { ...day(), ai } }]);
+    mocks.aiDay.mockResolvedValue({ ...ai, picks: ai.picks.map(p => ({ ...p, outcome: 'LOST', currentEligible: false })) });
+    mocks.flows.mockResolvedValue([]);
+    const result = await publishedResults(ai.date, 'channel');
+    expect(result.ai?.picks.map(p => p.id)).toEqual(['ai-1', 'ai-2', 'ai-3']);
+  });
   it("does not turn research 1X2 into new tips, but keeps result evaluation", async () => {
     const payload=day();payload.strategies[0].strategy="ONE_X_TWO";
     expect(formatTips(payload).join(" ")).not.toContain("1.82");

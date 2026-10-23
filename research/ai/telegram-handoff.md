@@ -1,53 +1,76 @@
-# Telegram a AI: stav implementace 23. 10. 2026
+# Telegram a AI: produkční handoff 23. 10. 2026
 
-## Hotová část
+## Dokončeno
 
-- `/tipy` čte denní projekci `telegram-current:v1:YYYY-MM-DD` z `ApiCache`.
-- `/tipy over25` zahrnuje obnovenou identitu `OVER_25_LEGACY_SHADOW`, nikoli ukončenou v2.
-- `/dalsi [strategie]` stránkuje po pěti; `/tipy` obnoví začátek seznamu.
-- Autorizaci kontroluje webhook i obsluha těchto příkazů.
-- Projekce vzniká po kontrole současné přímé ceny ve stávajícím `daily-selection`
-  běhu. Nepoužívá limit pěti položek ani pořadí Denního výběru. Řazení je podle
-  výkopu a stabilního ID, nejvýše tři na zdroj v první odpovědi.
-- Čtení nepřepočítává predikce, nepřistupuje k providerovi a neskenuje historii.
-- Odmítá cenu/projekci starší než 90 minut, budoucí timestamp a výkop bližší
-  než 30 minut. Stejný fixture/trh sloučí s uvedením zdrojů.
-- `/vyber`, původní bilance, ranní publikace a VALUE/ELO tikety zůstávají beze změny.
-- Odpověď webhooku se ukládá před odesláním. Po nejasné chybě během odesílání
-  zůstane `UNKNOWN`; nevznikne slepé automatické opakování. Selhání před
-  odesláním lze bezpečně opakovat. Nový uživatelský příkaz má vlastní update ID.
+- Původní Over, VALUE/ELO a Denní výběr se nemění. `/tipy` čte aktuální uložené
+  tipy, `/tipy over25` původní Over, `/dalsi [strategie]` pokračuje v seznamu.
+- Samostatný BASE Over logistic C=1: artefakt `base-over-logistic-research-v1`,
+  policy 1001, status `MANUAL_RESEARCH`. Vývojové zlepšení log-loss 0,54 %
+  nesplnilo původní 1% bránu; tu neměníme. Nejde o doloženou výhodu.
+  Pravděpodobnosti nejsou nezávisle kalibrované. Historická ziskovost není doložená.
+  AI 1X2 se neaktivuje, protože nepřekonala hlavní benchmark.
+- Lokální export jednoho modelu: 5,5 s, přibližně 272 MiB peak RSS. Produkce pouze
+  aplikuje koeficienty a společný chronologický feature builder, bez Pythonu a fitování.
+- Kompaktní ověřený checkpoint historie 2024/2025 a identity rozpisu 2026.
+  Podporované ligy: 39, 61, 78, 135, 140. Jiná sezona/kontext se odmítne.
+  Mezery ve výsledcích, změněná identita či nemožný čas výsledku blokují danou ligu.
+- Neměnné `AIForecastSnapshot` (fixture + artefakt), oddělený market-signal ledger,
+  společný settlement Over 2,5 a CLV v2. Chybějící closing zůstane chybějící.
+  AI nezvyšuje četnost provider sběru a nevstupuje do hlavního Denního výběru.
+- Existující `daily-selection` cron provádí oddělenou omezenou AI dávku (max. 50),
+  pod DB lease a resource guardem. `settle=1` vyhodnotí všechny AI predikce,
+  i bez oceněné sázky, a uloží malý souhrn. Web/Telegram nic netrénují.
+- Web: Strategie → Over 2,5 → AI výzkum. Serverová PRO ochrana, lazy načtení,
+  stránkování 30; všechny predikce versus kvalifikované sázky.
+- `/tipy ai`, AI sekce v `/tipy` a ranní distribuci: nejvýše tři kvalifikované
+  výběry, jasně experimentální. Ranní AI výsledky jen pro publikované výběry.
+- Nový odečet ceny může potvrdit pouze stejnou cenu u stejné knihy; nemění původní
+  účetní cenu/čas. Změněný nebo starý kurz se nedoporučuje, historie zůstává.
+- Nejasný timeout při odeslání je `UNKNOWN`, bez slepého automatického opakování.
+  Automatické intradenní hromadné AI zprávy nejsou součástí; aktualizace `/tipy`
+  a `/tipy ai` jsou na požádání a nevynucují provider sběr.
 
-## Nasazení této části
+## Nasazení
 
-Není potřeba migrace. Po deployi musí být zapnuté
-`DAILY_SELECTION_COLLECT_ENABLED=true` a musí úspěšně proběhnout existující
-workflow `daily-selection` po 09:00 Praha (bez `dryRun` a bez `settle`). Běžný
-workflow jej již volá po sběru kurzů/predikcích. Zachovat resource guardy.
+Migrace `20261023210000_ai_research_forecasts` byla aplikována na Neon.
+Vytváří pouze novou tabulku a indexy; historii nemění. Vercel flagy nebyly změněny.
+Po nasazení kódu:
 
-Ověřit autorizovaným soukromým příkazem `/tipy` a `/tipy over25`. Prázdná
-aktuální projekce znamená žádnou způsobilou příležitost; chybějící či stará
-projekce se hlásí odlišně. Bez běhu se neukazují staré tipy jako aktuální.
-Nejde o nové automatické intradenní hromadné zprávy; aktualizace jsou na požádání.
+```text
+AI_RESEARCH_INFERENCE_ENABLED=true
+AI_RESEARCH_UI_ENABLED=true
+AI_RESEARCH_OPPORTUNITIES_ENABLED=true
+AI_RESEARCH_TELEGRAM_ENABLED=true
+```
 
-## AI část NENÍ dokončená
+Nejdříve lze zapnout první tři, ověřit web a potom Telegram. Změna Vercel prostředí
+vyžaduje redeploy. Zachovat autorizaci Telegramu, cron secret a kapacitní ochrany.
 
-`/tipy ai` pouze pravdivě informuje o stavu. Není to dokončená distribuce modelu.
-Přepínače AI nezapínat: chybí produkční predikční řetězec. Souhlas s research
-režimem není statistické schválení ani důvod použít `parityOnly` v produkci.
+Použít existující workflow v pořadí: settlement dokončených zápasů, predikce,
+snapshot kurzů, `daily-selection` (bez dry-run), poté Telegram digest.
+Nevytvářet nový častý workflow. `daily-selection?settle=1` aktualizuje AI bilanci.
+Ranní digest má číst projekci vytvořenou po aktuálním sběru kurzů.
 
-Další práce v tomto pořadí:
+Ověřit `/tipy`, `/tipy over25`, `/tipy ai`. Příkaz do chatu s botem čte uložená
+data. Nula tipů je platný výsledek: kurz 1,50–3,00, p≥55 %, edge≥4 p. b., EV≥3 %,
+coverage≥75 %, oba týmy ≥5 zápasů, kompletní přímý trh, cena do 90 minut,
+výkop alespoň za 30 minut.
 
-1. Exportovat pevný BASE Over logistic C=1 z povolené vývojové kohorty.
-   Samostatná identita `MANUAL_RESEARCH`, cutoff/hash, bez označení schválené edge.
-   Původní 1% bránu nepřepisovat. Zamítnutý starší CatBoost nepoužívat.
-2. Ověřit produkční návaznost historie. Elo a ligové agregáty vyžadují stejný
-   počáteční rozsah jako trénink; nelze je nahradit libovolnými posledními zápasy.
-   Kontrolovat dostupnost, rozsah lig a aktuálnost týmů; při mezeře nepředpovídat.
-3. Neměnné AI snapshoty, oddělený ledger/policy, přesné ceny a společný settlement
-   a CLV v2. Testovat parity Python/TS a změny výsledků bez dvojího započtení.
-4. Dávková inference mimo HTTP čtení, uložená aktuální projekce, samostatná
-   ranní sekce a `/tipy ai` TOP 3. Výsledek bez kvalifikovaného tipu je legitimní.
-5. Teprve po integračním testu aktivovat inference, příležitosti a Telegram.
+## Ověření a hranice
 
-Není zaručeno, že zítra vzniknou AI tipy. Žádná nová migrace nebyla aplikována,
-produkční přepínače nebyly změněny a tento commit neaktivuje AI.
+Kontrolovaný produkční běh během večerních zápasů: 0 nových snapshotů, budoucí
+zápasy čekaly na výsledky předchozího dne. Opakování nic nepřepsalo, nebyla odeslána
+Telegram zpráva ani nový provider request. Nenulovou idempotenci ověřují testy.
+Nejde o záruku, že zítra vznikne kvalifikovaný tip.
+
+Předchozí čtecí preflight: 422 skalárních řádků, 41 kandidátů, 182 ms inference celkem,
+dva tehdy časově způsobilé výstupy. Není to p95 SLA. Mockované testy ověřují
+konstantní počet dotazů pro 1 a 50 fixture.
+
+Automatické opravy výsledků: pending a posledních 30 dní; starší opravy vyžadují
+explicitní údržbu. Denní projekce dnes/včera mají retenci 90 dní, neměnné forecasty
+a ledger zůstávají. Nová sezona vyžaduje nový ověřený artefakt.
+Stávající plný sběr negarantuje 80% primary CLV coverage; sledujte reálné pokrytí.
+
+Začíná nová prospektivní kohorta. Kontroly při 50/100/200 uzavřených výběrech,
+bez automatického povýšení či garance zisku. Při chybě se výzkumná vrstva přeskočí.

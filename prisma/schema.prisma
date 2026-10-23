@@ -20,6 +20,38 @@ model ApiCache {
   @@index([expiresAt])
 }
 
+/// AI research forecast. Prediction fields are insert-only; only result fields may change.
+model AIForecastSnapshot {
+  id           String   @id @default(cuid())
+  fixtureId    Int
+  artifactId   String
+  modelVersion Int      @default(1)
+  policyVersion Int     @default(1001)
+  modelContext String   @default("LEAGUE")
+  leagueId     Int
+  season       Int
+  homeTeamId   Int
+  awayTeamId   Int
+  homeName     String
+  awayName     String
+  kickoff      DateTime
+  capturedAt   DateTime
+  probability  Float
+  coverage     Float
+  homeSample   Int
+  awaySample   Int
+  inputHash    String
+  inputAudit   Json
+  outcome      String   @default("PENDING")
+  homeGoals    Int?
+  awayGoals    Int?
+  settledAt    DateTime?
+
+  @@unique([fixtureId, artifactId])
+  @@index([artifactId, kickoff])
+  @@index([outcome, kickoff])
+}
+
 /// Trvalý audit každého provozního běhu. GitHub Actions může skončit zeleně i při
 /// částečném výsledku; tento záznam je autoritativní zdroj pro health dashboard.
 model CronRun {

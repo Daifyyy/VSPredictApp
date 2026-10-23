@@ -21,7 +21,7 @@ export async function getResultModelReviews(fixtureIds: number[], options: { pro
     prisma.fixturePrediction.findMany({ where: { fixtureId: { in: ids } } }),
     prisma.matchStatCache.findMany({ where: { fixtureId: { in: ids } }, select: { fixtureId: true, teamId: true, context: true, corners: true, fouls: true, yellowCards: true, redCards: true } }),
     prisma.autonomousTipSnapshot.findMany({ where: { fixtureId: { in: ids }, status: "candidate" } }),
-    prisma.marketSignalSnapshot.findMany({ where: { fixtureId: { in: ids } }, orderBy: { openedAt: "asc" } }),
+    prisma.marketSignalSnapshot.findMany({ where: { policyVersion: { not: 1001 }, fixtureId: { in: ids } }, orderBy: { openedAt: "asc" } }),
     prisma.matchFlowEvaluationSnapshot.findMany({ where: { fixtureId: { in: ids }, evaluationVersion: 3, status: "SETTLED" }, orderBy: { evaluationVersion: "desc" } }),
   ]);
   const flowMap = new Map(flowRows.map((row) => [row.fixtureId, row.evaluation as unknown as MatchFlowEvaluation]));

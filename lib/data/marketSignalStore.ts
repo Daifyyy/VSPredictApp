@@ -19,6 +19,7 @@ import { PINNACLE_FIRST_BOOKMAKERS } from "./apiFootball";
 import { CLV_METHOD_VERSION, clvV2, comparableMarketQuote, type ComparableMarket } from "@/lib/picks/comparableMarketQuote";
 import { PRESSURE_FLOW_V5_POLICY_VERSION, pressureFlowCandidates } from "@/lib/picks/pressureFlowV5";
 import type { PerformancePressureShadowV5 } from "@/lib/picks/performancePressureShadowV5";
+import { AI_RESEARCH_POLICY } from '../picks/aiIdentity';
 
 const TEAM_MARKETS = ["TEAM_HOME_05", "TEAM_HOME_15", "TEAM_AWAY_05", "TEAM_AWAY_15"] as const;
 
@@ -156,6 +157,7 @@ export async function closeMarketSignals(fixtureId: number, books: BookOdds[], a
     { market: { in: ["CORNERS", "CARDS", "FOULS"] }, policyVersion: COUNT_MARKET_SIGNAL_POLICY_VERSION },
     { market: { in: [...TEAM_MARKETS] }, policyVersion: TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION },
     { policyVersion: PRESSURE_FLOW_V5_POLICY_VERSION },
+    { policyVersion: AI_RESEARCH_POLICY, market: 'OVER_25' },
   ] } });
   for (const row of rows) {
     if (at >= row.kickoff) continue;

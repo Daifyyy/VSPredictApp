@@ -8,10 +8,12 @@ const mocks = vi.hoisted(() => ({
   strategyHubDailySummary: vi.fn(),
   outcomeForecasts: vi.fn(),
   outcomeEvaluation: vi.fn(),
+  aiDay: vi.fn(),
   allowRequest: vi.fn(() => true),
 }));
 
 vi.mock("@/lib/authUser", () => ({ getCurrentUser: mocks.getCurrentUser }));
+vi.mock("@/lib/data/aiResearchStore", () => ({ readAIResearchDay: mocks.aiDay }));
 vi.mock("@/lib/entitlements", () => ({ getEntitlement: mocks.getEntitlement }));
 vi.mock("@/lib/competitionGrouping", () => ({ localDateKey: () => "2026-09-12" }));
 vi.mock("@/lib/data/strategyHubStore", () => ({ strategyHubData: mocks.strategyHubData, strategyHubDailySummary: mocks.strategyHubDailySummary }));
@@ -23,6 +25,26 @@ vi.mock("@/lib/rateLimit", () => ({ allowRequest: mocks.allowRequest, clientKey:
 import { GET } from "./route";
 
 describe("GET /api/picks/strategies", () => {
+  it('protects AI snapshots server-side and reads only their projection', async () => {
+    vi.stubEnv('AI_RESEARCH_UI_ENABLED', 'true');
+    const url = 'http://localhost/api/picks/strategies?strategy=OVER_25&research=ai';
+    expect((await (await GET(new Request(url))).json()).locked).toBe(true);
+    expect(mocks.aiDay).not.toHaveBeenCalled();
+    mocks.getEntitlement.mockReturnValue({ pro: true });
+    mocks.aiDay.mockResolvedValue({ asOf: new Date().toISOString(), forecasts: [{ fixtureId: 42 }] });
+    const response = await GET(new Request(url));
+    expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+    expect((await response.json()).ai.forecasts).toHaveLength(1);
+    expect(mocks.strategyHubData).not.toHaveBeenCalled();
+    expect(mocks.strategyHubDailySummary).not.toHaveBeenCalled();
+  });
+  it('does not read AI with the UI flag disabled', async () => {
+    vi.stubEnv('AI_RESEARCH_UI_ENABLED', 'false');
+    mocks.getEntitlement.mockReturnValue({ pro: true });
+    const body = await (await GET(new Request('http://localhost/api/picks/strategies?strategy=OVER_25&research=ai'))).json();
+    expect(body.limitedReason).toBe('AI_UI_DISABLED');
+    expect(mocks.aiDay).not.toHaveBeenCalled();
+  });
   it("retains daily forecasts if the optional stored evaluation is unavailable", async () => {
     mocks.getEntitlement.mockReturnValue({ pro: true });
     mocks.strategyHubData.mockResolvedValue({ opportunities: [], tickets: [] });

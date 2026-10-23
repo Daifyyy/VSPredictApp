@@ -1,8 +1,9 @@
 # AI výzkum 1X2 / Over 2,5 — offline pilot v1
 
-Aktuální produkční handoff: [Telegram a zbývající AI integrace](telegram-handoff.md).
-Příkazy pro aktuální uložené tipy jsou připravené; `/tipy ai` zatím pouze sděluje
-neaktivní stav. Níže uvedené historické kroky nejsou aktivací produkčního modelu.
+Aktuální produkční handoff: [Telegram a dokončená BASE integrace](telegram-handoff.md).
+BASE Over má samostatnou ručně povolenou výzkumnou cestu (policy 1001), nikoli
+statistické schválení. Migrace je aplikována; aktivace vyžaduje deploy a čtyři flagy.
+Níže uvedené záznamy popisují historické fáze experimentu, nikoli aktuální stav nasazení.
 
 Dokončeno [srovnání s rozšířenou historií 2024](expanded-exploration-2026-10-23.md).
 BASE Over má malý vývojový přínos pod 1% branou, 1X2 nepřekonává hlavní model.
