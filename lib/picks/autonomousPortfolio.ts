@@ -17,7 +17,7 @@ export const CORNERS_LIVE_COUNT_MODEL_VERSION = 2;
 export const GUARDED_ONE_X_TWO_POLICY_VERSION = 1;
 export const GUARDED_ONE_X_TWO_MAX_EDGE = 0.15;
 
-/** Research-only prospective cohort; never resumes retired OVER_25 policy 1. */
+/** Original gate on repaired inputs; separate prospective identity, never backfills retired policy 1. */
 export const LEGACY_OVER_SHADOW_STRATEGY = "OVER_25_LEGACY_SHADOW";
 export const LEGACY_OVER_SHADOW_POLICY_VERSION = 1;
 

@@ -182,8 +182,7 @@ export async function captureAutonomousPortfolio(fixtureId: number, books: BookO
       capturedAt: at, qualifiedAt: decision.status === "candidate" ? at : null,
     };
     const qualified = await captureUnqualifiedRow({ fixtureId, strategy: input.strategy, policyVersion: version, ...data });
-    // Research collection must not inflate the existing public-candidate counter.
-    if (!legacyShadow) created += qualified;
+    created += qualified;
   }
   // Shadow politika se uklada oddelene a nikdy se nepocita do verejneho portfolia v2.
   if (oneFair) {

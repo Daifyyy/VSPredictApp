@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { localDateKey } from "@/lib/competitionGrouping";
 import { pragueDateBounds } from "@/lib/recentWindow";
 import { TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION, teamGoalOpportunityDecision } from "@/lib/picks/marketSignals";
+import { strategyLifecycle } from "@/lib/picks/strategyLifecycle";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export async function GET() {
   const bounds = pragueDateBounds(localDateKey(now));
   const [autonomous, research, manual] = await Promise.all([
     prisma.autonomousTipSnapshot.findMany({
-      where: { strategy: { not: "OVER_25_LEGACY_SHADOW" }, status: "candidate", settlementStatus: "PENDING", kickoff: { gte: new Date(now.getTime() - 4 * 60 * 60_000), lt: bounds.end } },
+      where: { strategy: { not: "OVER_25" }, status: "candidate", settlementStatus: "PENDING", kickoff: { gte: new Date(now.getTime() - 4 * 60 * 60_000), lt: bounds.end } },
       orderBy: { kickoff: "asc" }, take: 40,
       select: { id: true, fixtureId: true, leagueId: true, homeTeamId: true, awayTeamId: true, strategy: true, market: true, side: true, line: true, homeName: true, awayName: true, homeLogo: true, awayLogo: true, kickoff: true, modelProbability: true, marketProbability: true, edge: true, expectedValue: true, decimalOdds: true, bookmaker: true, capturedAt: true },
     }),
@@ -41,7 +42,7 @@ export async function GET() {
     if (!current || decision.score > current.score) researchByFixture.set(row.fixtureId, { row, score: decision.score, decisionProbability: decision.decisionProbability, expectedValue: decision.expectedValue });
   }
   const rows = [
-    ...autonomous.map((row) => ({ ...row, kind: "AUTONOMOUS" as const, leagueName: null, label: row.strategy, probability: row.modelProbability, price: row.decimalOdds, priceTime: row.capturedAt })),
+    ...autonomous.filter(row => strategyLifecycle(row.strategy).publish).map((row) => ({ ...row, kind: "AUTONOMOUS" as const, leagueName: null, label: row.strategy === "OVER_25_LEGACY_SHADOW" ? "Původní Over 2,5 · neověřený" : row.strategy, probability: row.modelProbability, price: row.decimalOdds, priceTime: row.capturedAt })),
     ...[...researchByFixture.values()].map(({ row, decisionProbability, expectedValue }) => {
       const fixture = fixtureById.get(row.fixtureId);
       return { ...row, kind: "RESEARCH" as const, leagueName: null, label: "Týmové góly v3", homeTeamId: fixture?.homeTeamId ?? 0, awayTeamId: fixture?.awayTeamId ?? 0, homeName: fixture?.homeName ?? "Domácí", awayName: fixture?.awayName ?? "Hosté", homeLogo: fixture?.homeLogo ?? null, awayLogo: fixture?.awayLogo ?? null, probability: decisionProbability, marketProbability: row.openMarketProbability, edge: decisionProbability - row.openMarketProbability, expectedValue, price: row.decimalOdds, priceTime: row.quotedAt };

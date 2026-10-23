@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { strategyLifecycle } from "./picks/strategyLifecycle";
+import { activeStrategySource } from "./picks/overCohorts";
 import { Prisma } from "@prisma/client";
 import { localDateKey } from "@/lib/competitionGrouping";
 import { strategyHubData, type StrategyHubMetrics, type StrategyHubOpportunity, type StrategyHubTicket } from "@/lib/data/strategyHubStore";
@@ -34,7 +35,7 @@ export function shiftDateKey(date: string, days: number) { const value = new Dat
 export function isTelegramDateAllowed(date: string, today = localDateKey(new Date())) { if (!isDateKey(date)) return false; const delta = (Date.parse(`${date}T12:00:00Z`) - Date.parse(`${today}T12:00:00Z`)) / 86400_000; return delta >= -30 && delta <= 7; }
 export async function loadTelegramDay(date: string, purpose: "READ" | "PUBLISH" = "READ"): Promise<TelegramDay> {
   return { date, generatedAt: new Date().toISOString(), strategies: await Promise.all(STRATEGY_HUB_IDS.map(async (strategy) => {
-    const lifecycle = strategyLifecycle(strategy);
+    const lifecycle = strategyLifecycle(activeStrategySource(strategy));
     const data: HubData = purpose === "PUBLISH" && !lifecycle.publish
       ? { opportunities: [], tickets: [], metrics: null, coverage: { candidates: 0, priced: 0, tickets: 0 }, emptyReason: lifecycle.reason }
       : await strategyHubData(strategy, date) as HubData;
@@ -71,7 +72,8 @@ const pressureMarketFilter = (value?: string): PressureMarketFilter | null | und
 export function formatTips(payload: TelegramDay, requested?: StrategyHubId, limit = TELEGRAM_TOP_LIMIT, skip = 0, marketFilter?: PressureMarketFilter) {
   const blocks = [`📅 <b>Výběry na ${payload.date}</b>`];
   for (const { strategy, data } of payload.strategies.filter((row) => !requested || row.strategy === requested)) {
-    if (strategyLifecycle(strategy).state === "PAUSED") { blocks.push(`${strategyIcon(strategy)} <b>${esc(title(strategy))}</b>\nSběr pozastaven. Historické výběry se dále vyhodnocují.`); continue; }
+    if (strategyLifecycle(activeStrategySource(strategy)).reason === "ONE_X_TWO_RESEARCH_ONLY") { blocks.push(`${strategyIcon(strategy)} <b>1X2 · výzkum</b>\nSbíráme a vyhodnocujeme predikce 1/X/2. Nová sázková doporučení zatím neposíláme.`); continue; }
+    if (strategyLifecycle(activeStrategySource(strategy)).state === "PAUSED") { blocks.push(`${strategyIcon(strategy)} <b>${esc(title(strategy))}</b>\nSběr pozastaven. Historické výběry se dále vyhodnocují.`); continue; }
     if (strategy === "TEAM_GOALS" || data.emptyReason === "TEAM_MARKET_DATA_QUARANTINE" || (strategy === "PRESSURE_FLOW_V5" && marketFilter === "TEAM_GOALS")) { blocks.push(`${strategyIcon(strategy)} <b>${esc(title(strategy))}</b>\nDočasně blokováno: ověřujeme identitu kurzů. Nejde o nedostatek příležitostí.`); continue; }
     const eligible = data.opportunities.filter((item) => !item.market?.startsWith("TEAM_") && (strategy !== "PRESSURE_FLOW_V5" || pressureMarketMatches(item.market, marketFilter)));
     const picks = eligible.slice(skip, skip + limit); blocks.push(picks.length ? `${strategyIcon(strategy)} <b>${esc(title(strategy))}</b>` : empty(strategy), ...picks.map(opportunity));
@@ -109,7 +111,7 @@ export async function sendTelegramMessages(chatId: string, messages: string[], o
 }
 const messagesFor = (kind: Kind, payload: TelegramDay) => kind === "RESULTS" ? formatResults(payload) : kind === "TICKETS" ? formatTickets(payload) : formatTips({ ...payload, strategies: payload.strategies.filter((row) => row.strategy !== "VALUE" && row.strategy !== "ELO_INTUITION") });
 
-async function publishedResults(date: string, channelId: string) {
+export async function publishedResults(date: string, channelId: string) {
   const prior = channelId ? await prisma.telegramPublication.findMany({ where: { dateKey: date, channelId, kind: { in: ["STRATEGIES", "TICKETS"] }, status: "SENT" }, select: { kind: true, payload: true } }) : [];
   const current = await loadTelegramDay(date); if (!prior.length) return { ...current, strategies: current.strategies.map((row) => ({ ...row, data: { ...row.data, opportunities: [], tickets: [] } })) };
   const ids = new Map<StrategyHubId, Set<string>>(); const slots = new Map<StrategyHubId, Set<number>>();
@@ -119,6 +121,15 @@ async function publishedResults(date: string, channelId: string) {
       if (publication.kind === "STRATEGIES" && row.strategy !== "VALUE" && row.strategy !== "ELO_INTUITION") ids.set(row.strategy, new Set(row.data.opportunities.slice(0, TELEGRAM_TOP_LIMIT).map((item) => item.id)));
       if (publication.kind === "TICKETS" && (row.strategy === "VALUE" || row.strategy === "ELO_INTUITION")) { const ticketSlots = new Set(row.data.tickets.map((item) => item.slot)); slots.set(row.strategy, ticketSlots); ids.set(row.strategy, new Set(row.data.opportunities.filter((item) => item.ticketSlots.some((slot) => ticketSlots.has(slot))).map((item) => item.id))); }
     }
+  }
+  // A change of default Over must not lose the results of already published v2 picks.
+  // Read the retired day only when published IDs are missing; never merge balances.
+  const over = current.strategies.find(row => row.strategy === "OVER_25");
+  const publishedOverIds = ids.get("OVER_25");
+  if (over && publishedOverIds && [...publishedOverIds].some(id => !over.data.opportunities.some(item => item.id === id))) {
+    const retired = await strategyHubData("OVER_25", date, "current");
+    const known = new Set(over.data.opportunities.map(item => item.id));
+    over.data = { ...over.data, opportunities: [...over.data.opportunities, ...retired.opportunities.filter(item => publishedOverIds.has(item.id) && !known.has(item.id))] };
   }
   const filtered = { ...current, strategies: current.strategies.map((row) => ({ ...row, data: { ...row.data, opportunities: row.data.opportunities.filter((item) => ids.get(row.strategy)?.has(item.id)), tickets: row.data.tickets.filter((item) => slots.get(row.strategy)?.has(item.slot)) } })) };
   const fixtureIds = [...new Set(filtered.strategies.flatMap((row) => row.data.opportunities.map((item) => item.fixtureId)))];

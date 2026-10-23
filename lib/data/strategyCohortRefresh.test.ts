@@ -30,12 +30,14 @@ describe("optional cohort refresh budget", () => {
   it("does not scan optional cohorts again within 24 hours", async () => {
     mocks.cache.mockResolvedValue({ payload: { metrics: {}, asOf: "2026-10-18T09:00:00Z" } });
     await refreshStrategyHubMetrics(new Date("2026-10-18T10:00:00Z"));
-    expect(mocks.tips.mock.calls.some(([args]) => args.where.strategy === "OVER_25_LEGACY_SHADOW" || args.where.strategy === "OVER_25" && args.where.policyVersion === 1)).toBe(false);
+    expect(mocks.tips.mock.calls.some(([args]) => args.where.strategy === "OVER_25")).toBe(false);
+    expect(mocks.tips.mock.calls.some(([args]) => args.where.strategy === "OVER_25_LEGACY_SHADOW")).toBe(true);
   });
   it("defers optional work after the normal refresh used its time allowance", async () => {
     vi.spyOn(Date, "now").mockReturnValueOnce(0).mockReturnValue(21_000);
     await refreshStrategyHubMetrics(new Date("2026-10-18T10:00:00Z"));
     expect(mocks.cache).not.toHaveBeenCalled();
-    expect(mocks.tips.mock.calls.some(([args]) => args.where.strategy === "OVER_25_LEGACY_SHADOW")).toBe(false);
+    expect(mocks.tips.mock.calls.some(([args]) => args.where.strategy === "OVER_25")).toBe(false);
+    expect(mocks.tips.mock.calls.some(([args]) => args.where.strategy === "OVER_25_LEGACY_SHADOW")).toBe(true);
   });
 });

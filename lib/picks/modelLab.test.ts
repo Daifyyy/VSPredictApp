@@ -37,15 +37,15 @@ describe("Model Lab", () => {
     expect(modelLabSummary([row({ contextVersion: 1 }), row({ contextVersion: 2 })]).gates.frozenPolicy).toBe(false);
     expect(modelLabSummary([row({ countModelVersion: 1 }), row({ countModelVersion: 2 })]).gates.frozenPolicy).toBe(false);
   });
-  it("keeps retired Over history, active v2 and the new research comparator distinct", () => {
+  it("keeps retired v1/v2 separate from the restored unvalidated original gate", () => {
     const old = STRATEGY_CATALOG.find((item) => item.strategy === "OVER_25" && item.policyVersion === 1)!;
     const current = STRATEGY_CATALOG.find((item) => item.strategy === "OVER_25" && item.policyVersion === 2)!;
     const challenger = STRATEGY_CATALOG.find((item) => item.strategy === "OVER_25_LEGACY_SHADOW")!;
     expect(old.status).toBe("RETIRED");
     expect(resolveModelLabStatus(old, "LIVE_TEST")).toBe("RETIRED");
-    expect(current.status).toBe("LIVE_TEST");
-    expect(challenger).toMatchObject({ policyVersion: 1, market: "OVER_25", status: "RESEARCH" });
-    expect(resolveModelLabStatus(challenger, "VALIDATED")).toBe("RESEARCH");
+    expect(current.status).toBe("RETIRED");
+    expect(challenger).toMatchObject({ policyVersion: 1, market: "OVER_25", status: "LIVE_TEST" });
+    expect(resolveModelLabStatus(challenger, "VALIDATED")).toBe("LIVE_TEST");
     expect(modelLabSummary([row(), row({ strategy: challenger.strategy })]).gates.frozenPolicy).toBe(false);
   });
   it("počítá model a trh na stejné kohortě a ignoruje early closing", () => {

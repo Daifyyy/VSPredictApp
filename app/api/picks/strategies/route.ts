@@ -7,7 +7,9 @@ import { getEntitlement } from "@/lib/entitlements";
 import { logError } from "@/lib/logError";
 import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
 import { isAllowedStrategyDate, isStrategyHubId, STRATEGY_HUB_CATALOG, type StrategyHubId } from "@/lib/picks/strategyHub";
-import { isOverCohort, OVER_COHORTS, overCohortDefinition } from "@/lib/picks/overCohorts";
+import { activeStrategySource, defaultStrategyCohort, isOverCohort, OVER_COHORTS, overCohortDefinition } from "@/lib/picks/overCohorts";
+import { loadOneXTwoDailyForecasts } from "@/lib/data/oneXTwoDailyProjection";
+import { loadOneXTwoEvaluation } from "@/lib/data/oneXTwoEvaluationStore";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +19,7 @@ export async function GET(request: Request) {
   const date = url.searchParams.get("date") ?? localDateKey(new Date());
   const strategy = url.searchParams.get("strategy") ?? "VALUE";
   const summary = url.searchParams.get("summary") === "1";
-  const variant = url.searchParams.get("cohort") ?? "current";
+  const variant = url.searchParams.get("cohort") ?? (summary ? "current" : defaultStrategyCohort(strategy));
   if (!isOverCohort(variant) || (variant !== "current" && (strategy !== "OVER_25" || summary))) return NextResponse.json({ error: "Neplatná kohorta strategie." }, { status: 400 });
   if (!isAllowedStrategyDate(date, localDateKey(new Date())) || (!summary && !isStrategyHubId(strategy))) return NextResponse.json({ error: "Neplatná strategie nebo datum." }, { status: 400 });
 
@@ -26,7 +28,7 @@ export async function GET(request: Request) {
   const catalog = STRATEGY_HUB_CATALOG.map((item) => ({ ...item, statusLabel: item.id === "VALUE" || item.id === "ELO_INTUITION" ? "Experiment" : item.status === "LIVE_TEST" ? "Sledovaná strategie · neověřená" : item.status === "NO_MARKET" ? "Bez sázkového trhu" : "Výzkum" }));
   const cohort = strategy === "OVER_25" ? overCohortDefinition(variant) : null;
   for (const item of catalog) {
-    const lifecycle = strategyLifecycle(item.id);
+    const lifecycle = strategyLifecycle(activeStrategySource(item.id));
     if (lifecycle.state === "PAUSED") {
       item.statusLabel = "Pozastavený sběr";
       item.description += " Nové výběry se nevytvářejí. Historie a vyhodnocení zůstávají zachované.";
@@ -38,7 +40,14 @@ export async function GET(request: Request) {
 
   try {
     if (summary) return NextResponse.json({ date, catalog, locked: false, summary: await strategyHubDailySummary(date) }, { headers: { "Cache-Control": "private, no-store" } });
-    const data = variant === "current" ? await strategyHubData(strategy as StrategyHubId, date) : await strategyHubData(strategy as StrategyHubId, date, variant);
+    const baseData = await strategyHubData(strategy as StrategyHubId, date, variant).catch((error: unknown) => {
+      if (strategy !== "ONE_X_TWO" || !(error instanceof Error) || error.message !== "STRATEGY_METRICS_NOT_CAPTURED") throw error;
+      // Missing accounting must not hide a separately frozen daily forecast or masquerade as zero profit.
+      return { opportunities: [], tickets: [], metrics: null, coverage: { candidates: 0, priced: 0, tickets: 0 },
+        emptyReason: "ONE_X_TWO_RESEARCH_ONLY", asOf: null, stale: true, limitedReason: error.message };
+    });
+    const data = strategy === "ONE_X_TWO" ? { ...baseData, ...await loadOneXTwoDailyForecasts(date),
+      outcomeEvaluation: await loadOneXTwoEvaluation().catch(error => { logError('one-x-two-evaluation-read', error); return null; }) } : baseData;
     return NextResponse.json({ ...metadata, locked: false, data,
       asOf: 'asOf' in data ? data.asOf : new Date().toISOString(),
       stale: 'stale' in data ? data.stale : false,

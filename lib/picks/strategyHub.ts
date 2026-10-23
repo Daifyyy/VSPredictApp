@@ -22,7 +22,7 @@ export const STRATEGY_HUB_CATALOG: StrategyHubDefinition[] = [
   { id: "VALUE", title: "Přísná VALUE", shortTitle: "VALUE", description: "Kombinace vítěze a gólů, které překonají tržní cenu podle hlavního modelu.", status: "LIVE_TEST", policyVersion: INTUITION_POLICY_VERSION, minimumSample: 50, accumulator: true },
   { id: "ELO_INTUITION", title: "ELO / INTUICE", shortTitle: "ELO", description: "Výsledkové Elo doplněné formou, prostředím, pedigree a dostupným lidským kontextem.", status: "RESEARCH", policyVersion: INTUITION_POLICY_VERSION, minimumSample: 50, accumulator: true },
   { id: "PRESSURE_FLOW_V5", title: "Průběh v5", shortTitle: "Průběh v5", description: "Výzkumný model očekávaného tempa, dominance a tvorby šancí pro gólové trhy.", status: "RESEARCH", policyVersion: 501, minimumSample: 200, accumulator: false },
-  { id: "ONE_X_TWO", title: "Výsledek zápasu 1X2", shortTitle: "1X2", description: "Samostatné výběry na vítěze s náskokem modelu proti trhu.", status: "LIVE_TEST", policyVersion: 2, minimumSample: 200, accumulator: false },
+  { id: "ONE_X_TWO", title: "Výsledek zápasu 1X2 · výzkum", shortTitle: "1X2", description: "Předzápasové pravděpodobnosti 1/X/2 a oddělený audit strategie. Zatím bez distribuce nových doporučení.", status: "RESEARCH", policyVersion: 2, minimumSample: 200, accumulator: false },
   { id: "OVER_25", title: "Více než 2,5 gólu", shortTitle: "Over 2,5", description: "Samostatné gólové výběry s pravděpodobností a cenou zmrazenou při kvalifikaci.", status: "LIVE_TEST", policyVersion: 1, minimumSample: 200, accumulator: false },
   { id: "BTTS_YES", title: "Oba týmy skórují", shortTitle: "BTTS", description: "Výběry, u kterých model očekává gól na obou stranách a překonává trh.", status: "LIVE_TEST", policyVersion: 1, minimumSample: 200, accumulator: false },
   { id: "TEAM_GOALS", title: "Týmové góly", shortTitle: "Týmové góly", description: "Konzervativně vybrané týmové hranice 0,5 a 1,5 gólu s hratelnou přímou cenou.", status: "RESEARCH", policyVersion: TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION, minimumSample: 200, accumulator: false },
@@ -33,7 +33,7 @@ export const STRATEGY_HUB_CATALOG: StrategyHubDefinition[] = [
 
 // Gólové policy v2 oddělují novou konzervativní kohortu od historické v1.
 for (const definition of STRATEGY_HUB_CATALOG) {
-  if (definition.id === "OVER_25" || definition.id === "BTTS_YES") definition.policyVersion = AUTONOMOUS_POLICY_VERSION[definition.id];
+  if (definition.id === "BTTS_YES") definition.policyVersion = AUTONOMOUS_POLICY_VERSION[definition.id];
 }
 
 export function isStrategyHubId(value: string | null): value is StrategyHubId {

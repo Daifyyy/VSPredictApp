@@ -3,12 +3,13 @@ export const FOCUS_PAUSED_STRATEGIES = ["BTTS_YES", "CORNERS", "CARDS_REF", "FOU
 export function strategyFocusModeEnabled() { return process.env.STRATEGY_FOCUS_MODE_ENABLED === "true"; }
 export type StrategyLifecycle = "ACTIVE_TEST" | "RESEARCH" | "PAUSED" | "QUARANTINED";
 export function strategyLifecycle(strategy: string): { state: StrategyLifecycle; capture: boolean; publish: boolean; reason: string | null } {
+  if (strategy === "ONE_X_TWO" || strategy === "ONE_X_TWO_GUARDED") return { state: "RESEARCH", capture: true, publish: false, reason: "ONE_X_TWO_RESEARCH_ONLY" };
+  if (strategy === "OVER_25") return { state: "PAUSED", capture: false, publish: false, reason: "OVER_V2_RETIRED" };
   if (strategy === "TEAM_GOALS") return { state: "QUARANTINED", capture: false, publish: false, reason: "TEAM_MARKET_DATA_QUARANTINE" };
   const paused = strategyFocusModeEnabled() && (FOCUS_PAUSED_STRATEGIES as readonly string[]).includes(strategy)
     || strategy === "PRESSURE_FLOW_V5" && (process.env.PRESSURE_SHADOW_COLLECTION_ENABLED === "false" || process.env.PRESSURE_V5_ENABLED === "false");
   if (paused) return { state: "PAUSED", capture: false, publish: false, reason: "STRATEGY_COLLECTION_PAUSED" };
-  const researchOnly = strategy === "OVER_25_LEGACY_SHADOW";
-  return { state: ["ONE_X_TWO", "OVER_25", "BTTS_YES"].includes(strategy) ? "ACTIVE_TEST" : "RESEARCH", capture: true, publish: !researchOnly, reason: researchOnly ? "RESEARCH_NOT_DISTRIBUTED" : null };
+  return { state: ["ONE_X_TWO", "OVER_25_LEGACY_SHADOW", "BTTS_YES"].includes(strategy) ? "ACTIVE_TEST" : "RESEARCH", capture: true, publish: true, reason: null };
 }
 
 /** Only new market-signal capture. Closing/settlement must never use this filter. */

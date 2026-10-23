@@ -2,16 +2,15 @@ import { describe, expect, it } from "vitest";
 import { allowedOddsFixtures, priorityOrder, priorityCaptureWhere, closingPrioritySets } from "./oddsCronPolicy";
 
 describe("odds cron policy", () => {
-  it("includes qualified legacy research only within the pre-kickoff horizon", () => {
+  it("includes restored original and retired qualified tips within the pre-kickoff horizon", () => {
     const now = new Date("2026-10-13T10:00:00Z");
     const where = priorityCaptureWhere(now, false);
     expect(where.kickoff).toEqual({ gt: now, lte: new Date("2026-10-13T11:30:00Z") });
-    expect(where.OR).toContainEqual({ strategy: "OVER_25_LEGACY_SHADOW", status: "candidate" });
-    expect(priorityCaptureWhere(now, true).OR).toEqual([{
-      strategy: { not: "OVER_25_LEGACY_SHADOW" }, OR: [{ status: "candidate" }],
-    }]);
+    expect(where.OR).toContainEqual({ status: "candidate" });
+    expect(where.OR).toContainEqual({ strategy: { not: "OVER_25" }, status: "watch", edge: { gte: -0.02 } });
+    expect(priorityCaptureWhere(now, true).OR).toEqual([{ status: "candidate" }]);
   });
-  it("keeps research behind production and tickets and deduplicates overlapping fixtures", () => {
+  it("prioritizes original Over, deduplicates fixtures and drops retired watch candidates", () => {
     const rows = [
       { fixtureId: 1, strategy: "OVER_25_LEGACY_SHADOW", status: "candidate" },
       { fixtureId: 2, strategy: "OVER_25_LEGACY_SHADOW", status: "candidate" },
@@ -19,11 +18,11 @@ describe("odds cron policy", () => {
       { fixtureId: 3, strategy: "OVER_25", status: "watch" },
     ];
     const { p0, p1 } = closingPrioritySets(rows, [4], false);
-    expect([...p0]).toEqual([4, 2]);
-    expect([...p1]).toEqual([1, 3]);
+    expect([...p0]).toEqual([4, 1, 2]);
+    expect([...p1]).toEqual([]);
     expect(closingPrioritySets(rows, [4], true).p1.size).toBe(0);
     const queue = priorityOrder([1, 2, 3, 4].map(fixtureId => ({ fixtureId, kickoff: new Date(1000 * fixtureId) })), p0);
-    expect(queue.slice(0, 2).map(r => r.fixtureId)).toEqual([2, 4]);
+    expect(queue.slice(0, 3).map(r => r.fixtureId)).toEqual([1, 2, 4]);
     expect(allowedOddsFixtures({ requested: 12, globalRemaining: 100, oddsRemaining: 1200 })).toBe(12);
   });
   it("reserves retry attempts under the daily hard limit", () => {

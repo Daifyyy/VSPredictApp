@@ -13,7 +13,8 @@ import { sharedReadCache } from "@/lib/boundedCache";
 import { createHash } from "node:crypto";
 import { localDateKey } from "@/lib/competitionGrouping";
 import { TEAM_GOALS_QUARANTINE_REASON } from "@/lib/picks/teamMarketSafety";
-import { overCohortDefinition, type OverCohort } from "@/lib/picks/overCohorts";
+import { activeStrategySource, defaultStrategyCohort, overCohortDefinition, type OverCohort } from "@/lib/picks/overCohorts";
+import { strategyLifecycle } from "../picks/strategyLifecycle";
 
 export interface StrategyHubOpportunity {
   id: string;
@@ -114,7 +115,7 @@ export function strategyMetricsKey(strategy: StrategyHubId, variant: OverCohort 
 }
 
 /** Shared domain payload only; authorization stays in API/page callers. */
-export async function strategyHubData(strategy: StrategyHubId, date: string, variant: OverCohort = "current") {
+export async function strategyHubData(strategy: StrategyHubId, date: string, variant: OverCohort = defaultStrategyCohort(strategy)) {
   const key = strategyMetricsKey(strategy, variant);
   if (strategy === "TEAM_GOALS") return quarantinedTeamData();
   if (variant === "current" && process.env.RESOURCE_SAVING_READS_ENABLED !== 'true') return computeStrategyHubData(strategy, date);
@@ -135,11 +136,11 @@ export async function strategyHubData(strategy: StrategyHubId, date: string, var
 export async function refreshStrategyHubMetrics(now = new Date()) {
   const startedAt = Date.now();
   const date = localDateKey(now);
-  const targets = STRATEGY_HUB_CATALOG.map(definition => ({ id: definition.id, variant: "current" as OverCohort }));
-  targets.push({ id: "OVER_25", variant: "original" }, { id: "OVER_25", variant: "archive" });
+  const targets = STRATEGY_HUB_CATALOG.map(definition => ({ id: definition.id, variant: defaultStrategyCohort(definition.id) }));
+  targets.push({ id: "OVER_25", variant: "current" }, { id: "OVER_25", variant: "archive" });
   for (const definition of targets) {
     const key = strategyMetricsKey(definition.id, definition.variant);
-    if (definition.variant !== "current") {
+    if (definition.variant !== defaultStrategyCohort(definition.id)) {
       // Optional historical views may not consume the remainder of a busy audit.
       if (Date.now() - startedAt > 20_000) continue;
       const existing = await prisma.apiCache.findUnique({ where: { key }, select: { payload: true } });
@@ -164,8 +165,7 @@ async function computeStrategyHubData(strategy: StrategyHubId, date: string, cac
     coverage: { candidates: 0, priced: 0, tickets: 0 }, emptyReason: "HISTORICAL_COHORT",
   };
   const baseDefinition = STRATEGY_HUB_CATALOG.find((item) => item.id === strategy)!;
-  const definition = strategy === "OVER_25" && variant === "original"
-    ? { ...baseDefinition, status: "RESEARCH" as const } : baseDefinition;
+  const definition = baseDefinition;
   const bounds = pragueDateBounds(date);
   const recentFrom = new Date(Date.now() - 30 * 86400_000);
   const dayWhere = cachedMetrics ? { kickoff: { gte: bounds.start, lt: bounds.end } } : {};
@@ -282,16 +282,18 @@ export async function strategyHubDailySummary(date: string) {
   const bounds = pragueDateBounds(date);
   const [ticketRows, autonomous, pressureFlow] = await Promise.all([
     prisma.intuitionTicket.findMany({ where: { policyVersion: STRATEGY_HUB_CATALOG[0].policyVersion, legs: { some: { kickoff: { gte: bounds.start, lt: bounds.end } } } }, select: { strategy: true, slot: true, legs: { where: { kickoff: { gte: bounds.start, lt: bounds.end } }, select: { fixtureId: true } } } }),
-    prisma.autonomousTipSnapshot.findMany({ where: { kickoff: { gte: bounds.start, lt: bounds.end }, status: "candidate", modelContext: "LEAGUE", OR: STRATEGY_HUB_CATALOG.filter((item) => ["ONE_X_TWO", "OVER_25", "BTTS_YES", "CORNERS", "CARDS_REF", "FOULS"].includes(item.id)).map((item) => ({ strategy: item.id, policyVersion: item.policyVersion, ...strategyCohort(item.id) })) }, select: { strategy: true, fixtureId: true } }),
-    prisma.marketSignalSnapshot.findMany({ where: { kickoff: { gte: bounds.start, lt: bounds.end }, policyVersion: PRESSURE_FLOW_V5_POLICY_VERSION, NOT: { market: { startsWith: "TEAM_" } }, ...strategyCohort("PRESSURE_FLOW_V5") }, select: { fixtureId: true } }),
+    prisma.autonomousTipSnapshot.findMany({ where: { kickoff: { gte: bounds.start, lt: bounds.end }, status: "candidate", modelContext: "LEAGUE", OR: STRATEGY_HUB_CATALOG.filter((item) => ["ONE_X_TWO", "OVER_25", "BTTS_YES", "CORNERS", "CARDS_REF", "FOULS"].includes(item.id) && strategyLifecycle(activeStrategySource(item.id)).publish).map((item) => ({ strategy: activeStrategySource(item.id), policyVersion: item.policyVersion, ...strategyCohort(item.id) })) }, select: { strategy: true, fixtureId: true } }),
+    strategyLifecycle("PRESSURE_FLOW_V5").publish ? prisma.marketSignalSnapshot.findMany({ where: { kickoff: { gte: bounds.start, lt: bounds.end }, policyVersion: PRESSURE_FLOW_V5_POLICY_VERSION, NOT: { market: { startsWith: "TEAM_" } }, ...strategyCohort("PRESSURE_FLOW_V5") }, select: { fixtureId: true } }) : Promise.resolve([]),
   ]);
   const values = STRATEGY_HUB_CATALOG.map((definition) => {
+    const lifecycle = strategyLifecycle(activeStrategySource(definition.id));
+    if (!lifecycle.publish) return { strategy: definition.id, opportunities: 0, tickets: 0, emptyReason: lifecycle.reason };
     if (definition.id === "TEAM_GOALS") return { strategy: definition.id, opportunities: 0, tickets: 0, emptyReason: TEAM_GOALS_QUARANTINE_REASON };
     if (definition.id === "VALUE" || definition.id === "ELO_INTUITION") {
       const matching = ticketRows.filter((row) => row.strategy === definition.id);
       return { strategy: definition.id, opportunities: new Set(matching.flatMap((row) => row.legs.map((leg) => leg.fixtureId))).size, tickets: matching.length, emptyReason: matching.length ? null : definition.id === "VALUE" ? "NOT_ENOUGH_VALUE_LEGS" : "NOT_ENOUGH_CONTEXTUAL_LEGS" };
     }
-    const opportunities = definition.id === "PRESSURE_FLOW_V5" ? new Set(pressureFlow.map((row) => row.fixtureId)).size : autonomous.filter((row) => row.strategy === definition.id).length;
+    const opportunities = definition.id === "PRESSURE_FLOW_V5" ? new Set(pressureFlow.map((row) => row.fixtureId)).size : autonomous.filter((row) => row.strategy === activeStrategySource(definition.id)).length;
     return { strategy: definition.id, opportunities, tickets: 0, emptyReason: opportunities ? null : "NOT_ENOUGH_CANDIDATES" };
   });
   return { activeStrategies: values.filter((item) => item.opportunities > 0).length, opportunities: values.reduce((sum, item) => sum + item.opportunities, 0), tickets: values.reduce((sum, item) => sum + item.tickets, 0), strategies: values };

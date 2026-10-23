@@ -8,6 +8,7 @@ import { chunkFixtureIds, matchStatusEvents } from "@/lib/pushMatchStatus";
 import type { NewChecklistCandidate } from "@/lib/data/checklistStore";
 import { DECISION_CHECKLIST_VERSION } from "@/lib/picks/decisionChecklist";
 import { isAdminEmail } from "@/lib/entitlements";
+import { strategyLifecycle } from "./picks/strategyLifecycle";
 
 export function pushConfigured(): boolean {
   return Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT);
@@ -241,11 +242,11 @@ export async function sendKickoffReminders(now = new Date()) {
       select: { fixtureId: true, market: true, side: true, line: true, policyVersion: true, modelProbability: true, openMarketProbability: true, series: true },
     }),
     prisma.autonomousTipSnapshot.findMany({
-      where: { strategy: { not: "OVER_25_LEGACY_SHADOW" }, fixtureId: { in: fixtures.map((fixture) => fixture.fixtureId) }, status: "candidate" },
-      select: { fixtureId: true, market: true },
+      where: { strategy: { not: "OVER_25" }, fixtureId: { in: fixtures.map((fixture) => fixture.fixtureId) }, status: "candidate" },
+      select: { fixtureId: true, market: true, strategy: true },
     }),
   ]) : [[], []];
-  const portfolioMarketKeys = new Set(portfolioCandidates.map((row) => `${row.fixtureId}:${row.market}`));
+  const portfolioMarketKeys = new Set(portfolioCandidates.filter(row => strategyLifecycle(row.strategy).publish).map((row) => `${row.fixtureId}:${row.market}`));
   const signalsByFixture = new Map<number, typeof signals>();
   for (const signal of signals) {
     const rows = signalsByFixture.get(signal.fixtureId) ?? [];

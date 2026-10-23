@@ -60,23 +60,23 @@ describe("prospective legacy Over capture", () => {
     expect(await settleAutonomousPortfolio(1, at)).toBe(1);
     expect(prisma.autonomousTipSnapshot.updateMany).toHaveBeenCalledWith({ where: { id: "btts-before-pause", settledAt: null }, data: { hit: true, profit: .8, settlementStatus: "SETTLED", settledAt: at } });
   });
-  it("focus mode keeps both Over branches but does not write new BTTS or count records", async () => {
+  it("focus mode keeps only original Over and does not write new BTTS or count records", async () => {
     vi.stubEnv("STRATEGY_FOCUS_MODE_ENABLED", "true");
     await captureAutonomousPortfolio(1, books, at);
     const strategies = [...stored.values()].map(row => row.strategy);
-    expect(strategies).toContain("OVER_25");
+    expect(strategies).not.toContain("OVER_25");
     expect(strategies).toContain("OVER_25_LEGACY_SHADOW");
     for (const paused of ["BTTS_YES", "CORNERS", "CARDS_REF", "FOULS"]) expect(strategies).not.toContain(paused);
     const queries = vi.mocked(prisma.modelStrategyDefinition.findUnique).mock.calls;
     expect(JSON.stringify(queries)).not.toMatch(/CORNERS|CARDS_REF|FOULS/);
   });
-  it("captures a new research cohort, not retired history; current v2 still rejects readiness 6", async () => {
+  it("captures original rules on repaired inputs without restarting either retired ledger", async () => {
     await captureAutonomousPortfolio(1, books, at);
-    expect(stored.get("1:OVER_25:2")?.status).toBe("watch");
+    expect(stored.has("1:OVER_25:2")).toBe(false);
     expect(stored.has("1:OVER_25:1")).toBe(false);
     const shadow = stored.get("1:OVER_25_LEGACY_SHADOW:1")!;
     expect(shadow).toMatchObject({ market: "OVER_25", side: "OVER", line: 2.5, status: "candidate", decimalOdds: 1.8, modelProbability: .65, qualifiedAt: at });
-    expect(dailyAutonomousCandidate(shadow as never, {} as never, null, at).reason).toBe("INACTIVE_SOURCE_POLICY");
+    expect(dailyAutonomousCandidate(shadow as never, {} as never, null, at).reason).toBe("FIXTURE_CHANGED_OR_UNAVAILABLE");
     const frozen = { ...shadow };
     await captureAutonomousPortfolio(1, [{ ...books[0], over25: 2.4 }], new Date(at.getTime() + 60000));
     expect(stored.get("1:OVER_25_LEGACY_SHADOW:1")).toEqual(frozen);
@@ -94,7 +94,7 @@ describe("prospective legacy Over capture", () => {
     expect(prisma.marketSignalSnapshot.findMany).toHaveBeenCalledTimes(2);
   });
 
-  it("promotes watch rows once and captures both cohorts when current rules also pass", async () => {
+  it("promotes original watch rows once without recreating v2 even when its rules pass", async () => {
     const prediction = await prisma.fixturePrediction.findUnique({ where: { fixtureId: 1 } });
     vi.mocked(prisma.marketSignalSnapshot.findMany).mockResolvedValue([{ market: "OVER_25", series: [{}] }] as never);
     await captureAutonomousPortfolio(1, books, at);
@@ -103,7 +103,8 @@ describe("prospective legacy Over capture", () => {
     vi.mocked(prisma.marketSignalSnapshot.findMany).mockResolvedValue([{ market: "OVER_25", series: [{}, {}, {}] }] as never);
     const qualifiedAt = new Date(at.getTime() + 60000);
     expect(await captureAutonomousPortfolio(1, books, qualifiedAt)).toBe(1);
-    for (const strategy of ["1:OVER_25:2", "1:OVER_25_LEGACY_SHADOW:1"]) {
+    expect(stored.has("1:OVER_25:2")).toBe(false);
+    for (const strategy of ["1:OVER_25_LEGACY_SHADOW:1"]) {
       expect(stored.get(strategy)).toMatchObject({ status: "candidate", qualifiedAt, decimalOdds: 1.8 });
     }
     expect(await captureAutonomousPortfolio(1, books, qualifiedAt)).toBe(0);

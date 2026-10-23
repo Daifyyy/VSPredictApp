@@ -1,5 +1,6 @@
 import type { AutonomousTipSnapshot } from "@prisma/client";
-import { AUTONOMOUS_POLICY_VERSION, evaluateAutonomousTip, type AutonomousStrategy } from "./autonomousPortfolio";
+import { AUTONOMOUS_POLICY_VERSION, evaluateAutonomousTip, evaluateLegacyOverShadow, LEGACY_OVER_SHADOW_STRATEGY, LEGACY_OVER_SHADOW_POLICY_VERSION, type AutonomousStrategy } from "./autonomousPortfolio";
+import { strategyLifecycle } from "./strategyLifecycle";
 import { comparableMarketQuote, type ComparableMarket, type ComparableSide } from "./comparableMarketQuote";
 import { parseBooks } from "./books";
 import { dailyEvidenceCohortKey } from "./dailySelectionEvidence";
@@ -18,8 +19,10 @@ export type DailyAutonomousRow = Pick<AutonomousTipSnapshot,
 export function dailyAutonomousCandidate(row: DailyAutonomousRow, fixture: DailyFixtureQuote,
   evidence:DailyEvidence|null, now:Date, blocked=false): {candidate:DailyPublicationCandidate|null;reason:string|null} {
   const reject=(reason:string)=>({candidate:null,reason});
-  const strategy=row.strategy as AutonomousStrategy;
-  if(!(strategy in AUTONOMOUS_POLICY_VERSION)||row.policyVersion!==AUTONOMOUS_POLICY_VERSION[strategy]||row.status!=="candidate") return reject("INACTIVE_SOURCE_POLICY");
+  const original = row.strategy === LEGACY_OVER_SHADOW_STRATEGY;
+  const strategy = (original ? "OVER_25" : row.strategy) as AutonomousStrategy;
+  const policy = original ? LEGACY_OVER_SHADOW_POLICY_VERSION : AUTONOMOUS_POLICY_VERSION[strategy];
+  if(!policy||row.policyVersion!==policy||row.status!=="candidate"||!strategyLifecycle(row.strategy).publish) return reject("INACTIVE_SOURCE_POLICY");
   if(blocked)return reject("SOURCE_BLOCKED");
   if(!row.qualifiedAt||row.qualifiedAt>=row.kickoff||row.qualifiedAt>now) return reject("NOT_PREMATCH_QUALIFIED");
   if(!Number.isFinite(row.modelProbability)||row.modelProbability<=0||row.modelProbability>=1) return reject("INVALID_FROZEN_PROBABILITY");
@@ -35,7 +38,7 @@ export function dailyAutonomousCandidate(row: DailyAutonomousRow, fixture: Daily
   if(readiness==null||!Number.isFinite(readiness)) return reject("MISSING_FROZEN_READINESS");
   // Separate the publication deadline from a genuine loss of price qualification.
   if((fixture.kickoff.getTime()-now.getTime())/60_000<15)return reject("KICKOFF_TOO_CLOSE");
-  const decision=evaluateAutonomousTip({strategy,modelProbability:row.modelProbability,marketProbability:quote.fairProbability,decimalOdds:quote.decimalOdds,
+  const decision=(original ? evaluateLegacyOverShadow : evaluateAutonomousTip)({strategy,modelProbability:row.modelProbability,marketProbability:quote.fairProbability,decimalOdds:quote.decimalOdds,
     secondProbability:strategy==="ONE_X_TWO"?Math.max(fixture.draw,row.side==="HOME"?fixture.awayWin:fixture.homeWin):undefined,
     readinessSample:readiness,lowConfidence:fixture.lowConfidence,sampleCount:row.sampleCount,minutesToKickoff:(row.kickoff.getTime()-now.getTime())/60_000});
   if(decision.status!=="candidate") return reject("CURRENT_PRICE_SOURCE_REJECTED");
@@ -44,5 +47,5 @@ export function dailyAutonomousCandidate(row: DailyAutonomousRow, fixture: Daily
     homeTeamId:row.homeTeamId,awayTeamId:row.awayTeamId,homeName:row.homeName,awayName:row.awayName,kickoff:row.kickoff.toISOString(),marketKey:JSON.stringify([row.market,row.side,row.line]),
     odds:quote.decimalOdds,bookmaker:quote.bookmaker,oddsAt:fixture.oddsCurrentAt.toISOString(),quoteAudit:quote,priceKind:"DIRECT",qualified:true,currentPriceQualified:true,identityValid:true,blocked,
     warnings:quote.benchmarkQuality==="PANEL"?[]:["SINGLE_BOOK_BENCHMARK"],marketProbability:quote.fairProbability,benchmarkComparable:true,modelProbability:row.modelProbability,probabilityKind:row.market==="1X2"?"MAIN_1X2":row.market==="BTTS"?"MAIN_BTTS":row.market==="OVER_25"?"MAIN_TOTAL":"COUNT",
-    evidence,strategy,selection,reason:"Výběr prošel pravidly zdrojové strategie i kontrolou aktuální přímé ceny.",risk:"Výhoda tohoto denního selektoru zatím není prospektivně doložena."}};
+    evidence,strategy:row.strategy,selection,reason:"Výběr prošel pravidly zdrojové strategie i kontrolou aktuální přímé ceny.",risk:"Výhoda tohoto denního selektoru zatím není prospektivně doložena."}};
 }

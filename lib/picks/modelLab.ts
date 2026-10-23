@@ -24,7 +24,7 @@ export const STRATEGY_CATALOG: StrategyCatalogItem[] = [
   ...OVER_COHORTS.map(({ strategy, policyVersion, title, status, rules, decision }) => ({ strategy, policyVersion, market: "OVER_25", title, status, minimumSample: 200, rules, decision })),
   { strategy: "ONE_X_TWO_GUARDED", policyVersion: 1, market: "1X2", title: "1X2 · konzervativní filtr", status: "RESEARCH", minimumSample: 200, rules: "Samostatná neměnná kohorta konzervativního 1X2 výběru", decision: "Výsledek filtrovaných sázek není výkon všech predikcí hlavního modelu." },
   { strategy: "PRESSURE_FLOW_V5", policyVersion: 501, market: "GOAL_FLOW", title: "Průběh v5", status: "RESEARCH", minimumSample: 200, rules: "Přímý kurz 1,50–3,50 · coverage 75 % · pravděpodobnost 55 % · edge 4 p. b. · EV 3 %", decision: "Oddělená kalibrace Over 2,5, BTTS a týmových gólů na prospektivní kohortě" },
-  { strategy: "ONE_X_TWO", policyVersion: 2, market: "1X2", title: "1X2 v2", status: "LIVE_TEST", minimumSample: 200, rules: "58 % · náskok 10 p. b. · edge 4 p. b. · EV 2 %", decision: "ROI, closing benchmark a kalibrace na stejné kohortě" },
+  { strategy: "ONE_X_TWO", policyVersion: 2, market: "1X2", title: "1X2 · výzkumný výběrový filtr", status: "RESEARCH", minimumSample: 200, rules: "58 % · náskok 10 p. b. · edge 4 p. b. · EV 2 %", decision: "Pouze sběr a vyhodnocení; bilance vybraných vítězů není hodnocení celého modelu 1/X/2." },
   { strategy: "BTTS_YES", policyVersion: 1, market: "BTTS", title: "BTTS Ano v1", status: "LIVE_TEST", minimumSample: 200, rules: "60 % · edge 2 p. b. · EV 2 %", decision: "Časový holdout, kladné CLV a stabilita napříč ligami" },
   { strategy: "CORNERS", policyVersion: 1, market: "CORNERS", title: "Rohy Over/Under v1", status: "RESEARCH", minimumSample: 200, rules: "60 % · edge 5 p. b. · EV 3 % · skutečná půlková linie", decision: "Po pre-launch auditu prospektivní ROI, čerstvé CLV a kalibrace proti stejnému trhu" },
   { strategy: "CARDS_REF", policyVersion: 1, market: "CARDS", title: "Karty · s rozhodčím", status: "RESEARCH", minimumSample: 200, rules: "Oddělená verze s auditním faktorem rozhodčího", decision: "Kalibrace a benchmark pouze v rámci stejné verze" },
@@ -50,8 +50,9 @@ for (const definition of STRATEGY_CATALOG) {
 export function resolveModelLabStatus(item: StrategyCatalogItem, storedStatus?: string | null): ModelLabStatus {
   if (item.status === "RETIRED") return "RETIRED";
   if (item.strategy === "TEAM_GOALS") return "REJECTED";
+  if (item.strategy === "ONE_X_TWO" || item.strategy === "ONE_X_TWO_GUARDED") return storedStatus === "RETIRED" || storedStatus === "REJECTED" ? storedStatus : "RESEARCH";
   if (item.strategy === LEGACY_OVER_SHADOW_STRATEGY) {
-    return storedStatus === "RETIRED" || storedStatus === "REJECTED" ? storedStatus : "RESEARCH";
+    return storedStatus === "RETIRED" || storedStatus === "REJECTED" ? storedStatus : "LIVE_TEST";
   }
   return MODEL_LAB_STATUSES.includes(storedStatus as ModelLabStatus) ? storedStatus as ModelLabStatus : item.status;
 }

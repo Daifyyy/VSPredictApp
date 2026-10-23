@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { loadTelegramDay } from "./telegram";
+import { loadTelegramDay, publishedResults } from "./telegram";
 
-const mocks = vi.hoisted(() => ({ strategyData: vi.fn(), cursorFind: vi.fn(), cursorUpsert: vi.fn(), captureWindow: vi.fn() }));
-vi.mock("@/lib/db", () => ({ prisma: { telegramCommandCursor: { findUnique: mocks.cursorFind, upsert: mocks.cursorUpsert } } }));
+const mocks = vi.hoisted(() => ({ strategyData: vi.fn(), cursorFind: vi.fn(), cursorUpsert: vi.fn(), captureWindow: vi.fn(), publications: vi.fn(), flows: vi.fn() }));
+vi.mock("@/lib/db", () => ({ prisma: { telegramCommandCursor: { findUnique: mocks.cursorFind, upsert: mocks.cursorUpsert }, telegramPublication: { findMany: mocks.publications }, matchFlowEvaluationSnapshot: { findMany: mocks.flows } } }));
 vi.mock("@/lib/operations", () => ({ upsertIncident: vi.fn() }));
 vi.mock("@/lib/data/strategyHubStore", () => ({ strategyHubData: mocks.strategyData }));
 vi.mock("@/lib/data/intuitionTicketStore", () => ({ captureIntuitionWindow: mocks.captureWindow }));
@@ -21,6 +21,32 @@ function day(): TelegramDay {
 }
 
 describe("telegram formatting", () => {
+  it("does not turn research 1X2 into new tips, but keeps result evaluation", async () => {
+    const payload=day();payload.strategies[0].strategy="ONE_X_TWO";
+    expect(formatTips(payload).join(" ")).not.toContain("1.82");
+    expect(formatTips(payload).join(" ")).toContain("výzkum");
+    payload.strategies[0].data.opportunities[0].outcome="WON";
+    expect(formatResults(payload).join(" ")).toContain("1.82");
+    await loadTelegramDay(payload.date,"PUBLISH");
+    expect(mocks.strategyData).not.toHaveBeenCalledWith("ONE_X_TWO",payload.date);
+  });
+  it("distributes the active Over even though the old ledger identity is paused", async () => {
+    const payload = await loadTelegramDay("2026-10-23", "PUBLISH");
+    expect(mocks.strategyData).toHaveBeenCalledWith("OVER_25", "2026-10-23");
+    expect(formatTips(payload, "OVER_25").join(" ")).toContain("1.82");
+  });
+  it("resolves an old published Over by ID without mixing new picks or mutating cached data", async () => {
+    const data = day().strategies[0].data;
+    const current = { ...data, opportunities: [{ ...data.opportunities[0], id: "new", outcome: "WON" as const }] };
+    const old = { ...data, opportunities: [{ ...data.opportunities[0], id: "old", outcome: "LOST" as const }] };
+    mocks.strategyData.mockImplementation((_strategy, _date, cohort) => Promise.resolve(cohort === "current" ? old : current));
+    mocks.publications.mockResolvedValue([{ kind: "STRATEGIES", payload: { ...day(), strategies: [{ strategy: "OVER_25", data: old }] } }]);
+    mocks.flows.mockResolvedValue([]);
+    const result = await publishedResults("2026-10-22", "channel");
+    expect(result.strategies.find(row => row.strategy === "OVER_25")?.data.opportunities.map(item => [item.id, item.outcome])).toEqual([["old", "LOST"]]);
+    expect(current.opportunities.map(item => item.id)).toEqual(["new"]);
+    expect(mocks.strategyData).toHaveBeenCalledWith("OVER_25", "2026-10-22", "current");
+  });
   it("does not republish paused candidates but still shows their results", async () => {
     vi.stubEnv("STRATEGY_FOCUS_MODE_ENABLED", "true");
     const payload = day();

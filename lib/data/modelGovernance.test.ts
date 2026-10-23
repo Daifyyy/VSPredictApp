@@ -16,7 +16,7 @@ describe("v5 governance cohort", () => {
   beforeEach(() => vi.resetAllMocks());
   it("uses actual v5 probabilities for scores, recent rows and deltas; requests v5 flow", async () => {
     vi.mocked(prisma.modelStrategyDefinition.findMany).mockResolvedValue([]);
-    vi.mocked(prisma.modelStrategyMetricSnapshot.findMany).mockResolvedValue([{ strategy: "OVER_25", policyVersion: 2, modelVersion: 7, metrics: { reportVersion: 3, summary: { portfolio: { settled: 7 } } } }] as never);
+    vi.mocked(prisma.modelStrategyMetricSnapshot.findMany).mockResolvedValue([{ strategy: "OVER_25_LEGACY_SHADOW", policyVersion: 1, modelVersion: 7, metrics: { reportVersion: 3, summary: { portfolio: { settled: 7 } } } }] as never);
     vi.mocked(prisma.calibrationCheckpoint.findMany).mockResolvedValue([]);
     vi.mocked(prisma.dataIncident.findMany).mockResolvedValue([]);
     vi.mocked(prisma.autonomousTipSnapshot.groupBy).mockResolvedValue([]);
@@ -38,6 +38,7 @@ describe("v5 governance cohort", () => {
     expect(dashboard.performancePressure.evaluation.cohorts[0].markets.BTTS_YES.baseline.n).toBe(0);
     expect(prisma.matchFlowEvaluationSnapshot.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ pressureVersion: 5 }) }));
     expect(dashboard.matchFlow.pressureVersion).toBe(5);
-    expect(dashboard.strategies.find(row => row.strategy === "OVER_25")?.sample).toBe(7);
+    expect(dashboard.strategies.find(row => row.strategy === "OVER_25_LEGACY_SHADOW")?.sample).toBe(7);
+    expect(dashboard.strategies.some(row => row.strategy === "OVER_25")).toBe(false);
   });
 });

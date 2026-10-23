@@ -94,6 +94,7 @@ describe('stored strategy accounting', () => {
     mocks.tips.mockResolvedValue([]);
     const data = await strategyHubData('OVER_25', '2026-10-01');
     expect(data.metrics).toEqual(metrics);
+    expect(mocks.tips.mock.calls[0][0].where).toMatchObject({ strategy: 'OVER_25_LEGACY_SHADOW', policyVersion: 1 });
     expect(mocks.tips.mock.calls[0][0].where.kickoff).toEqual({ gte: expect.any(Date), lt: expect.any(Date) });
     expect(mocks.tips.mock.calls[0][0].select.modelInputSnapshot).toBeUndefined();
     await strategyHubData('OVER_25', '2026-10-01');

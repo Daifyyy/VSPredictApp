@@ -12,8 +12,9 @@ describe("strategy focus lifecycle", () => {
   it("pauses only new collection and publication of selected experiments", () => {
     vi.stubEnv("STRATEGY_FOCUS_MODE_ENABLED", "true");
     for (const strategy of FOCUS_PAUSED_STRATEGIES) expect(strategyLifecycle(strategy)).toMatchObject({ state: "PAUSED", capture: false, publish: false });
-    for (const strategy of ["VALUE", "ELO_INTUITION", "ONE_X_TWO", "ONE_X_TWO_GUARDED", "OVER_25"]) expect(strategyLifecycle(strategy)).toMatchObject({ capture: true, publish: true });
-    expect(strategyLifecycle("OVER_25_LEGACY_SHADOW")).toMatchObject({ capture: true, publish: false });
+    for (const strategy of ["VALUE", "ELO_INTUITION", "OVER_25_LEGACY_SHADOW"]) expect(strategyLifecycle(strategy)).toMatchObject({ capture: true, publish: true });
+    for (const strategy of ["ONE_X_TWO", "ONE_X_TWO_GUARDED"]) expect(strategyLifecycle(strategy)).toMatchObject({ state: "RESEARCH", capture: true, publish: false });
+    expect(strategyLifecycle("OVER_25")).toMatchObject({ state: "PAUSED", capture: false, publish: false });
     for (const market of ["BTTS", "CORNERS", "CARDS", "FOULS"]) expect(captureMarketAllowed(market)).toBe(false);
     for (const market of ["1X2", "OVER_25"]) expect(captureMarketAllowed(market)).toBe(true);
     vi.stubEnv("PRESSURE_SHADOW_COLLECTION_ENABLED", "true");
