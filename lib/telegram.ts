@@ -13,6 +13,7 @@ import { formatCurrentTips } from "./picks/telegramCurrent";
 import { aiFlags } from './picks/aiResearch';
 import { aiTipPicks, formatAITips, formatAIResults } from './picks/aiTelegram';
 import type { AIResearchDay } from './data/aiResearchStore';
+import { combinationConditions, outcomeLabel, ticketBreakdown } from './picks/ticketPresentation';
 
 export const TELEGRAM_TOP_LIMIT = 3;
 export const TELEGRAM_PAGE_SIZE = 5;
@@ -92,17 +93,27 @@ export function formatTickets(payload: TelegramDay, requested?: "VALUE" | "ELO_I
     const data = payload.strategies.find((row) => row.strategy === id)?.data;
     if (!data?.tickets.length) { blocks.push(data ? empty(id) : `${strategyIcon(id)} <b>${title(id)}</b>\n   Data nejsou dostupná.`); continue; }
     blocks.push(`${strategyIcon(id)} <b>${esc(title(id))}</b>`, ...data.tickets.flatMap((ticket) => {
-      const legs = data.opportunities.filter((item) => item.ticketSlots.includes(ticket.slot));
-      return [`${ticketOutcomeIcon(ticket.outcome)} <b>Tiket ${ticket.slot === 1 ? "A" : "B"}</b> · kurz ${odd(ticket.odds)}`, ...legs.map((item, index) => `${index + 1}. ${opportunity(item)}`)];
+      return ticketResultBlocks(ticket, data.opportunities);
     }));
     const reserves = includeReserves ? data.opportunities.filter((item) => !item.ticketSlots.length).slice(0, 5) : [];
     if (reserves.length) blocks.push("➕ <b>Další vybrané příležitosti</b>", ...reserves.map(opportunity));
   }
   return splitTelegramBlocks(blocks);
 }
+function ticketResultBlocks(ticket: StrategyHubTicket, opportunities: TelegramOpportunity[]) {
+  const profit = ticket.profit == null ? '' : ` · profit ${ticket.profit >= 0 ? '+' : ''}${ticket.profit.toFixed(2)} j`;
+  return [`${ticketOutcomeIcon(ticket.outcome)} <b>Tiket ${ticket.slot === 1 ? 'A' : 'B'}</b> · kurz ${odd(ticket.odds)}${ticket.estimatedPriceCount ? ' (obsahuje odhad)' : ''}${profit}`,
+    ...ticketBreakdown(ticket, opportunities).map(({ fixtureId, leg }, i) => leg
+      ? `${i + 1}. ${opportunity(leg)}${leg.score ? `\n   Skóre ${esc(leg.score)}` : ''}${leg.bookmaker ? `\n   ${esc(leg.bookmaker)}` : ''}${combinationConditions(leg).map(c => `\n   ${outcomeLabel(c.outcome)} · ${esc(c.label)}`).join('')}`
+      : `${i + 1}. Detail nohy #${fixtureId} není zachycen; výsledek neodhadujeme.`)];
+}
 export function formatResults(payload: TelegramDay) {
   const blocks = [`📊 <b>Výsledky za ${payload.date}</b>`];
   for (const { strategy, data } of payload.strategies) {
+    if (strategy === 'VALUE' || strategy === 'ELO_INTUITION') {
+      if (data.tickets.length) blocks.push(`${strategyIcon(strategy)} <b>${esc(title(strategy))}</b>`, ...data.tickets.flatMap(ticket => ticketResultBlocks(ticket, data.opportunities)));
+      continue;
+    }
     const settled = data.opportunities.filter((item) => item.outcome !== "PENDING"); const tickets = data.tickets.filter((item) => item.outcome !== "PENDING");
     if (settled.length || tickets.length) blocks.push(`${strategyIcon(strategy)} <b>${esc(title(strategy))}</b>`, ...settled.map(opportunity), ...tickets.map((ticket) => `${ticketOutcomeIcon(ticket.outcome)} <b>Tiket ${ticket.slot === 1 ? "A" : "B"}</b> · kurz ${odd(ticket.odds)}`));
   }
@@ -219,7 +230,15 @@ export async function handleTelegramCommand(userId: string, text: string, now = 
     return formatDailySelection(await readDailySelection(date,true),date<today);
   }
   if (command === "/help") return ["<b>Příkazy</b>\n/tipy — aktuální uložené tipy\n/tipy over25 — původní Over\n/tipy ai — stav AI výzkumu\n/dalsi [strategie] — další aktuální tipy\n/vyber [YYYY-MM-DD] — neměnný Denní výběr\n/tiket value|elo\n/vysledky [YYYY-MM-DD]\n/datum YYYY-MM-DD [strategie]\n/stav"];
-  if (command === "/vysledky") { const date = args[0] ?? shiftDateKey(today, -1); return isTelegramDateAllowed(date, today) ? formatResults(await loadTelegramDay(date)) : ["Neplatné nebo nepovolené datum."]; }
+  if (command === '/vysledky') {
+    const requested = args.find(arg => !/^\d{4}-\d{2}-\d{2}$/.test(arg));
+    const strategy = requested ? telegramStrategyAlias(requested) : null;
+    const date = args.find(arg => /^\d{4}-\d{2}-\d{2}$/.test(arg)) ?? shiftDateKey(today, -1);
+    if (args.length > 2 || requested && strategy !== 'VALUE' && strategy !== 'ELO_INTUITION') return ['Použij /vysledky [value|elo] [YYYY-MM-DD].'];
+    if (!isTelegramDateAllowed(date, today)) return ['Neplatné nebo nepovolené datum.'];
+    const payload = await loadTelegramDay(date);
+    return formatResults(strategy ? { ...payload, ai: undefined, strategies: payload.strategies.filter(s => s.strategy === strategy) } : payload);
+  }
   if (command === "/stav") return formatStatus(await loadTelegramDay(today));
   if (command === "/tiket") { const strategy = telegramStrategyAlias(args[0]); return strategy === "VALUE" || strategy === "ELO_INTUITION" ? formatTickets(await loadTelegramDay(today), strategy, true) : ["Použij /tiket value nebo /tiket elo."]; }
   if (command === "/datum") { const strategy = telegramStrategyAlias(args[1]); if (!args[0] || !isTelegramDateAllowed(args[0], today)) return ["Použij /datum YYYY-MM-DD [strategie]. Povolen je včerejšek až +7 dní."]; if (args[1] && !strategy) return ["Neznámá strategie."]; return formatTips(await loadTelegramDay(args[0], "PUBLISH"), strategy ?? undefined); }

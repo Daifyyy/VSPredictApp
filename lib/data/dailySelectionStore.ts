@@ -16,6 +16,7 @@ export interface DailyPublicationCandidate extends DailyCandidate {
   reason: string;
   risk: string;
   strategy: string;
+  minimumAcceptableOdds?: number | null;
   quoteAudit?: Omit<ComparableMarketQuote,"sampledAt">;
 }
 const json = (value: unknown): Prisma.InputJsonValue => JSON.parse(JSON.stringify(value));

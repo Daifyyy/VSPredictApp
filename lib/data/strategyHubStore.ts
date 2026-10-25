@@ -40,6 +40,9 @@ export interface StrategyHubOpportunity {
   score: string | null;
   ticketSlots: number[];
   strategyConflict?: string | null;
+  combination?: { winner: string; total: string; line: number; homeGoals: number | null; awayGoals: number | null };
+  conditionRetention?: number | null;
+  conditionOddsUplift?: number | null;
 }
 
 export interface StrategyHubTicket {
@@ -49,6 +52,7 @@ export interface StrategyHubTicket {
   outcome: "PENDING" | "WON" | "LOST" | "VOID";
   profit: number | null;
   fixtureIds: number[];
+  legs?: StrategyHubOpportunity[];
 }
 
 export interface StrategyHubMetrics {
@@ -211,18 +215,18 @@ async function computeStrategyHubData(strategy: StrategyHubId, date: string, cac
       }
     }
     const portfolioRows = rows.map((row) => ({ strategy, stake: 1, odds: row.naturalCombinedOdds, hit: row.hit, marketProbability: row.naturalCombinedOdds ? 1 / row.naturalCombinedOdds : 0, closingMarketProbability: null, qualifiedAt: row.lockedAt }));
-    const legs = dated.flatMap((ticket) => ticket.legs.filter((leg) => leg.kickoff >= bounds.start && leg.kickoff < bounds.end).map((leg) => ({ ticket, leg })));
-    const byFixture = new Map<number, StrategyHubOpportunity>();
+    const legs = dated.flatMap((ticket) => ticket.legs.map((leg) => ({ ticket, leg })));
+    const byFixture = new Map<string, StrategyHubOpportunity>();
     for (const { ticket, leg } of legs) {
-      const existing = byFixture.get(leg.fixtureId);
-      if (existing) { if (!existing.ticketSlots.includes(ticket.slot)) existing.ticketSlots.push(ticket.slot); continue; }
-      byFixture.set(leg.fixtureId, {
+      byFixture.set(`${ticket.slot}:${leg.fixtureId}`, {
         id: "id" in leg ? leg.id : `${strategy}-${ticket.slot}-${leg.fixtureId}`, fixtureId: leg.fixtureId, leagueId: leg.leagueId, leagueName: catalogLeagueName(leg.leagueId, ""), kickoff: leg.kickoff.toISOString(), homeName: leg.homeName, awayName: leg.awayName,
         selection: `${leg.winnerName} + ${leg.totalSide === "OVER" ? "více" : "méně"} než ${fmtLine(leg.totalLine)} gólu`, reason: leg.reason, risk: leg.risk,
         probability: strategy === "VALUE" ? leg.decisionProbability ?? leg.modelProbability : leg.eloJointProbability ?? null, marketProbability: strategy === "VALUE" ? leg.marketAnchorProbability ?? (leg.decimalOdds ? 1 / leg.decimalOdds : null) : leg.decimalOdds ? 1 / leg.decimalOdds : null,
         edge: leg.eloWinnerProbability != null && leg.marketWinnerProbability != null ? leg.eloWinnerProbability - leg.marketWinnerProbability : null,
         expectedValue: (strategy === "VALUE" ? leg.decisionExpectedValue ?? leg.modelExpectedValue : leg.eloExpectedValue) ?? null, confidence: leg.contextScore ?? null, odds: leg.decimalOdds, bookmaker: leg.bookmaker,
         priceKind: leg.priceKind as StrategyHubOpportunity["priceKind"], outcome: outcome(leg.hit), score: leg.homeGoals == null || leg.awayGoals == null ? null : `${leg.homeGoals}:${leg.awayGoals}`, ticketSlots: [ticket.slot],
+        combination: { winner: leg.winner, total: leg.totalSide, line: leg.totalLine, homeGoals: leg.homeGoals, awayGoals: leg.awayGoals },
+        conditionRetention: leg.conditionRetention ?? null, conditionOddsUplift: leg.conditionOddsUplift ?? null,
         strategyConflict: [...(opposingWinners.get(leg.fixtureId) ?? [])].some((winner) => winner !== leg.winner)
           ? "Druhá strategie vybírá v tomto zápase opačného vítěze."
           : null,
@@ -231,9 +235,9 @@ async function computeStrategyHubData(strategy: StrategyHubId, date: string, cac
     const settledLegs = rows.flatMap((row) => row.legs).filter((leg) => leg.hit != null);
     const directRows = rows.filter((row) => row.priceKind === "DIRECT").map((row) => portfolioRows[rows.indexOf(row)]);
     const syntheticRows = rows.filter((row) => row.priceKind === "SYNTHETIC").map((row) => portfolioRows[rows.indexOf(row)]);
-    const tickets: StrategyHubTicket[] = dated.map((ticket) => ({ slot: ticket.slot, odds: ticket.naturalCombinedOdds, estimatedPriceCount: ticket.estimatedPriceCount, outcome: outcome(ticket.hit), profit: ticket.profit, fixtureIds: ticket.legs.map((leg) => leg.fixtureId) }));
+    const tickets: StrategyHubTicket[] = dated.map((ticket) => ({ slot: ticket.slot, odds: ticket.naturalCombinedOdds, estimatedPriceCount: ticket.estimatedPriceCount, outcome: outcome(ticket.hit), profit: ticket.profit, fixtureIds: ticket.legs.map((leg) => leg.fixtureId), legs: ticket.legs.flatMap(leg => { const item = byFixture.get(`${ticket.slot}:${leg.fixtureId}`); return item ? [item] : []; }) }));
     return {
-      opportunities: [...byFixture.values()].sort((a, b) => a.kickoff.localeCompare(b.kickoff)), tickets,
+      opportunities: [...byFixture.values()].filter(leg => new Date(leg.kickoff) >= bounds.start && new Date(leg.kickoff) < bounds.end).sort((a, b) => a.kickoff.localeCompare(b.kickoff)), tickets,
       metrics: cachedMetrics ?? { all: summarizePortfolio(portfolioRows), recent: summarizePortfolio(portfolioRows.filter((row) => new Date(row.qualifiedAt) >= recentFrom)), selectionAccuracy: settledLegs.length ? settledLegs.filter((leg) => leg.hit).length / settledLegs.length : null, direct: summarizePortfolio(directRows), synthetic: summarizePortfolio(syntheticRows), unit: "TICKETS" } satisfies StrategyHubMetrics,
       coverage: { candidates: block.coverage.candidates, priced: block.coverage.withOdds, tickets: tickets.length },
       emptyReason: block.emptyReason,

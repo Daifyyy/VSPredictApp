@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   const summary = url.searchParams.get("summary") === "1";
   const variant = url.searchParams.get("cohort") ?? (summary ? "current" : defaultStrategyCohort(strategy));
   if (!isOverCohort(variant) || (variant !== "current" && (strategy !== "OVER_25" || summary))) return NextResponse.json({ error: "Neplatná kohorta strategie." }, { status: 400 });
-  if (!isAllowedStrategyDate(date, localDateKey(new Date())) || (!summary && !isStrategyHubId(strategy))) return NextResponse.json({ error: "Neplatná strategie nebo datum." }, { status: 400 });
+  if (!isAllowedStrategyDate(date, localDateKey(new Date()), !summary && (strategy === 'VALUE' || strategy === 'ELO_INTUITION') ? 30 : 1) || (!summary && !isStrategyHubId(strategy))) return NextResponse.json({ error: "Neplatná strategie nebo datum." }, { status: 400 });
 
   const user = await getCurrentUser();
   const pro = getEntitlement(user).pro;
@@ -40,6 +40,13 @@ export async function GET(request: Request) {
   if (!pro) return NextResponse.json({ ...metadata, locked: true }, { headers: { "Cache-Control": "private, no-store" } });
 
   try {
+    if (url.searchParams.get('singles') === '1') {
+      if (strategy !== 'VALUE') return NextResponse.json({ error: 'INVALID_SINGLE_STRATEGY' }, { status: 400 });
+      const { readCurrentTelegramTips } = await import('@/lib/data/telegramCurrentStore');
+      const { valueSinglesView } = await import('@/lib/picks/valueSingles');
+      const singles = valueSinglesView(await readCurrentTelegramTips(date), date, new Date());
+      return NextResponse.json({ ...metadata, locked: false, singles }, { headers: { 'Cache-Control': 'private, no-store' } });
+    }
     if (url.searchParams.get('research') === 'ai') {
       if (strategy !== 'OVER_25' || !aiFlags().ui) return NextResponse.json({ ...metadata, locked: false, ai: null, limitedReason: 'AI_UI_DISABLED' }, { headers: { 'Cache-Control': 'private, no-store' } });
       const { readAIResearchDay } = await import('@/lib/data/aiResearchStore');

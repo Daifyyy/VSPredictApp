@@ -18,6 +18,22 @@ const DIRECT_MIN_DECISION_EV = .03;
 const SYNTHETIC_MIN_DECISION_EV = .04;
 const MIN_DIRECT_CONDITION_EFFICIENCY = 1.03;
 const MIN_SYNTHETIC_CONDITION_EFFICIENCY = 1.08;
+/** Price-only floor at frozen model and same-book winner inputs; not proof of value. */
+export function minimumValueCombinationOdds(c: Pick<IntuitionCandidate, 'modelProbability' | 'decimalOdds' | 'conditionRetention' | 'conditionOddsUplift' | 'priceKind' | 'decisionPolicyVersion'>): number | null {
+  const p = c.modelProbability, odds = c.decimalOdds, retention = c.conditionRetention, uplift = c.conditionOddsUplift;
+  if (c.priceKind !== 'DIRECT' || c.decisionPolicyVersion !== INTUITION_POLICY_VERSION
+    || !Number.isFinite(p) || p <= 0 || p >= 1 || odds == null || !Number.isFinite(odds) || odds <= 1
+    || retention == null || !Number.isFinite(retention) || retention <= 0 || retention > 1
+    || uplift == null || !Number.isFinite(uplift) || uplift <= 0) return null;
+  const sameBookWinnerOdds = odds / uplift;
+  if (sameBookWinnerOdds <= 1) return null;
+  // Decision probability includes a price-dependent inverse-odds anchor.
+  const floor = Math.max(MIN_DIRECT_ODDS, (1 + VALUE_MIN_EV) / p,
+    (1 + DIRECT_MIN_DECISION_EV / DIRECT_MODEL_WEIGHT) / p,
+    MIN_DIRECT_CONDITION_EFFICIENCY * sameBookWinnerOdds / retention);
+  const rounded = Math.ceil((floor - 1e-10) * 100) / 100;
+  return rounded <= MAX_LEG_ODDS ? rounded : null;
+}
 const ELO_MARKET_WEIGHT = .30;
 const EXTREME_ELO_EDGE = .12;
 export const ELO_SHADOW_ONLY_LEAGUE_IDS = new Set([40]); // English Championship

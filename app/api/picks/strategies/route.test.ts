@@ -9,10 +9,12 @@ const mocks = vi.hoisted(() => ({
   outcomeForecasts: vi.fn(),
   outcomeEvaluation: vi.fn(),
   aiDay: vi.fn(),
+  currentTips: vi.fn(),
   allowRequest: vi.fn(() => true),
 }));
 
 vi.mock("@/lib/authUser", () => ({ getCurrentUser: mocks.getCurrentUser }));
+vi.mock('@/lib/data/telegramCurrentStore', () => ({ readCurrentTelegramTips: mocks.currentTips }));
 vi.mock("@/lib/data/aiResearchStore", () => ({ readAIResearchDay: mocks.aiDay }));
 vi.mock("@/lib/entitlements", () => ({ getEntitlement: mocks.getEntitlement }));
 vi.mock("@/lib/competitionGrouping", () => ({ localDateKey: () => "2026-09-12" }));
@@ -25,6 +27,15 @@ vi.mock("@/lib/rateLimit", () => ({ allowRequest: mocks.allowRequest, clientKey:
 import { GET } from "./route";
 
 describe("GET /api/picks/strategies", () => {
+  it('protects standalone VALUE and never loads historical metrics for it', async () => {
+    const url = 'http://localhost/api/picks/strategies?strategy=VALUE&singles=1';
+    expect((await (await GET(new Request(url))).json()).locked).toBe(true);
+    expect(mocks.currentTips).not.toHaveBeenCalled();
+    mocks.getEntitlement.mockReturnValue({ pro: true }); mocks.currentTips.mockResolvedValue(null);
+    const response = await GET(new Request(url)); const body = await response.json();
+    expect(body.singles.stale).toBe(true); expect(body.singles.items).toEqual([]);
+    expect(mocks.strategyHubData).not.toHaveBeenCalled(); expect(response.headers.get('Cache-Control')).toBe('private, no-store');
+  });
   it('protects AI snapshots server-side and reads only their projection', async () => {
     vi.stubEnv('AI_RESEARCH_UI_ENABLED', 'true');
     const url = 'http://localhost/api/picks/strategies?strategy=OVER_25&research=ai';

@@ -40,12 +40,12 @@ export function isStrategyHubId(value: string | null): value is StrategyHubId {
   return STRATEGY_HUB_IDS.includes(value as StrategyHubId);
 }
 
-export function isAllowedStrategyDate(date: string, today: string): boolean {
+export function isAllowedStrategyDate(date: string, today: string, historyDays = 1): boolean {
   if (!isDateKey(date)) return false;
   const day = new Date(`${date}T12:00:00Z`).getTime();
   const base = new Date(`${today}T12:00:00Z`).getTime();
   const delta = Math.round((day - base) / 86400_000);
-  return Number.isFinite(day) && delta >= -1 && delta <= 7;
+  return Number.isFinite(day) && delta >= -historyDays && delta <= 7;
 }
 
 export function isDateKey(value: string | null): value is string {

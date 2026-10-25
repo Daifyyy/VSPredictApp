@@ -6,6 +6,13 @@ const item: CurrentTips['items'][number] = { id: 'a', fixtureId: 1, strategy: 'O
 const payload = (items = [item]): CurrentTips => ({ version: 1, date: '2026-10-23', asOf: now.toISOString(), items });
 afterEach(() => vi.unstubAllEnvs());
 describe('stored current Telegram tips', () => {
+  it('preserves and presents the same VALUE floor without a preferred bookmaker', () => {
+    const c = { ...item, strategy: 'VALUE', minimumAcceptableOdds: 1.8, qualified: true, currentPriceQualified: true, identityValid: true, blocked: false, priceKind: 'DIRECT' } as DailyPublicationCandidate;
+    const projected = currentTipsProjection('2026-10-23', [c], now);
+    expect(projected.items[0].minimumAcceptableOdds).toBe(1.8);
+    expect(formatCurrentTips(projected, now, 'VALUE').join('\n')).toContain('Minimum celé kombinace: 1.80');
+    expect(projected.items[0].bookmaker).toBe('Book');
+  });
   it('keeps original Over identity and escapes HTML', () => {
     const text = formatCurrentTips(payload(), now, 'OVER_25').join('\n');
     expect(text).toContain('Původní Over'); expect(text).toContain('A &lt; B'); expect(text).toContain('1.90');

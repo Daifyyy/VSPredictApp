@@ -5,15 +5,15 @@ import { STRATEGY_HUB_CATALOG } from './strategyHub';
 export const TELEGRAM_CURRENT_KEY = 'telegram-current:v1:';
 export interface CurrentTips {
   version: 1; date: string; asOf: string;
-  items: Array<Pick<DailyPublicationCandidate, 'id' | 'fixtureId' | 'strategy' | 'marketKey' | 'kickoff' | 'homeName' | 'awayName' | 'selection' | 'odds' | 'oddsAt' | 'bookmaker'>>;
+  items: Array<Pick<DailyPublicationCandidate, 'id' | 'fixtureId' | 'strategy' | 'marketKey' | 'kickoff' | 'homeName' | 'awayName' | 'selection' | 'odds' | 'oddsAt' | 'bookmaker' | 'minimumAcceptableOdds'>>;
 }
 /** Cron-only projection. Source adapters have already rechecked source qualification. */
 export function currentTipsProjection(date: string, candidates: DailyPublicationCandidate[], now: Date): CurrentTips {
   return { version: 1, date, asOf: now.toISOString(), items: candidates
     .filter(c => c.qualified && c.currentPriceQualified && c.identityValid && !c.blocked && c.priceKind === 'DIRECT'
       && strategyLifecycle(c.strategy).publish && c.bookmaker && Number.isFinite(c.odds) && c.odds > 1)
-    .map(({ id, fixtureId, strategy, marketKey, kickoff, homeName, awayName, selection, odds, oddsAt, bookmaker }) =>
-      ({ id, fixtureId, strategy, marketKey, kickoff, homeName, awayName, selection, odds, oddsAt, bookmaker })) };
+    .map(({ id, fixtureId, strategy, marketKey, kickoff, homeName, awayName, selection, odds, oddsAt, bookmaker, minimumAcceptableOdds }) =>
+      ({ id, fixtureId, strategy, marketKey, kickoff, homeName, awayName, selection, odds, oddsAt, bookmaker, minimumAcceptableOdds })) };
 }
 export const currentStrategy = (s: string) => s === 'OVER_25_LEGACY_SHADOW' ? 'OVER_25' : s;
 const title = (s: string) => s === 'OVER_25_LEGACY_SHADOW' ? 'Původní Over 2,5' : STRATEGY_HUB_CATALOG.find(c => c.id === s)?.title ?? s;
@@ -47,5 +47,5 @@ export function formatCurrentTips(payload: CurrentTips | null, now: Date, reques
   if (!picked.length) return [heading + '\n\nŽádné další aktuální kvalifikované tipy. Nejde o výpadek ani doporučení sázet starší výběry.'];
   // One bounded block per match; the sender persists the exact response before delivery.
   return [heading, ...picked.map(({ item: c, sources }) =>
-    `⏳ <b>${esc(c.homeName)} – ${esc(c.awayName)}</b> · ${clock(c.kickoff)}\n🎯 ${esc(c.selection)}\n💰 ${c.odds.toFixed(2)} · ${esc(c.bookmaker)} · cena ${clock(c.oddsAt)}\nZdroj: ${sources.map(esc).join(', ')}`)];
+    `⏳ <b>${esc(c.homeName)} – ${esc(c.awayName)}</b> · ${clock(c.kickoff)}\n🎯 ${esc(c.selection)}\n💰 ${c.odds.toFixed(2)} · ${esc(c.bookmaker)} · cena ${clock(c.oddsAt)}\nZdroj: ${sources.map(esc).join(', ')}${c.strategy === 'VALUE' && c.minimumAcceptableOdds != null ? `\nMinimum celé kombinace: ${c.minimumAcceptableOdds.toFixed(2)} (maximum 6,00), při nezměněných referenčních vstupech; ověř nabídku kanceláře.` : ''}`)];
 }

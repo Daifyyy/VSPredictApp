@@ -26,6 +26,16 @@ function day(): TelegramDay {
 }
 
 describe("telegram formatting", () => {
+  it('groups result legs under the exact ticket with condition outcomes and profit', () => {
+    const payload = day(), leg = { ...payload.strategies[0].data.opportunities[0], outcome: 'LOST' as const, score: '1:0',
+      combination: { winner: 'HOME', total: 'OVER', line: 1.5, homeGoals: 1, awayGoals: 0 } };
+    payload.strategies = [{ strategy: 'VALUE', data: { ...payload.strategies[0].data, opportunities: [], tickets: [
+      { slot: 1, odds: 3.2, estimatedPriceCount: 0, outcome: 'LOST', profit: -1, fixtureIds: [0], legs: [leg] },
+    ] } }];
+    const text = formatResults(payload).join('\n');
+    expect(text).toContain('Tiket A'); expect(text).toContain('Skóre 1:0'); expect(text).toContain('profit -1.00 j');
+    expect(text).toContain('✅ Vyhráno'); expect(text).toContain('❌ Prohráno'); expect(text).toContain('A &lt; B');
+  });
   it('authorizes AI commands before reading the stored projection', async () => {
     vi.stubEnv('TELEGRAM_ALLOWED_USER_IDS', '12');
     vi.stubEnv('AI_RESEARCH_TELEGRAM_ENABLED', 'true');
