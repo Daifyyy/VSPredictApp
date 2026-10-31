@@ -1,3 +1,5 @@
+// Historical priced capture logic is retained only for regression/audit.
+vi.mock('../modelOnlyMode',()=>({MODEL_ONLY_MODE:false,MODEL_ONLY_POLICY:2001}));
 import { afterEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ candidates: vi.fn(() => []), upsert: vi.fn(), freeze: vi.fn((): Array<{market: string}> => []) }));
 vi.mock("@/lib/db", () => ({ prisma: { marketSignalSnapshot: { upsert: mocks.upsert } } }));

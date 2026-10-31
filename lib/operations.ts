@@ -1,3 +1,4 @@
+import { MODEL_ONLY_MODE } from './modelOnlyMode';
 import "server-only";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
@@ -227,10 +228,14 @@ export async function releaseOddsCronLease(owner: string) {
 }
 
 export async function auditPipeline(now = new Date()) {
+  if (MODEL_ONLY_MODE) await prisma.dataIncident.updateMany({
+    where: {status:'OPEN',fingerprint:{in:['coverage:OPENING','coverage:ODDS_SERIES_3','coverage:FRESH_CLOSE','cron:snapshot-odds:degraded','cron:snapshot-odds:consecutive-failure','cron:snapshot-odds-priority:degraded','cron:snapshot-odds-priority:consecutive-failure','cron:send-notifications:degraded','cron:send-notifications:consecutive-failure']}},
+    data: {status:'RESOLVED',resolvedAt:now,lastSeenAt:now},
+  });
   const horizon = new Date(now.getTime() + 72 * 60 * 60_000);
   const recent = new Date(now.getTime() - 7 * 24 * 60 * 60_000);
   const [future, settledCounts, kicked, overdue, latestRuns, calibration] = await Promise.all([
-    prisma.fixturePrediction.findMany({
+    MODEL_ONLY_MODE ? Promise.resolve([]) : prisma.fixturePrediction.findMany({
       where: { leagueId: { in: SUPPORTED_ODDS_LEAGUES }, kickoff: { gt: now, lte: horizon } },
       select: { fixtureId: true, oddsFetchedAt: true, oddsSeries: true },
     }),
@@ -242,7 +247,7 @@ export async function auditPipeline(now = new Date()) {
       },
       select: { fixtureId: true, homeTeamId: true, awayTeamId: true, lambdaCornersHome: true, lambdaCornersAway: true, lambdaCardsHome: true, lambdaCardsAway: true, lambdaFoulsHome: true, lambdaFoulsAway: true },
     }),
-    prisma.fixturePrediction.findMany({
+    MODEL_ONLY_MODE ? Promise.resolve([]) : prisma.fixturePrediction.findMany({
       where: { leagueId: { in: SUPPORTED_ODDS_LEAGUES }, kickoff: { gte: recent, lte: now } },
       select: { fixtureId: true, kickoff: true, oddsFetchedAt: true, oddsCloseAt: true, oddsSeries: true },
     }),
@@ -299,7 +304,7 @@ export async function auditPipeline(now = new Date()) {
     countCoverage("CORNERS"),
     countCoverage("CARDS"),
     countCoverage("FOULS"),
-  ].map((row) => ({ ...row, ratio: row.eligible ? row.covered / row.eligible : 1 }));
+  ].filter(row => !MODEL_ONLY_MODE || !["OPENING","ODDS_SERIES_3","FRESH_CLOSE"].includes(row.category)).map((row) => ({ ...row, ratio: row.eligible ? row.covered / row.eligible : 1 }));
 
   const bucket = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), now.getUTCHours()));
   for (const row of rows) {

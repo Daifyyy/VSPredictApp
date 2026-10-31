@@ -1,3 +1,4 @@
+import { MODEL_ONLY_MODE } from '../modelOnlyMode';
 import 'server-only';
 import { Prisma } from '@prisma/client';
 import { prisma } from '../db';
@@ -75,7 +76,8 @@ export async function runAIResearch(now = new Date(), settle = false) {
         FROM (VALUES ${Prisma.join(updates.map(u => Prisma.sql`(${u.id}::text,${u.outcome}::text,${u.homeGoals}::integer,${u.awayGoals}::integer)`))})
         AS v(id,outcome,home,away) WHERE f."id"=v.id`;
     }
-    if (!settle && aiFlags().opportunities && Date.now() - started < 8000) {
+    if (MODEL_ONLY_MODE) return { status: 'COMPLETED', captured, rejected, durationMs: Date.now()-started };
+    if (!MODEL_ONLY_MODE && !settle && aiFlags().opportunities && Date.now() - started < 8000) {
       const forecasts = await prisma.aIForecastSnapshot.findMany({ where: { artifactId: AI_ARTIFACT_ID, kickoff: { gte: new Date(+now + 30 * 60_000), lte: new Date(+now + 2 * 86400_000) }, outcome: 'PENDING' }, omit: { inputAudit: true }, take: 50 });
       const quotes = await prisma.fixturePrediction.findMany({ where: { fixtureId: { in: forecasts.map(r => r.fixtureId) }, status: 'NS', available: true },
         select: { fixtureId: true, kickoff: true, homeTeamId: true, awayTeamId: true, oddsCurrentAt: true, oddsCurrentBooks: true } });

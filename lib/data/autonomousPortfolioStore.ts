@@ -1,3 +1,4 @@
+import { MODEL_ONLY_MODE } from '../modelOnlyMode';
 import type { BookOdds } from "./apiFootball";
 import { captureMarketAllowed, strategyLifecycle } from "../picks/strategyLifecycle";
 import type { Prisma } from "@prisma/client";
@@ -81,6 +82,7 @@ function referenceOneXTwo(books: BookOdds[], side: "HOME" | "AWAY") {
 
 /** Aktualizuje sledovane signaly; jakmile se z nich stane kandidat, radek uz je nemenny. */
 export async function captureAutonomousPortfolio(fixtureId: number, books: BookOdds[], at: Date): Promise<number> {
+  if (MODEL_ONLY_MODE) return 0;
   const prediction = await prisma.fixturePrediction.findUnique({ where: { fixtureId } });
   if (!prediction || prediction.kickoff <= at) return 0;
   const minutesToKickoff = (prediction.kickoff.getTime() - at.getTime()) / 60_000;

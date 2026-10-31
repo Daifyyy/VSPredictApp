@@ -1,3 +1,5 @@
+// Historical priced capture logic is retained only for regression/audit.
+vi.mock('../modelOnlyMode',()=>({MODEL_ONLY_MODE:false,MODEL_ONLY_POLICY:2001}));
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 afterEach(() => vi.unstubAllEnvs());
 import type { Prisma } from "@prisma/client";

@@ -1,3 +1,4 @@
+import { MODEL_ONLY_MODE } from '@/lib/modelOnlyMode';
 import { NextResponse } from "next/server";
 import { requireCronAuth } from "@/lib/cronAuth";
 import { auditPipeline, withCronRun } from "@/lib/operations";
@@ -24,8 +25,8 @@ export async function GET(req: Request) {
         await refreshStrategyHubMetrics();
         await refreshQuickPerformance();
       }
-      const modelLab = await monitorModelLab();
-      const modelEvaluation = await captureModelEvaluationSnapshots();
+      const modelLab = MODEL_ONLY_MODE ? {findings:0,status:"HISTORICAL_PRICED_AUDIT_PAUSED"} : await monitorModelLab();
+      const modelEvaluation = MODEL_ONLY_MODE ? {status:"LEGACY_EVALUATION_PAUSED"} : await captureModelEvaluationSnapshots();
       // Optional historical diagnostics must not be added to an already exhausted run.
       const legacyStats = process.env.RESOURCE_LEGACY_STATS_REFRESH_ENABLED !== 'true' ? { status: 'DISABLED' }
         : Date.now() - startedAt > 40_000 ? { status: 'DEFERRED', reason: 'AUDIT_TIME_BUDGET' }

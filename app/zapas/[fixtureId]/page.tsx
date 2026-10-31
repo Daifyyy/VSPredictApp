@@ -1,3 +1,5 @@
+import { readModelOnlyFixture } from '@/lib/data/modelOnlyStore';
+import { MODEL_SOURCE_LABELS, modelSelectionLabel } from '@/lib/picks/modelOnly';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getCurrentUser } from '@/lib/authUser';
@@ -17,6 +19,8 @@ export default async function MatchPage({ params }: { params: Promise<{ fixtureI
   try { data = await readMatchDetail(id, user?.tier === 'PRO' || isAdminEmail(user?.email)); }
   catch { return <main className="mx-auto max-w-3xl p-6"><Link href="/">← Program</Link><h1 className="mt-4 text-2xl font-bold">Detail není dostupný</h1><p>Uložená data se nepodařilo načíst. Nejde o chybějící predikci ani nulový výsledek.</p></main>; }
   if (!data) return <main className="mx-auto max-w-3xl space-y-4 p-6"><Link href="/">← Program</Link><h1 className="page-title">Predikce není zachycena</h1><p>Pro tento zápas zatím nemáme uložený předzápasový model. Nevytváříme jej dodatečně při otevření detailu.</p><Link href="/vysledky">Konečné výsledky</Link></main>;
+  let modelRows:Awaited<ReturnType<typeof readModelOnlyFixture>>|null=null;
+  try { modelRows=await readModelOnlyFixture(id,!data.locked); } catch { /* Preserve the main detail during migration/outage. */ }
   const f = data.forecast, pct = (n: number) => `${(n * 100).toFixed(0)} %`;
   return <><AppHeader user={user ? { id: user.id, name: user.name, image: user.image, tier: user.tier, proTrialUsed: user.proTrialUsed, isAdmin: isAdminEmail(user.email) } : null}/><main className="mx-auto max-w-3xl space-y-4 p-6 pb-24">
     <nav className="flex gap-4 text-sm"><Link prefetch={false} href="/">← Program</Link><Link prefetch={false} href={`/vysledky?date=${new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Prague', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(data.kickoff))}`}>Výsledky dne</Link><Link prefetch={false} href="/vykonnost">Výkonnost</Link></nav>
@@ -33,12 +37,15 @@ export default async function MatchPage({ params }: { params: Promise<{ fixtureI
         {f.lowConfidence && <p>Model označuje omezenou důvěru v podklady.</p>}
       </>}
     </section>
+    <section className="ui-panel p-4 space-y-2"><h2 className="font-bold">Modelová evidence bez kurzů · politika 2001</h2><p className="text-sm">První zachycené odhady pro vyhodnocení přesnosti. Nemusí se shodovat s pozdějším přepočtem hlavní prognózy výše. Úspěšnost není ziskovost.</p>
+      {data.locked?<p>Konkrétní predikce jsou PRO.</p>:modelRows===null?<p>Novou modelovou evidenci se nepodařilo načíst.</p>:!modelRows.length?<p>Pro tento zápas nová prospektivní evidence nebyla zachycena.</p>:modelRows.map(r=><p key={r.id}><strong>{MODEL_SOURCE_LABELS[r.source]}</strong> · {modelSelectionLabel(r)} · {pct(r.probability)} · {r.qualified?'kvalifikovaný modelový výběr':'pouze predikce'} · {r.outcome==='WON'?'✅ Trefeno':r.outcome==='LOST'?'❌ Netrefeno':r.outcome==='VOID'?'↩ Nehodnoceno':'⏳ Čeká'} · model v{r.modelVersion} / {r.modelContext}</p>)}
+    </section>
     <MatchContextDetail key={id} fixtureId={id}/>
     <section className="space-y-2">
       {data.flow.insight && <MatchInsightCard insight={data.flow.insight} pro={!data.locked} />}
       {data.flow.reason && <p role="status">{data.flow.reason === 'FLOW_UNAVAILABLE' ? 'Audit průběhu se nepodařilo načíst.' : data.flow.reason === 'FINAL_AUDIT_PENDING' ? 'Konečný audit dosud není uložený. Výše je pouze původní očekávání.' : data.flow.reason === 'AWAITING_FINAL_RESULT' ? 'Čeká na konečné vyhodnocení. Výše zůstává předzápasové očekávání, nikoli živý průběh.' : 'Předzápasový audit průběhu nebyl zachycen.'}</p>}
     </section>
-    <section className="ui-panel p-4"><h2 className="font-bold">Publikovaný Denní výběr</h2>
+    <section className="ui-panel p-4"><h2 className="font-bold">Historický cenový Denní výběr</h2>
       <p className="text-sm">Posledních nejvýše 30 položek publikační historie, nikoli všechny predikce a kandidáti. Nepotvrzuje doručení Telegramu.</p>
       {data.locked ? <p>Konkrétní výběry jsou dostupné s PRO.</p> : data.publications.unavailable ? <p role="status">Historii nelze načíst; nejde o nulovou bilanci.</p> : !data.publications.items.length ? <p>Zápas nemá zachycenou položku Denního výběru.</p> : <ul className="space-y-3">{data.publications.items.map(p => <li key={p.id} className="mt-3 border-t border-border pt-3">
         <strong>{p.selection ?? 'Popis výběru nezachycen'}</strong><p>{p.strategy ?? 'Zdroj nezachycen'} · {p.decimalOdds.toFixed(2)} · {p.bookmaker}</p>
@@ -47,7 +54,7 @@ export default async function MatchPage({ params }: { params: Promise<{ fixtureI
         <p className="text-xs">Publikováno {p.publishedAt.toLocaleString('cs-CZ', { timeZone: 'Europe/Prague' })}</p>
       </li>)}</ul>}
     </section>
-    <section className="ui-panel p-4"><h2 className="font-bold">Zápas v tiketech VALUE / ELO</h2>
+    <section className="ui-panel p-4"><h2 className="font-bold">Archiv tiketů VALUE / ELO</h2>
       <p className="text-sm">Uložené nohy tiketů, nikoli nové singly. Výsledek nohy a profit celého tiketu jsou oddělené; nepřičítají se k bilanci Denního výběru. Nejvýše 30 záznamů.</p>
       {data.locked ? <p>Detail tiketů je dostupný s PRO.</p> : data.ticketLegs.unavailable ? <p role="status">Tikety nelze načíst; nejde o nulovou bilanci.</p> : !data.ticketLegs.items.length ? <p>Zápas nemá uloženou nohu VALUE/ELO tiketu.</p> : <ul className="space-y-3">{data.ticketLegs.items.map(leg => <li key={leg.id} className="mt-3 border-t border-border pt-3">
         <strong>{leg.ticket.strategy === 'VALUE' ? 'VALUE' : 'ELO / Intuice'} · {leg.ticket.windowKey} · tiket {leg.ticket.slot}</strong>

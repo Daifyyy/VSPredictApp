@@ -19,7 +19,7 @@ function summarize(source) {
   return { total: rows.reduce((sum, row) => sum + row.slotsPerDay, 0), rows };
 }
 const baseline = summarize(execFileSync('git', ['show', 'e732368:.github/workflows/cron.yml'], { encoding: 'utf8' }));
-const previous = summarize(execFileSync('git', ['show', '6b62fd9:.github/workflows/cron.yml'], { encoding: 'utf8' }));
+const previous = summarize(execFileSync('git', ['show', 'ad0e1de:.github/workflows/cron.yml'], { encoding: 'utf8' }));
 const current = summarize(readFileSync('.github/workflows/cron.yml', 'utf8'));
 console.log(JSON.stringify({ metric: 'Scheduled UTC-day trigger slots; excludes manual runs, retries, batched HTTP calls and skipped executions', baseline, previous, current,
   totalReductionPercent: 100 * (baseline.total - current.total) / baseline.total,

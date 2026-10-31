@@ -1,3 +1,4 @@
+import { MODEL_ONLY_MODE } from './modelOnlyMode';
 import { createHash } from "node:crypto";
 import { strategyLifecycle } from "./picks/strategyLifecycle";
 import { activeStrategySource } from "./picks/overCohorts";
@@ -160,6 +161,7 @@ export async function publishedResults(date: string, channelId: string) {
 }
 
 export async function publishTelegramMorning(now = new Date(), options: { dryRun?: boolean; force?: boolean } = {}) {
+  if (MODEL_ONLY_MODE) return (await import("./modelOnlyTelegram")).publishModelMorning(now, options);
   const { resourceBudgetGuard } = await import('./resourceBudgetGuard');
   if (await resourceBudgetGuard('telegram-digest')) return { status: 'RESOURCE_LIMITED' };
   const config = telegramConfig(); const clock = pragueClock(now); if (!options.force && (clock.hour < 9 || clock.hour > 10)) return { skipped: "OUTSIDE_PRAGUE_MORNING_WINDOW", date: clock.date };
@@ -191,6 +193,7 @@ export async function publishTelegramMorning(now = new Date(), options: { dryRun
 const ALIASES: Record<string, StrategyHubId> = { value: "VALUE", elo: "ELO_INTUITION", prubeh: "PRESSURE_FLOW_V5", "průběh": "PRESSURE_FLOW_V5", "1x2": "ONE_X_TWO", over25: "OVER_25", btts: "BTTS_YES", tymove_goly: "TEAM_GOALS", rohy: "CORNERS", karty: "CARDS_REF", fauly: "FOULS" };
 export const telegramStrategyAlias = (value?: string) => value ? ALIASES[value.toLowerCase()] ?? null : null;
 export async function handleTelegramCommand(userId: string, text: string, now = new Date()) {
+  if (MODEL_ONLY_MODE) return (await import("./modelOnlyTelegram")).handleModelCommand(userId, text, now);
   const [raw, ...args] = text.trim().split(/\s+/); const command = raw.toLowerCase().split("@")[0]; const today = localDateKey(now);
   if (command === "/tipy" || command === "/dalsi") {
     if (!telegramConfig().allowedUsers.has(userId)) return [];

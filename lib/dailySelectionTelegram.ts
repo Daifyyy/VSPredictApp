@@ -1,3 +1,4 @@
+import { MODEL_ONLY_MODE } from './modelOnlyMode';
 import "server-only";
 import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
@@ -40,6 +41,7 @@ export function dailySelectionMessageParts(data:Day,results=false):Array<{text:s
 
 /** Immutable per-part outbox. UNKNOWN and stale SENDING are never blindly retried. */
 export async function publishDailySelectionTelegram(now=new Date(),results=false,dryRun=false){
+  if (MODEL_ONLY_MODE) return {status:"RETIRED_PRICED_DISTRIBUTION"};
   const { resourceBudgetGuard } = await import('./resourceBudgetGuard');
   if (await resourceBudgetGuard('telegram-digest')) return { status: 'RESOURCE_LIMITED' };
   const config=telegramConfig(),clock=pragueClock(now);

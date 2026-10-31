@@ -1,3 +1,4 @@
+import { MODEL_ONLY_MODE } from '../modelOnlyMode';
 import type { BookOdds } from "./apiFootball";
 import { openingForecastAudit } from "../picks/openingForecastAudit";
 import { captureMarketAllowed } from "../picks/strategyLifecycle";
@@ -50,6 +51,7 @@ export async function openMarketSignals(
   at: Date,
   options: { includeCounts?: boolean; includeTeamGoals?: boolean } = {}
 ): Promise<void> {
+  if (MODEL_ONLY_MODE) return;
   const row = await getPredictionByFixture(fixtureId);
   if (!row) return;
   const signals = freezeMarketSignals(row, books).filter((signal) =>

@@ -1,3 +1,5 @@
+// Historical opening-price audit remains unchanged; new capture is disabled in production.
+vi.mock('../modelOnlyMode',()=>({MODEL_ONLY_MODE:false,MODEL_ONLY_POLICY:2001}));
 import {afterEach,expect,it,vi} from "vitest";
 const mocks=vi.hoisted(()=>({upsert:vi.fn(),row:{fixtureId:1,homeTeamId:10,awayTeamId:20,leagueId:39,kickoff:"2026-10-20T18:00:00Z",modelCalculatedAt:"2026-10-20T10:00:00Z",status:"NS",available:true,homeWin:.5,draw:.3,awayWin:.2,over25:.6,modelVersion:7,contextVersion:1,modelContext:"LEAGUE"}}));
 vi.mock("@/lib/db",()=>({prisma:{marketSignalSnapshot:{upsert:mocks.upsert}}}));

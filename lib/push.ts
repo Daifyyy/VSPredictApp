@@ -1,3 +1,4 @@
+import { MODEL_ONLY_MODE } from './modelOnlyMode';
 import "server-only";
 import webpush, { type PushSubscription as WebPushSubscription } from "web-push";
 import { prisma } from "@/lib/db";
@@ -11,6 +12,7 @@ import { isAdminEmail } from "@/lib/entitlements";
 import { strategyLifecycle } from "./picks/strategyLifecycle";
 
 export function pushConfigured(): boolean {
+  if (MODEL_ONLY_MODE) return false;
   return Boolean(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.VAPID_SUBJECT);
 }
 
@@ -27,6 +29,7 @@ export async function sendPushSubscription(
   subscription: { id: string; endpoint: string; p256dh: string; auth: string },
   payload: { title: string; body: string; url: string; tag: string }
 ): Promise<boolean> {
+  if (MODEL_ONLY_MODE) return false;
   configure();
   const target: WebPushSubscription = {
     endpoint: subscription.endpoint,

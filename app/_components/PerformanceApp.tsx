@@ -5,17 +5,21 @@ import { AppHeader } from './AppHeader';
 import { useCurrentUser } from './useCurrentUser';
 import { StrategyHub } from './StrategyHub';
 import { ModelLab } from './ModelLab';
+import { ModelOnlyPanel } from './ModelOnlyPanel';
 
 export function PerformanceApp() {
   const user = useCurrentUser();
   const params = useSearchParams();
   const models = params.get('section') === 'models';
+  const archive = params.get('section') === 'archive' || models;
+  if (!archive) return <><AppHeader user={user}/><main className="mx-auto max-w-6xl p-4"><ModelOnlyPanel initialDate={params.get('date')??undefined} identity={user?.id??'public'}/><Link className="underline" href="/vykonnost?section=archive">Archiv cenových strategií a tiketů</Link></main></>;
   const query = new URLSearchParams(params.toString()); query.delete('section');
   return <><AppHeader user={user}/><header className="mx-auto w-full max-w-6xl space-y-3 px-4 pt-6">
-    <h1 className="page-title">Výkonnost</h1>
-    <p className="text-sm text-muted">Strategie a modely mají oddělené bilance. Historický zisk ani výzkumná predikce nejsou doloženou budoucí výhodou.</p>
+    <h1 className="page-title">Archiv cenových strategií</h1>
+    <Link href="/vykonnost">Aktuální modelové predikce bez kurzů</Link>
+    <p className="text-sm text-muted">Sběr kurzů, nové cenové tipy a CLV jsou ukončené. Zobrazené cenové příležitosti nejsou aktuální doporučení. Strategie a modely mají oddělené bilance. Historický zisk ani výzkumná predikce nejsou doloženou budoucí výhodou.</p>
     <nav aria-label="Pohled výkonnosti" className="flex gap-4">
-      <Link prefetch={false} aria-current={!models ? 'page' : undefined} className={!models ? 'font-bold underline' : ''} href={`/vykonnost?${query}`}>Strategie a tikety</Link>
+      <Link prefetch={false} aria-current={!models ? 'page' : undefined} className={!models ? 'font-bold underline' : ''} href={`/vykonnost?${query}&section=archive`}>Historické strategie a tikety</Link>
       <Link prefetch={false} aria-current={models ? 'page' : undefined} className={models ? 'font-bold underline' : ''} href={`/vykonnost?${query}&section=models`}>Modely</Link>
     </nav>
   </header>{models ? <main className="mx-auto w-full max-w-6xl p-4 pb-24"><ModelLab isPro={user?.tier === 'PRO' || Boolean(user?.isAdmin)} isAdmin={Boolean(user?.isAdmin)}/></main> : <StrategyHub embedded/>}</>;

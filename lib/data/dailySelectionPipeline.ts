@@ -1,3 +1,4 @@
+import { MODEL_ONLY_MODE } from '../modelOnlyMode';
 import "server-only";
 import { prisma } from "../db";
 import { dailySelectionConfig } from "../dailySelectionConfig";
@@ -46,6 +47,15 @@ export async function loadDailySources(date:string,now:Date) {
 
 /** Isolated optional workflow: provider calls are forbidden here. */
 export async function runDailySelection(now=new Date(),options:{dryRun?:boolean;settle?:boolean}={}) {
+  if (MODEL_ONLY_MODE) {
+    const { runModelOnly } = await import("./modelOnlyStore");
+    const result=await runModelOnly(now, options);
+    if(options.settle && !options.dryRun && result.status==='COMPLETED') {
+      try { await settleDailySelection(now); await refreshDailySelectionBalances(now); }
+      catch(error) { await upsertIncident({fingerprint:'model-only:legacy-settlement',kind:'DAILY_SELECTION',severity:'WARNING',message:'Modelové vyhodnocení dokončeno, archivní cenový settlement je potřeba zopakovat.',details:{error:String(error)}}).catch(()=>undefined); }
+    }
+    return result;
+  }
   const { resourceBudgetGuard } = await import('../resourceBudgetGuard');
   const limited = await resourceBudgetGuard(options.settle ? 'daily-selection-settle' : 'daily-selection');
   if (limited) return { status: 'RESOURCE_LIMITED' };

@@ -11,6 +11,58 @@ datasource db {
 }
 
 /// Generická TTL cache raw odpovědí list-endpointů (ligy, týmy, seznamy zápasů).
+/// Price-free prospective forecasts. Prediction columns are insert-only.
+model ModelOnlyForecast {
+  id String @id
+  fixtureId Int
+  dateKey String
+  source String
+  artifactId String @default("")
+  modelVersion Int
+  contextVersion Int
+  policyVersion Int
+  modelContext String
+  leagueId Int
+  homeTeamId Int
+  awayTeamId Int
+  homeName String
+  awayName String
+  kickoff DateTime
+  capturedAt DateTime
+  sourceAt DateTime
+  market String
+  side String
+  line Float?
+  probability Float
+  probabilities Json
+  qualified Boolean
+  reason String
+  readiness Float
+  outcome String @default("PENDING")
+  actualClass Int?
+  hit Boolean?
+  baselineHit Boolean?
+  brier Float?
+  logLoss Float?
+  homeGoals Int?
+  awayGoals Int?
+  settledAt DateTime?
+
+  @@index([policyVersion, dateKey])
+  @@index([outcome, kickoff])
+  @@index([source, modelVersion, modelContext, policyVersion], map: "ModelOnlyForecast_cohort_idx")
+}
+
+/// Immutable daily selection membership, separate from priced DailySelectionDay history.
+model ModelOnlyDay {
+  key String @id
+  dateKey String
+  policyVersion Int
+  forecastIds String[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model ApiCache {
   key       String   @id
   payload   Json

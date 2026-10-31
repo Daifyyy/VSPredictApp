@@ -1,3 +1,7 @@
+# Historical implementation note (superseded by model-only-policy-2001.md)
+
+The workflow counts and odds/Push retention below describe the preceding deployment, not the new model-only policy.
+
 # Prediction-focused application: context and operations
 
 ## Scope

@@ -1,3 +1,4 @@
+import { MODEL_ONLY_MODE } from '../modelOnlyMode';
 import "server-only";
 import { prisma } from "@/lib/db";
 import { localDateKey } from "@/lib/competitionGrouping";
@@ -125,7 +126,7 @@ export async function previewIntuitionTickets(windowKey: string, now = new Date(
   const frozen = await prisma.intuitionTicket.findMany({
     where: { windowKey, policyVersion: INTUITION_POLICY_VERSION }, orderBy: [{ strategy: "asc" }, { slot: "asc" }], include: { legs: { orderBy: { kickoff: "asc" } } },
   });
-  const rows = await sources(windowKey, false, now);
+  const rows = MODEL_ONLY_MODE ? [] : await sources(windowKey, false, now);
   return { strategies: (["VALUE", "ELO_INTUITION"] as const).map((strategy) => {
     const persisted = frozen.filter((ticket) => ticket.strategy === strategy);
     const built = persisted.length ? [] : strategy === "VALUE" ? buildIntuitionTickets(rows, windowKey) : buildEloIntuitionTickets(rows, windowKey);
@@ -148,6 +149,7 @@ export async function qualifiedDailyTicketCandidates(date: string, now: Date) {
 
 /** Volá kurzový cron. Draft se nemění v historický záznam dříve než dvě hodiny před první nohou. */
 export async function captureIntuitionTickets(fixtureId: number, at: Date): Promise<number> {
+  if (MODEL_ONLY_MODE) return 0;
   const trigger = await prisma.fixturePrediction.findUnique({ where: { fixtureId }, select: { kickoff: true } });
   if (!trigger || trigger.kickoff <= at) return 0;
   const windowKey = localDateKey(trigger.kickoff);
@@ -160,6 +162,7 @@ export async function captureIntuitionTickets(fixtureId: number, at: Date): Prom
  * ráno viděli, nemohl během dne zmizet po změně ceny nebo pořadí kandidátů.
  */
 export async function captureIntuitionWindow(windowKey: string, at: Date, force = false): Promise<number> {
+  if (MODEL_ONLY_MODE) return 0;
   const rows = await sources(windowKey, false, at);
   const divergences = rankEloDivergences(rows);
   if (divergences.length) await prisma.clubEloDivergence.createMany({

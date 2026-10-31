@@ -1,3 +1,4 @@
+import { MODEL_ONLY_MODE } from '@/lib/modelOnlyMode';
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/authUser";
 import { getEntitlement } from "@/lib/entitlements";
@@ -9,6 +10,7 @@ import { allowRequest, clientKey, tooMany } from "@/lib/rateLimit";
 import { logError } from "@/lib/logError";
 export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
+  if (MODEL_ONLY_MODE) return (await import("../model-only/route")).GET(request);
   if (!dailySelectionConfig().ui) return NextResponse.json({error:"DISABLED"},{status:404});
   if (!allowRequest(`daily-selection:${clientKey(request)}`,60,60_000)) return tooMany();
   const date=new URL(request.url).searchParams.get("date")??localDateKey(new Date());

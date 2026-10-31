@@ -4,12 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { signIn, signOut } from "next-auth/react";
 import type { SessionUser } from "./sessionUser";
 import { requestInstall } from "./installBus";
-import { PushSettings } from "./PushSettings";
 
 /** Přihlášení (Google) / účet s tier odznakem, instalací a odhlášením. */
 export function AccountMenu({ user }: { user: SessionUser | null }) {
   const [open, setOpen] = useState(false);
-  const [pushOpen, setPushOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -73,9 +71,6 @@ export function AccountMenu({ user }: { user: SessionUser | null }) {
           >
             📲 Nainstalovat aplikaci
           </MenuItem>
-          <MenuItem onClick={() => { setOpen(false); setPushOpen(true); }}>
-            🔔 Upozornění na zápasy
-          </MenuItem>
           {isPro && (
             <MenuItem
               onClick={() => {
@@ -109,7 +104,7 @@ export function AccountMenu({ user }: { user: SessionUser | null }) {
           </MenuItem>
         </div>
       )}
-    </div><PushSettings open={pushOpen} onClose={() => setPushOpen(false)} /></>
+    </div></>
   );
 }
 

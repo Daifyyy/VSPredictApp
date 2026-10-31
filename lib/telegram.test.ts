@@ -1,3 +1,5 @@
+// Historical priced-policy regression suite; production mode is tested separately.
+vi.mock("./modelOnlyMode",()=>({MODEL_ONLY_MODE:false,MODEL_ONLY_POLICY:2001}));
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { loadTelegramDay, publishedResults } from "./telegram";
 

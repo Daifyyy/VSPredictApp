@@ -9,5 +9,5 @@ it('old transfer endpoints return 410 without database or provider dependencies'
 });
 it('keeps essential workflows but removes transfer scheduling and manual option',()=>{
   const source=readFileSync('.github/workflows/cron.yml','utf8');expect(source).not.toContain('refresh-transfers');
-  for(const name of ['snapshot-odds','predict-upcoming','settle-results','settle-tips','telegram-digest','refresh-tactics'])expect(source).toContain(name);
+  for(const name of ['predict-upcoming','settle-results','settle-tips','telegram-digest','refresh-tactics'])expect(source).toContain(name);
 });

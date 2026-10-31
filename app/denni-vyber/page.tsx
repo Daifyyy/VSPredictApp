@@ -1,3 +1,5 @@
+import { MODEL_ONLY_MODE } from '@/lib/modelOnlyMode';
+import { ModelOnlyPanel } from '../_components/ModelOnlyPanel';
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { dailySelectionConfig } from "@/lib/dailySelectionConfig";
@@ -13,6 +15,7 @@ export const dynamic = "force-dynamic";
 export const metadata = {title:"Denní výběr — Football Insight"};
 export default async function DailySelectionPage({searchParams}:{searchParams:Promise<{date?:string}>}) {
   const user=await getCurrentUser();
+  if (MODEL_ONLY_MODE) return <div className="app-page"><AppHeader user={user}/><main className="mx-auto max-w-5xl p-4"><ModelOnlyPanel initialDate={(await searchParams).date} identity={user?.id??"public"}/><Link href="/vykonnost?section=archive">Historické cenové strategie a tikety</Link></main></div>;
   if (!dailySelectionConfig().ui) return <div className="app-page"><AppHeader user={user}/><main className="mx-auto max-w-5xl p-6"><h1 className="page-title">Denní výběr</h1><p className="mt-4">Připravujeme nejvýše pět samostatných sázek napříč strategiemi. Publikování zatím není zapnuté.</p><Link className="mt-4 block underline" href="/strategie">Prohlédnout strategie</Link></main></div>;
   const today=localDateKey(new Date());
   const date=(await searchParams).date??today;

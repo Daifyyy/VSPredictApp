@@ -1,3 +1,4 @@
+import { MODEL_ONLY_MODE } from '../modelOnlyMode';
 import { z } from "zod";
 import type { Metric } from "@/lib/types";
 import { schedule } from "./rateLimiter";
@@ -756,6 +757,7 @@ function oddOf(
  * na reálném zápase ověřit dřív, než se na ta data někdo spolehne.
  */
 export function fetchOddsRaw(fixture: number) {
+  if (MODEL_ONLY_MODE) return Promise.resolve([]);
   return apiGet("/odds", { fixture }, oddsSchema);
 }
 
@@ -772,6 +774,7 @@ export function fetchVenue(venue: number) {
 
 /** Live ceny bez jakéhokoli sdílení ID s předzápasovým `/odds`. */
 export function fetchLiveOdds(fixture: number) {
+  if (MODEL_ONLY_MODE) return Promise.resolve([]);
   return apiGet("/odds/live", { fixture }, liveOddsSchema);
 }
 
@@ -779,6 +782,7 @@ export async function fetchOdds(
   fixture: number,
   preferred: number[] = PREFERRED_BOOKMAKERS
 ): Promise<MatchOdds | null> {
+  if (MODEL_ONLY_MODE) return null;
   const res = await apiGet("/odds", { fixture }, oddsSchema);
   const books = res[0]?.bookmakers ?? [];
   if (books.length === 0) return null;

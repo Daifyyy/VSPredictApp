@@ -1,34 +1,9 @@
-# Plánované úlohy (crony) appky.
-#
-# **Proč GitHub Actions a ne `vercel.json`:** Vercel Hobby plán dovolí jen **2 cron
-# joby a jen denní** frekvenci. Úloh máme šest a snímky kurzů potřebují běžet **hodinově**
-# – jinak zavírací snímek dostanou jen zápasy s výkopem mezi 04:30 a 16:30 UTC
-# (viz `ODDS_CLOSING_HOURS` v lib/data/predictions.ts) a CLV by stálo na vychýlené
-# menšině. Actions to zvládnou zdarma a v libovolné frekvenci.
-#
-# Nastavení (jednorázově, v GitHubu → Settings → Secrets and variables → Actions):
-#   - secret   CRON_SECRET  … stejná hodnota jako env proměnná na Vercelu
-#   - variable APP_URL      … https://statapp-uvol.vercel.app  (bez koncového lomítka)
-#
-# Pozn.: `schedule` v Actions je **best-effort** – při zátěži se spuštění opozdí
-# i o pár desítek minut, občas se běh nespustí vůbec. Denním úlohám to nevadí.
-# U snímků kurzů je proto okno (`ODDS_CLOSING_HOURS = 3 h`) záměrně **širší než
-# perioda běhu (1 h)**: každý úspěšný bod v okně posune kandidáta na closing a po výkopu
-# zůstane poslední předvýkopový vzorek. Jeden výpadek tak zápas nepřipraví o CLV. Časy jsou v **UTC**.
-
+# Prediction-only schedule. All cron expressions use UTC; GitHub scheduling is best-effort.
+# Web Push, bookmaker odds and closing collection are retired. Keep results and predictions.
 name: Cron
 
 on:
   schedule:
-    # Snímky kurzů – nejčastější úloha, kvůli zavírací linii u večerních zápasů.
-    # HODINOVĚ (od 28. 7. 2026): `fixturesNeedingOdds` v posledních 3 h průběžně přepisuje
-    # kandidáta na closing. Hodinová kadence dává typicky poslední bod 0–60 min před výkopem.
-    # Minuta 20 schválně: denní úlohy jedou na :00, :15 a :30, takže nikdy nenastane
-    # okamžik, kdy by seděly dva rozvrhy naráz.
-    - cron: "20 * * * *"
-    # Candidate-first closing: pouze již kvalifikované a těsně pod hranou, max. 12 requestů.
-    - cron: "5,35,50 * * * *"
-    - cron: "7,22,37,52 * * * *" # Web Push připomínky oblíbených zápasů
     - cron: "45 */3 * * *" # refresh-referees; mimo prioritní kurzový slot :50
     - cron: "30 2 * * *" # refresh-tactics (uložené sestavy, max. 30 zápasů)
     # Denní údržba (časy odpovídají původnímu vercel.json).
@@ -64,11 +39,9 @@ on:
       job:
         description: "Kterou úlohu spustit ručně"
         required: true
-        default: snapshot-odds
+        default: predict-upcoming
         type: choice
         options:
-          - snapshot-odds
-          - snapshot-odds-priority
           - refresh-league-styles
           - warm
           - refresh-elo
@@ -78,7 +51,6 @@ on:
           - settle-results
           - settle-tips
           - calibrate-models
-          - send-notifications
           - audit-pipeline
           - personnel-shadow
           - player-profiles
@@ -99,8 +71,8 @@ jobs:
           MANUAL: ${{ inputs.job }}
         run: |
           # O větvi rozhoduje TYP UDÁLOSTI, ne prázdnost `inputs`. Ruční spuštění má
-          # u `job` default `snapshot-odds`, takže kdyby se `inputs` naplnily i při
-          # plánovaném běhu, spadly by do snapshot-odds VŠECHNY rozvrhy a denní úlohy
+          # u `job` default `predict-upcoming`, takže kdyby se `inputs` naplnily i při
+          # plánovaném běhu, spadly by do predict-upcoming VŠECHNY rozvrhy a denní úlohy
           # by nikdy neběžely – a job by přitom svítil zeleně.
           if [ "$EVENT" = "workflow_dispatch" ]; then
             if [ -z "${MANUAL:-}" ]; then
@@ -111,9 +83,6 @@ jobs:
             exit 0
           fi
           case "$SCHEDULE" in
-            "20 * * * *") path="snapshot-odds" ;;
-            "5,35,50 * * * *") path="snapshot-odds-priority" ;;
-            "7,22,37,52 * * * *") path="send-notifications" ;;
             "45 */3 * * *") path="refresh-referees" ;;
             "30 2 * * *")   path="refresh-tactics" ;;
             "0 3 * * *")    path="refresh-league-styles" ;;
@@ -205,40 +174,6 @@ jobs:
             if [ "$failed" -gt 0 ]; then echo "$failed kalibračních běhů selhalo." >&2; exit 1; fi
             exit 0
           fi
-          if [ "$JOB" = "snapshot-odds" ]; then
-            # Pokračovací dávky chrání neopakovatelný closing před serverless timeoutem.
-            # Menší serverless dávky + pokračování. Endpoint má navíc vlastní 35s
-            # časový rozpočet, takže vždy stihne vrátit `remaining` před limitem Vercelu.
-            cursor=""
-            previous_cursor=""
-            for pass in $(seq 1 12); do
-              target="$url?limit=12"
-              if [ -n "$cursor" ]; then target="$target&cursor=$cursor"; fi
-              echo "→ $target (dávka $pass)"
-              body=$(curl --fail-with-body --silent --show-error --location \
-                --max-time 70 --retry 2 --retry-delay 10 \
-                --header "Authorization: Bearer $CRON_SECRET" "$target")
-              echo "$body"
-              remaining=$(echo "$body" | jq -r '.remaining // 0')
-              if [ "$remaining" -le 0 ]; then exit 0; fi
-              previous_cursor="$cursor"
-              cursor=$(echo "$body" | jq -r '.cursor // empty')
-              if [ -z "$cursor" ] || [ "$cursor" = "$previous_cursor" ]; then
-                echo "Kurzová dávka nevrátila nový pokračovací kurzor; další opakování by zpracovalo stejné zápasy." >&2
-                exit 1
-              fi
-            done
-            echo "Po dvanácti dávkách stále zbývá $remaining položek." >&2
-            exit 1
-          fi
-          if [ "$JOB" = "snapshot-odds-priority" ]; then
-            target="$APP_URL/api/cron/snapshot-odds?mode=priority&limit=12"
-            echo "→ $target"
-            curl --fail-with-body --silent --show-error --location --max-time 70 --retry 1 --retry-delay 5 \
-              --header "Authorization: Bearer $CRON_SECRET" "$target"
-            echo
-            exit 0
-          fi
           if [ "$JOB" = "personnel-shadow" ]; then
             cursor=0
             for pass in $(seq 1 12); do
@@ -276,7 +211,7 @@ jobs:
           echo
       # Separate invocation: never spend the odds/prediction cron's 60s budget on selection.
       - name: Aktualizuj Denní výběr po dokončení zdrojů
-        if: ${{ success() && contains(fromJSON('["snapshot-odds","predict-upcoming","settle-results","telegram-digest"]'), steps.pick.outputs.path) }}
+        if: ${{ success() && contains(fromJSON('["predict-upcoming","settle-results","telegram-digest"]'), steps.pick.outputs.path) }}
         env:
           APP_URL: ${{ vars.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}

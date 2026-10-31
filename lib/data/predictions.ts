@@ -1,3 +1,4 @@
+import { MODEL_ONLY_MODE } from '../modelOnlyMode';
 import type { CountBaselines, Team } from "@/lib/types";
 import { prisma } from "@/lib/db";
 import { MODEL_VERSION } from "./modelVersion";
@@ -548,7 +549,7 @@ export async function runPredictUpcoming(
           // Interní benchmark: predikce API-Footballu (1X2) na týž řádek. Jen klubové
           // ligy (reprezentace API predikce nemá), jen 1× za život zápasu (drží náklady
           // i srovnatelný okamžik). Výpadek/null nesmí shodit náš řádek.
-          if (!national) {
+          if (!national && !MODEL_ONLY_MODE) {
             try {
               if (!(await hasBenchmark(f.fixture.id))) {
                 const bench = await fetchPrediction(f.fixture.id);
@@ -667,6 +668,7 @@ export async function runSnapshotOdds(
   provider429?: number;
   provider5xx?: number;
 }> {
+  if (MODEL_ONLY_MODE) throw new Error("ODDS_COLLECTION_RETIRED");
   const now = new Date();
   const priorityHorizon = new Date(now.getTime() + 90 * 60_000);
   const priorityRows = mode === "priority" ? await prisma.autonomousTipSnapshot.findMany({

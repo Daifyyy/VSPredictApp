@@ -1,3 +1,5 @@
+// Historical priced-policy regression suite; production mode is tested separately.
+vi.mock("./modelOnlyMode",()=>({MODEL_ONLY_MODE:false,MODEL_ONLY_POLICY:2001}));
 import { beforeEach,expect,it,vi } from "vitest";
 const mocks=vi.hoisted(()=>({read:vi.fn(),tx:vi.fn(),find:vi.fn(),claim:vi.fn(),update:vi.fn(),incident:vi.fn()}));
 vi.mock("server-only",()=>({}));
