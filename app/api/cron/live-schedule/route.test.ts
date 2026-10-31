@@ -1,24 +1,8 @@
-import { afterEach, expect, it, vi } from 'vitest';
-const mocks = vi.hoisted(() => ({ auth: vi.fn(), find: vi.fn() }));
-vi.mock('@/lib/cronAuth', () => ({ requireCronAuth: mocks.auth }));
-vi.mock('@/lib/db', () => ({ prisma: { fixturePrediction: { findMany: mocks.find } } }));
+import { expect, it, vi } from 'vitest';
+vi.mock('@/lib/db', () => { throw Error('Retired schedule must not load DB'); });
 import { GET } from './route';
-afterEach(() => vi.resetAllMocks());
-it('checks authorization before reading any schedule', async () => {
-  mocks.auth.mockResolvedValue(new Response(null, { status: 401 }));
-  expect((await GET(new Request('https://app.test/api/cron/live-schedule'))).status).toBe(401);
-  expect(mocks.find).not.toHaveBeenCalled();
-});
-it('exposes only bounded timing metadata with a single projected query', async () => {
-  mocks.auth.mockResolvedValue(null); mocks.find.mockResolvedValue([{ kickoff: new Date(), status: 'NS' }]);
-  const response = await GET(new Request('https://app.test/api/cron/live-schedule'));
-  const payload = await response.json();
-  expect(Object.keys(payload).sort()).toEqual(['generatedAt', 'validUntil', 'version', 'windows']);
-  expect(payload.windows).toHaveLength(1);
-  expect(mocks.find.mock.calls[0][0].select).toEqual({ kickoff: true, status: true });
-  expect(mocks.find).toHaveBeenCalledTimes(1);
-});
-it('does not publish a truncated program as complete', async () => {
-  mocks.auth.mockResolvedValue(null); mocks.find.mockResolvedValue(Array(1001).fill({ kickoff: new Date(), status: 'NS' }));
-  expect((await GET(new Request('https://app.test/api/cron/live-schedule'))).status).toBe(503);
+it('does not rebuild a retired live schedule or expose fixture data', async () => {
+ const response = GET();
+ expect(response.status).toBe(410);
+ expect(await response.json()).toEqual({ limitedReason: 'LIVE_RETIRED', message: 'Živý přenos byl ukončen. Použijte předzápasové predikce a konečné výsledky.' });
 });

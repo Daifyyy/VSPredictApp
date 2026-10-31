@@ -20,8 +20,6 @@ name: Cron
 
 on:
   schedule:
-    - cron: "2 * * * *" # hourly schedule refresh/recovery, same total frequency
-    - cron: "12,22,32,42,52 * * * *" # live only inside saved windows when preflight enabled
     # Snímky kurzů – nejčastější úloha, kvůli zavírací linii u večerních zápasů.
     # HODINOVĚ (od 28. 7. 2026): `fixturesNeedingOdds` v posledních 3 h průběžně přepisuje
     # kandidáta na closing. Hodinová kadence dává typicky poslední bod 0–60 min před výkopem.
@@ -84,7 +82,6 @@ on:
           - calibrate-models
           - send-notifications
           - audit-pipeline
-          - collect-live
           - personnel-shadow
           - player-profiles
           - telegram-digest
@@ -116,7 +113,6 @@ jobs:
             exit 0
           fi
           case "$SCHEDULE" in
-            "2 * * * *"|"12,22,32,42,52 * * * *") path="collect-live" ;;
             "20 * * * *") path="snapshot-odds" ;;
             "5,35,50 * * * *") path="snapshot-odds-priority" ;;
             "7,22,37,52 * * * *") path="send-notifications" ;;
@@ -145,44 +141,7 @@ jobs:
           echo "path=$path" >> "$GITHUB_OUTPUT"
           echo "Rozvrh '$SCHEDULE' → úloha $path"
 
-      # Opt-in only after verifying GitHub billed minutes/cache headroom.
-      # No training data, credentials or betting content are cached.
-      - uses: actions/checkout@v5
-        if: ${{ vars.LIVE_SCHEDULE_PREFLIGHT_ENABLED == 'true' && steps.pick.outputs.path == 'collect-live' && github.event_name == 'schedule' }}
-        with:
-          sparse-checkout: scripts/liveScheduleGate.mjs
-          sparse-checkout-cone-mode: false
-          persist-credentials: false
-      - name: Schedule cache bucket
-        id: schedule_clock
-        if: ${{ vars.LIVE_SCHEDULE_PREFLIGHT_ENABLED == 'true' && steps.pick.outputs.path == 'collect-live' && github.event_name == 'schedule' }}
-        run: echo "bucket=$(date -u +%Y%m%d%H)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache/restore@v5
-        id: schedule_cache
-        continue-on-error: true
-        if: ${{ steps.schedule_clock.outputs.bucket != '' }}
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
-        with:
-          path: .runtime/live-schedule.json
-          key: live-schedule-v1-${{ github.ref }}-${{ steps.schedule_clock.outputs.bucket }}
-          restore-keys: live-schedule-v1-${{ github.ref }}-
-      - name: Live preflight before application invocation
-        id: live_gate
-        if: ${{ steps.schedule_clock.outputs.bucket != '' }}
-        env:
-          APP_URL: ${{ vars.APP_URL }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          SCHEDULE: ${{ github.event.schedule }}
-        run: node scripts/liveScheduleGate.mjs
-      - uses: actions/cache/save@v5
-        continue-on-error: true
-        if: ${{ steps.live_gate.outputs.save_schedule == 'true' && steps.schedule_cache.outputs.cache-hit != 'true' }}
-        with:
-          path: .runtime/live-schedule.json
-          key: live-schedule-v1-${{ github.ref }}-${{ steps.schedule_clock.outputs.bucket }}
       - name: Zavolej endpoint
-        if: ${{ steps.live_gate.outputs.run_live != 'false' }}
         env:
           APP_URL: ${{ vars.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -282,20 +241,6 @@ jobs:
               --header "Authorization: Bearer $CRON_SECRET" "$target"
             echo
             exit 0
-          fi
-          if [ "$JOB" = "collect-live" ]; then
-            cursor=0
-            for pass in $(seq 1 12); do
-              target="$url?limit=2&cursor=$cursor"
-              echo "→ $target (live dávka $pass)"
-              body=$(curl --fail-with-body --silent --show-error --location --max-time 70 --retry 1 --retry-delay 5 --header "Authorization: Bearer $CRON_SECRET" "$target")
-              echo "$body"
-              remaining=$(echo "$body" | jq -r '.remaining // 0')
-              cursor=$(echo "$body" | jq -r '.cursor // 0')
-              if [ "$remaining" -le 0 ]; then exit 0; fi
-            done
-            echo "Live sběr nedokončil všechny dávky; zbývá $remaining." >&2
-            exit 1
           fi
           if [ "$JOB" = "personnel-shadow" ]; then
             cursor=0

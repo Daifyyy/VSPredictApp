@@ -7,7 +7,6 @@ import { AccountMenu } from "./AccountMenu";
 import { DesktopSidebar, MobileBottomNav, SectionNav } from "./nav";
 import type { SessionUser } from "./sessionUser";
 import { shareOrCopy } from "./share";
-import { TeamSearch } from "./TeamSearch";
 import { Button } from "./ui/primitives";
 
 /**
@@ -47,7 +46,7 @@ export function AppHeader({
               <span className="block text-[11px] text-muted">Fotbal v souvislostech</span>
             </span>
           </Link>
-          <TeamSearch />
+          <Link href="/" prefetch={false} className="hidden text-sm font-semibold text-muted sm:block">Program a předzápasové predikce</Link>
           <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
             {share && <ShareButton />}
             <AccountMenu user={user} />

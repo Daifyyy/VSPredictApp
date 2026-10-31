@@ -58,7 +58,7 @@ export async function runAIResearch(now = new Date(), settle = false) {
     // All forecasts settle independently of whether a priced opportunity exists.
     if (settle) {
       const forecasts = await prisma.aIForecastSnapshot.findMany({ where: { artifactId: AI_ARTIFACT_ID,
-        OR: [{ outcome: 'PENDING' }, { kickoff: { gte: new Date(+now - 30 * 86400_000) } }] }, take: 500 });
+        OR: [{ outcome: 'PENDING' }, { kickoff: { gte: new Date(+now - 30 * 86400_000) } }] }, omit: { inputAudit: true }, take: 500 });
       const byId = new Map(history.map(r => [r.fixtureId, r]));
       const updates = forecasts.flatMap(row => {
         const f = byId.get(row.fixtureId);
@@ -76,7 +76,7 @@ export async function runAIResearch(now = new Date(), settle = false) {
         AS v(id,outcome,home,away) WHERE f."id"=v.id`;
     }
     if (!settle && aiFlags().opportunities && Date.now() - started < 8000) {
-      const forecasts = await prisma.aIForecastSnapshot.findMany({ where: { artifactId: AI_ARTIFACT_ID, kickoff: { gte: new Date(+now + 30 * 60_000), lte: new Date(+now + 2 * 86400_000) }, outcome: 'PENDING' }, take: 50 });
+      const forecasts = await prisma.aIForecastSnapshot.findMany({ where: { artifactId: AI_ARTIFACT_ID, kickoff: { gte: new Date(+now + 30 * 60_000), lte: new Date(+now + 2 * 86400_000) }, outcome: 'PENDING' }, omit: { inputAudit: true }, take: 50 });
       const quotes = await prisma.fixturePrediction.findMany({ where: { fixtureId: { in: forecasts.map(r => r.fixtureId) }, status: 'NS', available: true },
         select: { fixtureId: true, kickoff: true, homeTeamId: true, awayTeamId: true, oddsCurrentAt: true, oddsCurrentBooks: true } });
       const byId = new Map(quotes.map(r => [r.fixtureId, r]));
@@ -135,7 +135,7 @@ async function refreshAIResearchDay(date: string, now: Date, rejected?: AIResear
         profit: f.outcome === 'WON' ? p.decimalOdds - 1 : f.outcome === 'LOST' ? -1 : f.outcome === 'VOID' ? 0 : null, priceClv: p.priceClv }]; }), rejected: rejected ?? prior?.rejected ?? [] };
   if (Buffer.byteLength(JSON.stringify(payload)) > 250_000) throw Error('AI_PROJECTION_TOO_LARGE');
   const key = KEY + date, expiresAt = new Date(+now + 90 * 86400_000);
-  await prisma.apiCache.upsert({ where: { key }, create: { key, payload: json(payload), expiresAt }, update: { payload: json(payload), expiresAt } });
+  await prisma.apiCache.upsert({ where: { key }, create: { key, payload: json(payload), expiresAt }, update: { payload: json(payload), expiresAt }, select: { key: true } });
   await prisma.apiCache.deleteMany({ where: { key: { startsWith: KEY }, expiresAt: { lt: now } } });
 }
 

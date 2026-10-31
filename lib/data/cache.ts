@@ -65,6 +65,8 @@ export async function cachedJson<T>(
     where: { key },
     create: { key, payload, expiresAt },
     update: { payload, expiresAt },
+    // The value is already in memory; do not download the same large JSON again.
+    select: { key: true },
   });
   return data;
 }
@@ -138,7 +140,7 @@ function rowToMatchStat(r: Row): MatchStat {
   };
 }
 
-function addAllowedVolume(target: MatchStat, opponent: MatchStat | undefined): MatchStat {
+function addAllowedVolume(target: MatchStat, opponent: Pick<MatchStat, 'metrics'> | undefined): MatchStat {
   if (!opponent) return target;
   const metrics = { ...target.metrics };
   if (opponent.metrics.SHOTS != null) metrics.SHOTS_AGAINST = opponent.metrics.SHOTS;
@@ -147,24 +149,34 @@ function addAllowedVolume(target: MatchStat, opponent: MatchStat | undefined): M
   return { ...target, metrics };
 }
 
-/** Načte všechny cachované zápasy týmu v daném kontextu jako mapu dle fixtureId. */
+/** Only requested fixtures when provided; omitted IDs retain the full-history contract. */
 export async function getCachedMatchStats(
   teamId: number,
-  context: MatchContext
+  context: MatchContext,
+  fixtureIds?: number[],
 ): Promise<Map<number, MatchStat>> {
+  if (fixtureIds?.length === 0) return new Map();
   const rows = await prisma.matchStatCache.findMany({
     where: {
       teamId,
       context,
       schemaVersion: { gte: MIN_READABLE_CACHE_VERSION },
+      ...(fixtureIds ? { fixtureId: { in: [...new Set(fixtureIds)] } } : {}),
     },
   });
   const opponents = rows.length ? await prisma.matchStatCache.findMany({
     where: { fixtureId: { in: rows.map((row) => row.fixtureId) }, teamId: { not: teamId }, schemaVersion: { gte: MIN_READABLE_CACHE_VERSION } },
     orderBy: { schemaVersion: "desc" },
+    select: { fixtureId: true, shots: true, shotsOnTarget: true, shotsInsideBox: true },
   }) : [];
-  const opponentByFixture = new Map<number, MatchStat>();
-  for (const row of opponents) if (!opponentByFixture.has(row.fixtureId)) opponentByFixture.set(row.fixtureId, rowToMatchStat(row));
+  const opponentByFixture = new Map<number, Pick<MatchStat, 'metrics'>>();
+  for (const row of opponents) if (!opponentByFixture.has(row.fixtureId)) {
+    const metrics: Partial<Record<Metric, number>> = {};
+    if (row.shots != null) metrics.SHOTS = row.shots;
+    if (row.shotsOnTarget != null) metrics.SHOTS_ON_TARGET = row.shotsOnTarget;
+    if (row.shotsInsideBox != null) metrics.SHOTS_INSIDE_BOX = row.shotsInsideBox;
+    opponentByFixture.set(row.fixtureId, { metrics });
+  }
   return new Map(rows.map((r) => {
     const own = rowToMatchStat(r);
     return [r.fixtureId, addAllowedVolume(own, opponentByFixture.get(r.fixtureId))];

@@ -1,28 +1,7 @@
-import type { MetadataRoute } from "next";
-
-// Hlavní záložky pro indexaci. Porovnání s konkrétními týmy se neindexují plošně
-// (kombinatorika + kanonická URL řeší dedup), sitemap drží jen stabilní vstupy.
-const BASE = process.env.AUTH_URL ?? "https://vs-predict-app.vercel.app";
-
+import type { MetadataRoute } from 'next';
+const BASE = process.env.AUTH_URL ?? 'https://vs-predict-app.vercel.app';
 export default function sitemap(): MetadataRoute.Sitemap {
-  const now = new Date();
-  const routes: { path: string; priority: number; changeFrequency: "daily" | "weekly" }[] = [
-    { path: "/", priority: 1, changeFrequency: "daily" },
-    { path: "/porovnani", priority: 0.9, changeFrequency: "daily" },
-    { path: "/tabulky", priority: 0.8, changeFrequency: "daily" },
-    { path: "/predikce", priority: 0.8, changeFrequency: "daily" },
-    { path: "/strategie", priority: 0.8, changeFrequency: "daily" },
-    // Obsah je za PRO, ale stránka má veřejný úvod i vlastní metadata – bez ní byla
-    // sekce dosažitelná z jediné jiné stránky a pro vyhledávač neexistovala.
-    { path: "/digest", priority: 0.5, changeFrequency: "daily" },
-    { path: "/tipovacka", priority: 0.7, changeFrequency: "daily" },
-    { path: "/transfers", priority: 0.6, changeFrequency: "weekly" },
-    { path: "/hra", priority: 0.7, changeFrequency: "weekly" },
-  ];
-  return routes.map((r) => ({
-    url: `${BASE}${r.path}`,
-    lastModified: now,
-    changeFrequency: r.changeFrequency,
-    priority: r.priority,
-  }));
+ return ['/', '/vysledky', '/vykonnost', '/denni-vyber'].map(path => ({
+   url: BASE + path, lastModified: new Date(), changeFrequency: 'daily' as const, priority: path === '/' ? 1 : 0.8,
+ }));
 }

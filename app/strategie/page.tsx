@@ -1,13 +1,9 @@
-import { Suspense } from "react";
-import { StrategyHub } from "../_components/StrategyHub";
-
-export const metadata = {
-  title: "Sázkové strategie — Football Insight",
-  description: "Oddělená bilance, denní příležitosti a tikety sledovaných fotbalových strategií.",
-};
-
-export const dynamic = "force-static";
-
-export default function StrategiePage() {
-  return <div className="flex-1"><Suspense fallback={null}><StrategyHub /></Suspense></div>;
+import { redirect } from 'next/navigation';
+export default async function LegacyStrategies({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+ const query = new URLSearchParams();
+ for (const [key, value] of Object.entries(await searchParams)) {
+   if (typeof value === 'string') query.set(key, value);
+   else if (Array.isArray(value)) for (const item of value) query.append(key, item);
+ }
+ redirect('/vykonnost' + (query.size ? '?' + query : ''));
 }

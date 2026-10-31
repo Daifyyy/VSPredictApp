@@ -1,30 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { buildCompareHref } from "./compareHref";
-
-describe("buildCompareHref", () => {
-  it("adds European context and team metadata", () => {
-    const href = buildCompareHref({
-      compareMode: "CLUB",
-      home: { id: 10, name: "Sparta Praha", logoUrl: "https://img.test/sparta.png" },
-      away: { id: 20, name: "Celtic", logoUrl: "https://img.test/celtic.png" },
-      homeCompareLeagueId: 2,
-      awayCompareLeagueId: 2,
-      europeanCup: true,
-    });
-    const url = new URL(href!, "https://football-insight.test");
-    expect(url.searchParams.get("context")).toBe("EURO_CUP");
-    expect(url.searchParams.get("homeName")).toBe("Sparta Praha");
-    expect(url.searchParams.get("awayName")).toBe("Celtic");
-  });
-
-  it("does not add European context to a domestic league link", () => {
-    const href = buildCompareHref({
-      compareMode: "CLUB",
-      home: { id: 10 },
-      away: { id: 20 },
-      homeCompareLeagueId: 39,
-      awayCompareLeagueId: 39,
-    });
-    expect(href).not.toContain("context=");
-  });
+import { expect, it } from 'vitest';
+import { buildCompareHref } from './compareHref';
+const base = { compareMode: 'CLUB' as const, home: { id: 10 }, away: { id: 20 }, homeCompareLeagueId: null, awayCompareLeagueId: null };
+it('links by fixture identity without requiring league or team metadata', () => {
+ expect(buildCompareHref({ ...base, fixtureId: 42, europeanCup: true })).toBe('/zapas/42');
+});
+it('never guesses a fixture from two teams', () => { expect(buildCompareHref(base)).toBeNull(); });
+it.each([0, -1, NaN, 1.5, Infinity])('rejects invalid fixture identity %s', id => {
+ expect(buildCompareHref({ ...base, fixtureId: id })).toBeNull();
 });

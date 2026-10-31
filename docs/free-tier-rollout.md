@@ -125,6 +125,43 @@ a odlišení databázového výpadku od prázdné historie.
 
 ## Naměřeno bez změny produkčních dat
 
+### Následná kontrola 2. 10. 2026 a omezení týmových čtení
+
+Read-only skript `scripts/auditResourceRuntime.ts` čte nejvýše 5001 CronRun za 24 hodin,
+metadata vybraných reportů a nanejvýš 100 statistik jednoho týmu pouze jako součty velikostí.
+Má read-only transakci a 5s timeout jednotlivého SQL. Nespouští cron, provider ani obnovu cache.
+Příklad s lokálním Node podporujícím TypeScript:
+`node --env-file=.env --env-file-if-exists=.env.local scripts/auditResourceRuntime.ts 2026-10-02T16:35:00Z`.
+Argument `--reports-only` za časem přeskočí opětovné čtení CronRun.
+
+Za období 1. 10. 18:35 až 2. 10. 18:35 Europe/Prague:
+
+- 44 predikčních běhů, 510 zpracování, součet doby 785 882 ms, 276 provider pokusů;
+  žádný zaznamenaný FAILED/DEGRADED, žádný běh s `teamProfiles.enabled=true`.
+  To není důkaz nepřítomnosti chyb mimo CronRun ani počet unikátních fixture.
+- Jeden refresh Elo: 161 163 ms, 649 týmových stavů. Zatím kandidát k další analýze,
+  nikoli potvrzený největší zdroj přenosu. Doba běhu neurčuje objem DB přenosu.
+- Uložené strategy/quick/Model Lab souhrny mají čas kolem 2. 10. 04:34 Praha,
+  shodný s nočním auditem. Historický a live report jsou z 1. 10. kolem 21:39.
+  Přesné produkční env a nasazený commit zatím nebyly ověřeny přes Vercel.
+  Historická URL v komentáři workflow vrací DEPLOYMENT_NOT_FOUND; neznamená to,
+  že současná aplikace uživatele nefunguje.
+
+Oprava: `assemble` předá existující seznam fixture do `getCachedMatchStats`.
+Databáze tak nevrací starší zápasy, které assemble stejně následně zahazuje.
+Prázdný seznam nevyvolá dotaz. Soupeřovy řádky nyní obsahují jen fixture ID, střely,
+střely na branku a střely z vápna, které funkce skutečně používá. Pořadí výběru
+verze, null/0, kontexty a původní seznam zápasů modelu se nemění.
+Při zápisu `cachedJson` se z databáze vrací jen klíč, nikoli znovu celý právě uložený
+payload. Funkce vrací původní data z paměti, TTL a obsah zápisu zůstávají stejné.
+Úspora tohoto odstraněného návratového přenosu zatím nebyla v produkci vyčíslena.
+
+Vzorek 30 uložených řádků: odhad JSON celých řádků 23 287 B versus projekce 2 300 B
+(asi o 90 % méně v této konkrétní soupeřově projekci). Nejde o celkovou úsporu aplikace,
+účtovaný přenos ani reprezentativní měsíční vzorek. Úspora omezením fixture je navíc
+a nebyla procentně vyčíslena. Počet dotazů neroste, žádná nová cache ani služba.
+Změny tohoto následného balíku ještě vyžadují nasazení a porovnání reálných odečtů.
+
 `node --env-file=.env --import tsx scripts/auditResourceProjection.ts`
 
 Odečet 1. 10. 2026 13:51 UTC, read-only transakce, limit SQL 8 s:

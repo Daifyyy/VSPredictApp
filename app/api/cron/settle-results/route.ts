@@ -5,6 +5,7 @@ import { logError } from "@/lib/logError";
 import { requireCronAuth } from "@/lib/cronAuth";
 import { cronJson } from "@/lib/cronResult";
 import { withCronRun } from "@/lib/operations";
+import { settleLegacyLiveCandidates } from '@/lib/data/legacyLiveSettlement';
 
 // Dotažení skutečných výsledků u odehraných predikcí (denní cron). Levné
 // (batch /fixtures?ids=). Doplní goals/status → základ track-recordu a kalibrace.
@@ -23,6 +24,9 @@ export async function GET(req: Request) {
   try {
     const stats = await withCronRun("settle-results", async () => {
       const result = await runSettleResults();
+      // Retired live strategy: finish historical rows without reopening its collector.
+      try { await settleLegacyLiveCandidates(); }
+      catch (error) { logError('settle-results.legacyLive', error); result.errors++; }
       return {
         ...result,
         candidates: result.pending,

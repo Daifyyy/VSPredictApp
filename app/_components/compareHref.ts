@@ -1,3 +1,4 @@
+import { fixtureDetailHref } from '@/lib/fixtureDetailHref';
 import type { EntityType } from "@/lib/types";
 
 /**
@@ -19,21 +20,5 @@ export interface CompareLinkSource {
 }
 
 export function buildCompareHref(x: CompareLinkSource): string | null {
-  if (x.homeCompareLeagueId == null || x.awayCompareLeagueId == null) return null;
-  const params = new URLSearchParams({
-    mode: x.compareMode,
-    homeLeague: String(x.homeCompareLeagueId),
-    awayLeague: String(x.awayCompareLeagueId),
-    home: String(x.home.id),
-    away: String(x.away.id),
-  });
-  if (x.fixtureId != null) params.set("fixture", String(x.fixtureId));
-  if (x.europeanCup) {
-    params.set("context", "EURO_CUP");
-    if (x.home.name) params.set("homeName", x.home.name);
-    if (x.away.name) params.set("awayName", x.away.name);
-    if (x.home.logoUrl) params.set("homeLogo", x.home.logoUrl);
-    if (x.away.logoUrl) params.set("awayLogo", x.away.logoUrl);
-  }
-  return `/porovnani?${params.toString()}`;
+  return fixtureDetailHref(x.fixtureId);
 }

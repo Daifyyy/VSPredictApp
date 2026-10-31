@@ -39,6 +39,7 @@ function points(row: { homeTeamId: number; awayTeamId: number; homeGoals: number
 }
 
 async function pedigreeSnapshots(teamIds: number[], asOfDate: Date, calculatedAt: Date, persist: boolean) {
+  if (!teamIds.length) return [];
   const [states, matches] = await Promise.all([
     prisma.clubEloState.findMany({ where: { modelVersion: CLUB_ELO_MODEL_VERSION, teamId: { in: teamIds } } }),
     prisma.clubEloMatch.findMany({ where: { kickoff: { lt: asOfDate }, OR: [{ homeTeamId: { in: teamIds } }, { awayTeamId: { in: teamIds } }] }, select: { season: true, context: true, homeTeamId: true, awayTeamId: true } }),
@@ -63,6 +64,7 @@ async function sources(windowKey: string, persistPedigree = false, asOf = new Da
     orderBy: [{ kickoff: "asc" }, { fixtureId: "asc" }],
     select: { fixtureId: true, leagueId: true, kickoff: true, homeTeamId: true, awayTeamId: true, homeName: true, awayName: true, homeWin: true, awayWin: true, lambdaHome: true, lambdaAway: true, modelVersion: true, lowConfidence: true, readinessSample: true, oddsBooks: true, oddsCurrentBooks: true, homeGoals: true, awayGoals: true },
   });
+  if (!rows.length) return [];
   const teamIds = [...new Set(rows.flatMap((row) => [row.homeTeamId, row.awayTeamId]))];
   const historyStart = new Date(start); historyStart.setUTCFullYear(historyStart.getUTCFullYear() - 1);
   const [eloRows, pedigreeRows, history, personnel] = await Promise.all([

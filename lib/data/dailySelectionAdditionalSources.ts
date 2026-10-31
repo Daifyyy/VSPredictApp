@@ -10,7 +10,7 @@ import { parseBooks } from "../picks/books";
 import { comparableMarketQuote } from "../picks/comparableMarketQuote";
 import { TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION, teamGoalOpportunityDecision } from "../picks/marketSignals";
 import { PRESSURE_FLOW_V5_POLICY_VERSION, pressureFlowCandidates } from "../picks/pressureFlowV5";
-import type { PerformancePressureShadowV5 } from "../picks/performancePressureShadowV5";
+import { dailySourceAudit } from './dailySourceAudit';
 import { dailyEvidenceCohortKey } from "../picks/dailySelectionEvidence";
 import { dailyEvidenceCacheKey } from "./dailySelectionSources";
 import type { DailyEvidence } from "../picks/dailySelection";
@@ -18,12 +18,16 @@ import type { DailyPublicationCandidate } from "./dailySelectionStore";
 
 export async function loadDailyAdditionalSources(date:string,now:Date) {
   const bounds=pragueDateBounds(date);
-  const [signals,fixtures,tickets]=await Promise.all([
-    prisma.marketSignalSnapshot.findMany({where:{kickoff:{gte:bounds.start,lt:bounds.end},leagueId:{in:[...PUBLIC_CLUB_LEAGUE_IDS]},OR:[{policyVersion:TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION,market:{startsWith:"TEAM_"}},{policyVersion:PRESSURE_FLOW_V5_POLICY_VERSION}]}}),
-    prisma.fixturePrediction.findMany({where:{kickoff:{gte:bounds.start,lt:bounds.end},leagueId:{in:[...PUBLIC_CLUB_LEAGUE_IDS]},status:"NS",available:true},select:{fixtureId:true,leagueId:true,kickoff:true,homeTeamId:true,awayTeamId:true,homeName:true,awayName:true,modelVersion:true,contextVersion:true,modelContext:true,oddsCurrentAt:true,oddsCurrentBooks:true,inputSnapshot:true}}),
+  const [signals,tickets]=await Promise.all([
+    prisma.marketSignalSnapshot.findMany({where:{kickoff:{gte:bounds.start,lt:bounds.end},leagueId:{in:[...PUBLIC_CLUB_LEAGUE_IDS]},OR:[{policyVersion:TEAM_GOAL_MARKET_SIGNAL_POLICY_VERSION,market:{startsWith:"TEAM_"}},{policyVersion:PRESSURE_FLOW_V5_POLICY_VERSION}]},select:{id:true,fixtureId:true,market:true,side:true,line:true,policyVersion:true,modelVersion:true,modelContext:true,contextVersion:true,kickoff:true,openedAt:true,modelProbability:true,openMarketProbability:true,decimalOdds:true}}),
     qualifiedDailyTicketCandidates(date,now),
   ]);
+  const neededIds = [...new Set([...signals.map(r => r.fixtureId), ...tickets.groups.flatMap(g => g.candidates.map(c => c.fixtureId))])];
+  const fixtures = neededIds.length ? await prisma.fixturePrediction.findMany({where:{fixtureId:{in:neededIds},kickoff:{gte:bounds.start,lt:bounds.end},leagueId:{in:[...PUBLIC_CLUB_LEAGUE_IDS]},status:"NS",available:true},select:{fixtureId:true,leagueId:true,kickoff:true,homeTeamId:true,awayTeamId:true,homeName:true,awayName:true,modelVersion:true,contextVersion:true,modelContext:true,oddsCurrentAt:true,oddsCurrentBooks:true}}) : [];
   const byFixture=new Map(fixtures.map(f=>[f.fixtureId,f]));
+  const audits = await dailySourceAudit(signals.filter(r => !isQuarantinedTeamMarket(r.market)
+    && (r.policyVersion !== PRESSURE_FLOW_V5_POLICY_VERSION || pressureV5OpportunitiesEnabled())
+    && byFixture.has(r.fixtureId)).map(r => r.fixtureId), pressureV5OpportunitiesEnabled());
   const candidates:DailyPublicationCandidate[]=[];
   const rejected:Array<{id:string;reason:string}>=[];
   // Same one-per-fixture team-goal source shortlist as Strategy Hub, at its frozen price.
@@ -38,7 +42,8 @@ export async function loadDailyAdditionalSources(date:string,now:Date) {
     const reject=(reason:string)=>rejected.push({id:`SIGNAL:${row.id}`,reason});
     if(!v5&&teamWinners.get(row.fixtureId)?.id!==row.id){reject("NOT_IN_SOURCE_SHORTLIST");continue;}
     if(!f||!f.oddsCurrentAt||row.kickoff.getTime()!==f.kickoff.getTime()||row.openedAt>=row.kickoff||row.openedAt>now){reject("MISSING_OR_CHANGED_SOURCE");continue;}
-    const snapshot=f.inputSnapshot as {capturedAt?:string;competition?:{homeTeamId:number;awayTeamId:number};performancePressure?:PerformancePressureShadowV5}|null;
+    if(v5&&!pressureV5OpportunitiesEnabled()){reject("RESEARCH_DISABLED");continue;}
+    const snapshot=audits.get(f.fixtureId);
     if(!snapshot?.competition||snapshot.competition.homeTeamId!==f.homeTeamId||snapshot.competition.awayTeamId!==f.awayTeamId||!snapshot.capturedAt||!(Date.parse(snapshot.capturedAt)<row.kickoff.getTime())||Date.parse(snapshot.capturedAt)>now.getTime()){reject("MISSING_FROZEN_IDENTITY");continue;}
     if(row.modelContext!==f.modelContext||row.contextVersion!==f.contextVersion||(!v5&&row.modelVersion!==f.modelVersion)){reject("MODEL_VERSION_CHANGED");continue;}
     const books=parseBooks(f.oddsCurrentBooks);

@@ -45,8 +45,8 @@ export async function POST() {
       customer: customerId,
       line_items: [{ price: process.env.STRIPE_PRICE_ID!, quantity: 1 }],
       allow_promotion_codes: true,
-      success_url: `${base}/porovnani?upgraded=1`,
-      cancel_url: `${base}/porovnani?canceled=1`,
+      success_url: `${base}/vykonnost?upgraded=1`,
+      cancel_url: `${base}/vykonnost?canceled=1`,
       metadata: { userId: user.id },
     });
 

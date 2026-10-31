@@ -27,6 +27,8 @@ type Payload = {
   lineups: Lineup[];
   pro: boolean;
   updatedAt: string | null;
+  stale?: boolean;
+  limitedReason?: string | null;
 };
 
 const FINAL = new Set(["FT", "AET", "PEN", "CANC", "ABD"]);
@@ -48,6 +50,7 @@ function useMatchCenter(fixture: UpcomingFixture | null) {
   useEffect(() => {
     if (!fixtureId) return;
     let active = true;
+    finalRef.current = false;
     const controller = new AbortController();
     const load = async () => {
       if (document.hidden) return;
@@ -145,6 +148,7 @@ function MatchCenterDetail({ fixture, state, watching, canWatch, onWatch }: { fi
       </div>
     </div>
     <div className="border-t border-border bg-surface px-3 py-2 sm:px-4"><Tabs<DetailTab> label="Část Match Centeru" value={detailTab} onChange={setDetailTab} items={[{ value: "overview", label: "Přehled" }, { value: "events", label: "Průběh", badge: events.length }, { value: "lineups", label: "Sestavy", badge: payload?.lineups?.length ?? 0 }, { value: "stats", label: "Statistiky" }, { value: "model", label: "Model" }]} /></div>
+    {payload?.stale && <p role="status" className="mx-4 mt-4 text-sm text-warning">{payload.limitedReason === 'LIVE_NOT_CAPTURED' ? 'Průběh zatím nebyl zachycen.' : 'Zobrazený průběh není aktuální.'} Čeká se na plánovaný sběr; otevření detailu data neobnovuje.</p>}
     {payload?.matchInsight && (detailTab === "overview" || detailTab === "model") ? <div className="mx-4 mt-4"><MatchInsightCard insight={payload.matchInsight} variant={payload.pro ? "detail" : "summary"} pro={payload.pro} /></div> : null}
     {state.loading && !payload ? <p className="p-6 text-center text-sm text-muted">Načítám živý průběh…</p> : state.error && !payload ? <p className="p-6 text-center text-sm text-negative">Match Center se nepodařilo obnovit.</p> : <div className={detailTab === "overview" ? "grid gap-4 p-4 lg:grid-cols-[1.1fr_.9fr]" : "p-4"}>
       {(detailTab === "overview" || detailTab === "events" || detailTab === "stats" || detailTab === "lineups") ? <div className="space-y-4">

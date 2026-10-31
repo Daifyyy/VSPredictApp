@@ -89,7 +89,7 @@ function OpportunityCard({ item }: { item: StrategyHubOpportunity }) {
 }
 
 
-export function StrategyHub() {
+export function StrategyHub({ embedded = false }: { embedded?: boolean } = {}) {
   const user = useCurrentUser();
   const router = useRouter();
   const pathname = usePathname();
@@ -132,7 +132,7 @@ export function StrategyHub() {
   const data = payload?.data;
   const displayedOpportunities = data?.opportunities.filter((item) => strategy !== "PRESSURE_FLOW_V5" || pressureView === "all" || pressureView === "over25" && item.market === "OVER_25" || pressureView === "btts" && item.market === "BTTS" || pressureView === "team" && item.market?.startsWith("TEAM_")) ?? [];
   const locked = payload?.locked ?? false;
-  return <><AppHeader user={user} /><main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-24 pt-5 sm:pt-8">
+  return <>{!embedded && <AppHeader user={user} />}<main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-24 pt-5 sm:pt-8">
     {payload?.stale && <p role="status" className="ui-panel mb-4 p-3 text-sm text-warning">{payload.limitedReason === "STRATEGY_METRICS_NOT_CAPTURED" ? "Historický souhrn dosud není připraven. Denní audit je oddělený od historické bilance; nejde o nulovou bilanci." : <>Bilance je z uloženého neaktuálního souhrnu ({payload.asOf ? new Date(payload.asOf).toLocaleString('cs-CZ') : 'čas neznámý'}). Nejde o nově přepočítané výsledky.</>}</p>}
     <div><p className="page-kicker">Výběry a výzkum přehledně</p><h1 className="page-title">Sázkové strategie</h1><p className="mt-2 max-w-3xl text-sm leading-6 text-muted">Původní Over a výzkum 1X2 na jednom místě. Výběry i bilance zůstávají oddělené podle pravidel; ziskovost není doložená.</p></div>
     <nav aria-label="Hlavní strategie" className="mt-5 grid gap-3 sm:grid-cols-2">

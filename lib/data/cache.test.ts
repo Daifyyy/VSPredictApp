@@ -28,6 +28,8 @@ const { db } = vi.hoisted(() => {
 
   const matches = (row: StatRow, where: Record<string, unknown>) =>
     Object.entries(where).every(([k, v]) => {
+      if (v && typeof v === "object" && "in" in v) return (v as { in: unknown[] }).in.includes(row[k]);
+      if (v && typeof v === "object" && "not" in v) return row[k] !== (v as { not: unknown }).not;
       if (v && typeof v === "object" && "gte" in v) {
         return (row[k] as number) >= (v as { gte: number }).gte;
       }
@@ -134,6 +136,15 @@ function statRow(over: Record<string, unknown> = {}) {
 }
 
 describe("cachedJson – TTL a read-through", () => {
+  it('returns the fetched value without requesting the payload back from the write', async () => {
+    const spy = vi.spyOn(db.apiCache, 'upsert');
+    try {
+      const value = { data: ['already', 'in', 'memory'] };
+      expect(await cachedJson('no-write-echo', HOUR, async () => value)).toBe(value);
+      expect(spy.mock.calls[0][0]).toMatchObject({ select: { key: true } });
+      expect(db._apiRow('no-write-echo')?.payload).toEqual(value);
+    } finally { spy.mockRestore(); }
+  });
   it("miss → zavolá fetcher, uloží a vrátí", async () => {
     const fetcher = vi.fn(async () => ({ a: 1 }));
     await expect(cachedJson("k1", HOUR, fetcher)).resolves.toEqual({ a: 1 });
@@ -262,6 +273,35 @@ describe("verzování cache", () => {
 });
 
 describe("čtení řádků", () => {
+  it('scoped fixture reads preserve the same own and opponent metrics as full history', async () => {
+    db._seedStat(statRow({ fixtureId: 100, shots: 12, xg: 1.5 }));
+    db._seedStat(statRow({ fixtureId: 101, shots: 20 }));
+    db._seedStat(statRow({ teamId: 2, fixtureId: 100, shots: 0, shotsOnTarget: null, shotsInsideBox: 4 }));
+    const full = await getCachedMatchStats(1, 'league');
+    const scoped = await getCachedMatchStats(1, 'league', [100, 100, 999]);
+    expect([...scoped.keys()]).toEqual([100]);
+    expect(scoped.get(100)).toEqual(full.get(100));
+    expect(scoped.get(100)!.metrics).toMatchObject({ SHOTS: 12, XG: 1.5, SHOTS_AGAINST: 0, SHOTS_INSIDE_BOX_AGAINST: 4 });
+    expect(scoped.get(100)!.metrics).not.toHaveProperty('SHOTS_ON_TARGET_AGAINST');
+  });
+
+  it('does not query team history when no fixtures are requested', async () => {
+    const before = db._calls().findMany;
+    expect((await getCachedMatchStats(1, 'league', [])).size).toBe(0);
+    expect(db._calls().findMany).toBe(before);
+  });
+
+  it('requests only three opponent metrics and retains newest-schema ordering', async () => {
+    db._seedStat(statRow({ fixtureId: 100 }));
+    db._seedStat(statRow({ teamId: 2, fixtureId: 100, shots: 8 }));
+    const spy = vi.spyOn(db.matchStatCache, 'findMany');
+    try {
+      await getCachedMatchStats(1, 'league', [100, 100]);
+      expect(spy.mock.calls[0][0].where).toMatchObject({ fixtureId: { in: [100] } });
+      expect(spy.mock.calls[1][0]).toMatchObject({ orderBy: { schemaVersion: 'desc' },
+        select: { fixtureId: true, shots: true, shotsOnTarget: true, shotsInsideBox: true } });
+    } finally { spy.mockRestore(); }
+  });
   it("chybějící sloupec se do metrik NEDOSTANE jako nula", async () => {
     // Nula by tiše posunula průměr; chybějící metrika musí renormalizovat váhy.
     db._seedStat(statRow({ goalsFor: 1, xg: null }));

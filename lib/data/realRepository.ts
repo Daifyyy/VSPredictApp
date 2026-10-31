@@ -1366,7 +1366,7 @@ async function assemble(
   fixtures: ApiFixture[],
   optsFor: FixtureOpts
 ): Promise<MatchStat[]> {
-  const cache = await getCachedMatchStats(teamId, context);
+  const cache = await getCachedMatchStats(teamId, context, fixtures.map(f => f.fixture.id));
   const result: MatchStat[] = [];
   const toFetch: ApiFixture[] = [];
 

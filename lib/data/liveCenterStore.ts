@@ -134,17 +134,17 @@ export async function captureLiveFixture(fixture: ApiFixture, now = new Date()) 
 }
 
 export async function liveCenterFromCache(fixtureId: number) {
-  const [match, model, odds, candidates, prediction] = await Promise.all([
+  const [match, model, odds, candidates] = await Promise.all([
     prisma.liveMatchSnapshot.findFirst({ where: { fixtureId }, orderBy: { observedAt: "desc" } }),
     prisma.liveModelSnapshot.findFirst({ where: { fixtureId }, orderBy: { calculatedAt: "desc" } }),
     prisma.liveOddsSnapshot.findMany({ where: { fixtureId }, orderBy: { observedAt: "desc" }, take: 30 }),
     prisma.liveCandidateSnapshot.findMany({ where: { fixtureId }, orderBy: { qualifiedAt: "asc" } }),
-    prisma.fixturePrediction.findUnique({ where: { fixtureId } }),
   ]);
-  return { match, model, odds, candidates, prediction };
+  return { match, model, odds, candidates };
 }
 
 export async function settleLiveCandidates(fixture: ApiFixture, at = new Date()): Promise<number> {
+  if (!['FT', 'AET', 'PEN'].includes(fixture.fixture.status.short)) return 0;
   const home = fixture.score?.fulltime?.home ?? fixture.goals.home;
   const away = fixture.score?.fulltime?.away ?? fixture.goals.away;
   if (home == null || away == null) return 0;
