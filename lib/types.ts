@@ -227,6 +227,8 @@ export interface MatchStat {
   /** Patří do baseline („minulá sezóna") okna – dopočítáno při sestavení. */
   isBaseline: boolean;
   metrics: Partial<Record<Metric, number>>; // xG může chybět
+  /** Already stored historical lineup metadata; never fetched for detail rendering. */
+  tactical?: { formation: string | null; coachId: number | null; coachName: string | null; observedAt: string };
   /** Soupeř v zápase (pro zobrazení loga/jména u formy). Chybí u starších cache řádků. */
   opponent?: { id: number; name: string; logoUrl: string | null } | null;
 }
@@ -1037,6 +1039,7 @@ export interface PredictionRow {
     source: string;
     capturedAt: string;
     /** Paralelní diagnostika tvorby šancí; nikdy nemění ostrou predikci. */
+    matchContext?: import('@/lib/picks/matchContext').MatchContextSnapshot;
     performancePressure?: import("@/lib/picks/performancePressureShadow").PerformancePressureShadow | import("@/lib/picks/performancePressureShadowV5").PerformancePressureShadowV5;
   } | null;
   status: string; // "NS" | "FT" | "AET" | "PEN" | …

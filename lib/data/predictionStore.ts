@@ -5,6 +5,7 @@ import { PREDICT_PARAMS } from "@/lib/stats/predict";
 import { FINISHED_STATUSES, LIVE_STATUSES } from "./apiFootball";
 import { DEFAULT_CORNER_TUNING } from "@/lib/picks/corners";
 import { DEFAULT_CARD_TUNING } from "@/lib/picks/cards";
+import { freezeMatchContext } from '../picks/matchContext';
 
 export const COUNT_MODEL_VERSION = 2;
 
@@ -152,8 +153,8 @@ export async function upsertPrediction(row: PredictionUpsert): Promise<void> {
   // hlavní prognózu, ale nesmí podle pozdějších informací přepsat původní shadow vstupy.
   const canUpgradePressure = existing?.status === "NS" && existing.kickoff.getTime() > now.getTime();
   const frozenInput = incomingInput
-    ? { ...incomingInput, performancePressure: frozenPerformancePressure(existingInput?.performancePressure as VersionedShadow, incomingInput.performancePressure, canUpgradePressure) }
-    : null;
+    ? { ...incomingInput, matchContext: freezeMatchContext(existingInput?.matchContext, incomingInput.matchContext, now), performancePressure: frozenPerformancePressure(existingInput?.performancePressure as VersionedShadow, incomingInput.performancePressure, canUpgradePressure) }
+    : existingInput?.matchContext ? existingInput : null;
   // Prázdný fixture payload nesmí smazat ruční delegaci. Neprázdný údaj API je autoritativní.
   const preserveManual = existing?.refereeSource === "MANUAL" && !row.refereeName;
   // Politika 1X2 v1 je ukoncena. Nove vybery vznikaji az po porovnani s trhem

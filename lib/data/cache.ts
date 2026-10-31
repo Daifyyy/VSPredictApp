@@ -133,6 +133,7 @@ function rowToMatchStat(r: Row): MatchStat {
     season: r.season,
     isBaseline: false, // dopočítá se v realRepository dle baseline sezóny
     metrics,
+    ...(r.lineupCheckedAt ? { tactical: { formation: r.formation, coachId: r.coachId, coachName: r.coachName, observedAt: r.lineupCheckedAt.toISOString() } } : {}),
     opponent:
       r.opponentId != null
         ? { id: r.opponentId, name: r.opponentName ?? "", logoUrl: r.opponentLogo }

@@ -1,0 +1,11 @@
+import { beforeEach, expect, it, vi } from 'vitest';
+vi.mock('server-only',()=>({}));
+const sql=vi.hoisted(()=>vi.fn());
+vi.mock('../db',()=>({prisma:{$queryRaw:sql}}));
+import { readMatchContext } from './matchContextStore';
+const context={version:1,fixtureId:1,kickoff:'2026-10-31T18:00:00Z',capturedAt:'2026-10-31T08:00:00Z',home:{teamId:10},away:{teamId:20}};
+beforeEach(()=>{vi.clearAllMocks();sql.mockResolvedValue([{kickoff:new Date(context.kickoff),homeTeamId:10,awayTeamId:20,context}]);});
+it('protects PRO detail before any database query',async()=>{expect((await readMatchContext(1,false)).locked).toBe(true);expect(sql).not.toHaveBeenCalled();});
+it('reads only one frozen subdocument',async()=>{expect((await readMatchContext(1,true)).context).toEqual(context);expect(sql.mock.calls[0][0].join('')).toContain('"inputSnapshot"->\'matchContext\'');expect(sql.mock.calls[0][0].join('')).toContain('LIMIT 1');expect(sql).toHaveBeenCalledTimes(1);});
+it('rejects mismatched fixture identity without reconstructing context',async()=>{expect((await readMatchContext(2,true)).reason).toBe('PREMATCH_CONTEXT_NOT_CAPTURED');});
+it('leaves legacy records missing',async()=>{sql.mockResolvedValue([]);expect((await readMatchContext(1,true)).context).toBeNull();});

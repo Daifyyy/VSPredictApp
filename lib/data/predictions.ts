@@ -96,6 +96,7 @@ import { invalidateCachedJson } from "./cache";
 import { captureCalibrationShadows } from "./calibrationShadowStore";
 import { captureMainModelShadow } from "./mainModelShadowStore";
 import { captureIntuitionTickets, settleIntuitionTickets } from "./intuitionTicketStore";
+import { teamMatchContext, type MatchContextSnapshot } from '../picks/matchContext';
 import { buildPerformancePressureShadowV5 } from "@/lib/picks/performancePressureShadowV5";
 import { buildPerformancePressureShadow } from "@/lib/picks/performancePressureShadow";
 import { scopedTeamProfiles, type ProfileLoadStats } from "@/lib/scopedTeamProfiles";
@@ -442,6 +443,19 @@ export async function runPredictUpcoming(
                 sample: refereeProfile?.sample ?? 0,
               });
           const h2hCapturedAt = new Date();
+          const contextAt = h2hCapturedAt.toISOString();
+          const matchContext: MatchContextSnapshot = {
+            version: 1, fixtureId: f.fixture.id, kickoff: f.fixture.date, capturedAt: contextAt, context: modelContext,
+            home: teamMatchContext(home, f.fixture.date, contextAt, true),
+            away: teamMatchContext(away, f.fixture.date, contextAt, false),
+            model: { version: MODEL_VERSION, lambdaHome: p.lambdaHomeBase, lambdaAway: p.lambdaAwayBase,
+              over25: p.over25, homeWin: p.homeWin, draw: p.draw, awayWin: p.awayWin,
+              strengthSource: rh && ra ? 'opponent_adjusted_rating' : 'window_fallback',
+              homeStrength: rh ? { attack: rh.attack, defense: rh.defense, sample: rh.sample } : null,
+              awayStrength: ra ? { attack: ra.attack, defense: ra.defense, sample: ra.sample } : null },
+            referee: { name: refereeName, factor: countLambdas?.cards?.refereeFactor ?? null, sample: countLambdas?.cards?.refereeSample ?? null },
+            missing: ['CONFIRMED_LINEUP_NOT_COLLECTED', 'ABSENCES_NOT_FROZEN', 'COACH_TENURE_NOT_VERIFIED'],
+          };
           const h2hSnapshot = toPredictionSnapshot(
             await getHeadToHead(f.teams.home.id, f.teams.away.id),
             f.teams.home.id,
@@ -506,6 +520,7 @@ export async function runPredictUpcoming(
               source: result.source,
               capturedAt: new Date().toISOString(),
               performancePressure,
+              matchContext,
             },
           });
           try {

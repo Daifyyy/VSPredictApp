@@ -5,6 +5,7 @@ import { isAdminEmail } from '@/lib/entitlements';
 import { readMatchDetail } from '@/lib/data/matchDetail';
 import { MatchInsightCard } from '@/app/_components/MatchInsightCard';
 import { AppHeader } from '@/app/_components/AppHeader';
+import { MatchContextDetail } from '@/app/_components/MatchContextDetail';
 
 export const dynamic = 'force-dynamic';
 export default async function MatchPage({ params }: { params: Promise<{ fixtureId: string }> }) {
@@ -32,6 +33,7 @@ export default async function MatchPage({ params }: { params: Promise<{ fixtureI
         {f.lowConfidence && <p>Model označuje omezenou důvěru v podklady.</p>}
       </>}
     </section>
+    <MatchContextDetail key={id} fixtureId={id}/>
     <section className="space-y-2">
       {data.flow.insight && <MatchInsightCard insight={data.flow.insight} pro={!data.locked} />}
       {data.flow.reason && <p role="status">{data.flow.reason === 'FLOW_UNAVAILABLE' ? 'Audit průběhu se nepodařilo načíst.' : data.flow.reason === 'FINAL_AUDIT_PENDING' ? 'Konečný audit dosud není uložený. Výše je pouze původní očekávání.' : data.flow.reason === 'AWAITING_FINAL_RESULT' ? 'Čeká na konečné vyhodnocení. Výše zůstává předzápasové očekávání, nikoli živý průběh.' : 'Předzápasový audit průběhu nebyl zachycen.'}</p>}

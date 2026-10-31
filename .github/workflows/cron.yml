@@ -37,7 +37,6 @@ on:
     - cron: "15 4 * * *" # deterministický Elo replay před predikcemi
     - cron: "30 4 * * *" # predict-upcoming
     - cron: "30 16 * * *" # predict-upcoming (večerní opravný průchod)
-    - cron: "0 5 * * *" # refresh-transfers
     # 09:00 Europe/Prague: oba UTC sloty kvuli DST; endpoint prijima zpozdeny ranni beh do 10:59.
     # Dva pokusy mimo celou hodinu chrani pred best-effort vypadkem GitHub scheduleru;
     # databazova idempotence zaruci, ze kanal presto dostane jen jednu serii zprav.
@@ -76,7 +75,6 @@ on:
           - predict-upcoming
           - refresh-referees
           - refresh-tactics
-          - refresh-transfers
           - settle-results
           - settle-tips
           - calibrate-models
@@ -123,7 +121,6 @@ jobs:
             "15 4 * * *")   path="refresh-elo" ;;
             "30 4 * * *")   path="predict-upcoming" ;;
             "30 16 * * *")  path="predict-upcoming" ;;
-            "0 5 * * *")    path="refresh-transfers" ;;
             "11,41 7,8 * * *") path="telegram-digest" ;;
             "0 7,8 * * *") path="daily-selection" ;;
             "0 6 * * *")    path="settle-results" ;;
