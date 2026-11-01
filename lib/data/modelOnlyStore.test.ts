@@ -29,3 +29,9 @@ it('filters qualified team predictions in SQL before pagination, with explicit h
  expect(m.forecasts.mock.calls[0][0]).toMatchObject({where:{policyVersion:2001,qualified:true,source:{startsWith:'TEAM_'}},skip:30,take:31});
  expect(m.day.mock.calls[0][0]).toMatchObject({where:{key:'2001:2026-10-31'}});
 });
+it.each(['probability_desc','probability_asc','kickoff'] as const)('sorts the whole query before pagination: %s',async sort=>{
+ await readModelOnly('2026-11-01',true,2,undefined,true,2004,sort);
+ const query=m.forecasts.mock.calls[0][0];
+ expect(query.skip).toBe(60);expect(query.take).toBe(31);
+ expect(query.orderBy).toEqual(sort==='kickoff'?[{kickoff:'asc'},{id:'asc'}]:[{probability:sort==='probability_asc'?'asc':'desc'},{kickoff:'asc'},{id:'asc'}]);
+});

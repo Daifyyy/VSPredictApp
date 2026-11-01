@@ -4,7 +4,8 @@ import { buttonClass } from "./primitives";
 describe("buttonClass", () => {
   it("keeps a visible focus state and minimum touch target", () => {
     const classes = buttonClass("accent", "md");
-    expect(classes).toContain("focus-visible:outline-none");
+    expect(classes).toContain("focus-visible:ring-2");
+    expect(classes).toContain("focus-visible:ring-accent");
     expect(classes).toContain("min-h-11");
     expect(classes).toContain("bg-accent");
   });

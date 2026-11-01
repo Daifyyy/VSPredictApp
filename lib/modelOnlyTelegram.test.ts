@@ -22,6 +22,10 @@ it('serves all qualified team variants via the same ledger, not legacy prices',a
  const team={...row,source:'TEAM_AWAY_15',market:'TEAM_AWAY_15',line:1.5};
  m.read.mockResolvedValue([team]);
  const messages=await handleModelCommand('owner','/tipy tymove_goly',now);
- expect(m.read.mock.calls[0][0].where).toMatchObject({policyVersion:2003,qualified:true,source:{startsWith:'TEAM_'}});
+ expect(m.read.mock.calls[0][0].where).toMatchObject({policyVersion:2004,qualified:true,source:{startsWith:'TEAM_'}});
  expect(messages.join('')).toContain('Hosté dají alespoň 2 góly');
+});
+it('labels the frozen outsider decision without inferring it from current teams',()=>{
+ const messages=formatModelMessages('2026-11-01',[{...row,market:'TEAM_AWAY_05',source:'TEAM_AWAY_05',line:.5,reason:'MODEL_UNDERDOG_GOAL_THRESHOLD_MET'}]);
+ expect(messages.join('')).toContain('outsider podle modelu');
 });

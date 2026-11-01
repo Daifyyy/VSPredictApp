@@ -1,0 +1,13 @@
+import {readFileSync,writeFileSync,mkdirSync} from "node:fs";
+import {createHash} from "node:crypto";
+import {runLocalCalibrationExperiment} from "../lib/picks/localCalibrationExperiment";
+import type {BenchmarkRow} from "../lib/picks/forecastBenchmark";
+const path=process.argv[2];
+if(!path)throw Error("Pass the explicit local goal-benchmark JSON path. No automatic export or refresh.");
+const raw=readFileSync(path,"utf8"),source=JSON.parse(raw) as {kind:string;forecastHash:string;rows:BenchmarkRow[]};
+if(source.kind!=="GOALS_ONLY_RECONSTRUCTION"||createHash("sha256").update(JSON.stringify(source.rows)).digest("hex")!==source.forecastHash)throw Error("SOURCE_PROVENANCE_MISMATCH");
+const started=performance.now();
+const report={source:path,sourceHash:createHash("sha256").update(raw).digest("hex"),forecastHash:source.forecastHash,...runLocalCalibrationExperiment(source.rows)};
+mkdirSync(".runtime/local-calibration",{recursive:true});const output=`.runtime/local-calibration/${new Date().toISOString().replaceAll(":","-")}.json`;
+writeFileSync(output,JSON.stringify(report,null,2),{flag:"wx"});
+console.log(JSON.stringify({...report,segments:undefined,test:report.test?Object.fromEntries(Object.entries(report.test).map(([k,v])=>[k,{...v,bins:undefined}])):undefined,output,seconds:(performance.now()-started)/1000},null,2));

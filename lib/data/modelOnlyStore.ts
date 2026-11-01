@@ -1,3 +1,4 @@
+import { modelForecastOrder, type ModelForecastSort } from '../picks/modelForecastSort';
 import { randomUUID } from 'node:crypto';
 import 'server-only';
 import { Prisma } from '@prisma/client';
@@ -120,12 +121,12 @@ export async function runModelOnly(now=new Date(),options:{settle?:boolean;dryRu
  } finally { await prisma.apiCache.deleteMany({where:{key:leaseKey,payload:{path:['owner'],equals:owner}}}); }
 }
 
-export async function readModelOnly(date:string,pro:boolean,page=0,source?:string,qualifiedOnly=false,policyVersion:number=MODEL_ONLY_POLICY){
+export async function readModelOnly(date:string,pro:boolean,page=0,source?:string,qualifiedOnly=false,policyVersion:number=MODEL_ONLY_POLICY,sort:ModelForecastSort='probability_desc'){
  const [day,summary]=await Promise.all([prisma.modelOnlyDay.findUnique({where:{key:`${policyVersion}:${date}`}}),prisma.apiCache.findUnique({where:{key:`model-only:summary:${policyVersion}`},select:{payload:true,updatedAt:true}})]);
  const asOf=summary?.updatedAt.toISOString()??null,stale=!asOf||Date.now()-Date.parse(asOf)>26*3600_000;
  const [daily,forecasts]=pro?await Promise.all([
   day?.forecastIds.length?prisma.modelOnlyForecast.findMany({where:{id:{in:day.forecastIds}}}):[],
-  prisma.modelOnlyForecast.findMany({where:{dateKey:date,policyVersion,...(source==='TEAM_GOALS'?{source:{startsWith:'TEAM_'}}:source?{source}:{}),...(qualifiedOnly?{qualified:true}:{})},orderBy:[{kickoff:'asc'},{id:'asc'}],skip:page*30,take:31}),
+  prisma.modelOnlyForecast.findMany({where:{dateKey:date,policyVersion,...(source==='TEAM_GOALS'?{source:{startsWith:'TEAM_'}}:source?{source}:{}),...(qualifiedOnly?{qualified:true}:{})},orderBy:modelForecastOrder(sort),skip:page*30,take:31}),
  ]):[[],[]];
  const data=(v:unknown)=>JSON.parse(JSON.stringify(v));
  return {mode:'MODEL_ONLY',date,policyVersion,asOf,stale,limitedReason:stale?'MODEL_SUMMARY_MISSING_OR_STALE':null,locked:!pro,count:day?.forecastIds.length??0,

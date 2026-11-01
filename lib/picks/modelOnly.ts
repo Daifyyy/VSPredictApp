@@ -29,11 +29,17 @@ export function modelCandidate(f:ModelForecastInput,source:string,p:number[],now
   const side=options.side??(p.length===3?['HOME','DRAW','AWAY'][index]:index===1?'OVER':'UNDER');
   const probability=options.side?p[1]:p[index];
   const sample=options.sample??f.readinessSample;
-  const threshold=market.startsWith('TEAM_')&&options.line===0.5?0.78:0.60;
+  const threshold=0.60;
+  const outsiderMarket=market==='TEAM_HOME_05'||market==='TEAM_AWAY_05';
+  const validWinner=validProbabilities([f.homeWin,f.draw,f.awayWin]);
+  const teamWin=market==='TEAM_HOME_05'?f.homeWin:f.awayWin;
+  const opponentWin=market==='TEAM_HOME_05'?f.awayWin:f.homeWin;
+  // Ten percentage points avoids labelling virtually even matches as underdogs.
+  const outsider=validWinner&&opponentWin-teamWin>=0.10-1e-12;
   const ready=Number.isFinite(sample)&&sample>=8&&!f.lowConfidence;
-  const qualified=ready && probability>=threshold && (market!=='OVER_25'||side==='OVER');
+  const qualified=ready && (!outsiderMarket||outsider) && probability>=threshold && (market!=='OVER_25'||side==='OVER');
   const version=options.modelVersion??f.modelVersion, artifactId=options.artifactId??'';
-  return {id:[MODEL_ONLY_POLICY,f.fixtureId,source,version,f.contextVersion,f.modelContext,artifactId].join(':'),fixtureId:f.fixtureId,dateKey:localDateKey(f.kickoff),source,artifactId,modelVersion:version,contextVersion:f.contextVersion,policyVersion:MODEL_ONLY_POLICY,modelContext:f.modelContext,leagueId:f.leagueId,homeTeamId:f.homeTeamId,awayTeamId:f.awayTeamId,homeName:f.homeName,awayName:f.awayName,kickoff:f.kickoff,capturedAt:now,sourceAt:at,market,side,line:options.line??(market==='OVER_25'?2.5:null),probability,probabilities:p,qualified,reason:!ready?'INSUFFICIENT_INPUTS':qualified?'MODEL_THRESHOLD_MET':'BELOW_MODEL_THRESHOLD',readiness:Number.isFinite(sample)?sample:0};
+  return {id:[MODEL_ONLY_POLICY,f.fixtureId,source,version,f.contextVersion,f.modelContext,artifactId].join(':'),fixtureId:f.fixtureId,dateKey:localDateKey(f.kickoff),source,artifactId,modelVersion:version,contextVersion:f.contextVersion,policyVersion:MODEL_ONLY_POLICY,modelContext:f.modelContext,leagueId:f.leagueId,homeTeamId:f.homeTeamId,awayTeamId:f.awayTeamId,homeName:f.homeName,awayName:f.awayName,kickoff:f.kickoff,capturedAt:now,sourceAt:at,market,side,line:options.line??(market==='OVER_25'?2.5:null),probability,probabilities:p,qualified,reason:!ready?'INSUFFICIENT_INPUTS':outsiderMarket&&!outsider?'NOT_MODEL_UNDERDOG':qualified?(outsiderMarket?'MODEL_UNDERDOG_GOAL_THRESHOLD_MET':'MODEL_THRESHOLD_MET'):'BELOW_MODEL_THRESHOLD',readiness:Number.isFinite(sample)?sample:0};
 }
 export function mainModelCandidates(f:ModelForecastInput,now:Date):ModelCandidate[] {
  const result=[modelCandidate(f,'MAIN_1X2',[f.homeWin,f.draw,f.awayWin],now),modelCandidate(f,'ORIGINAL_OVER',[1-f.over25,f.over25],now)];

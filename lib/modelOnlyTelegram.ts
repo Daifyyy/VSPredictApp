@@ -8,12 +8,12 @@ import { upsertIncident } from './operations';
 import { isDateKey } from './picks/strategyHub';
 import { createHash } from 'node:crypto';
 
-type DisplayRow={id:string;fixtureId:number;source:string;homeName:string;awayName:string;market:string;side:string;line:number|null;probability:number;kickoff:Date;outcome:string};
+type DisplayRow={id:string;fixtureId:number;source:string;homeName:string;awayName:string;market:string;side:string;line:number|null;probability:number;kickoff:Date;outcome:string;reason?:string};
 const esc=(s:string)=>s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
 const aliases:Record<string,string>={'1x2':'MAIN_1X2',over25:'ORIGINAL_OVER',elo:'ELO_1X2',value:'MODEL_COMBINATION',kombinace:'MODEL_COMBINATION',ai:'AI_OVER',tymove_goly:'TEAM_GOALS'};
 export function formatModelMessages(date:string,rows:DisplayRow[],results=false){
  return splitTelegramBlocks([`<b>${results?'Výsledky modelových výběrů':'Modelové predikce'} · ${date}</b>\nBez kurzů · úspěšnost není ziskovost.`,
-  ...rows.map(r=>`${r.outcome==='WON'?'✅':r.outcome==='LOST'?'❌':r.outcome==='VOID'?'↩️':'⏳'} <b>${esc(r.homeName)} – ${esc(r.awayName)}</b>\n${esc(modelSelectionLabel(r))} · model ${Math.round(r.probability*100)} %\n${esc(MODEL_SOURCE_LABELS[r.source]??r.source)} · ${new Intl.DateTimeFormat('cs-CZ',{timeZone:'Europe/Prague',hour:'2-digit',minute:'2-digit'}).format(r.kickoff)}`),
+  ...rows.map(r=>`${r.outcome==='WON'?'✅':r.outcome==='LOST'?'❌':r.outcome==='VOID'?'↩️':'⏳'} <b>${esc(r.homeName)} – ${esc(r.awayName)}</b>\n${esc(modelSelectionLabel(r))}${r.reason==='MODEL_UNDERDOG_GOAL_THRESHOLD_MET'?' · outsider podle modelu':''} · model ${Math.round(r.probability*100)} %\n${esc(MODEL_SOURCE_LABELS[r.source]??r.source)} · ${new Intl.DateTimeFormat('cs-CZ',{timeZone:'Europe/Prague',hour:'2-digit',minute:'2-digit'}).format(r.kickoff)}`),
   ...(!rows.length?['Žádné zachycené výběry pro tento přehled. Neznamená to nulovou historickou bilanci.']:[])]);
 }
 async function rowsFor(date:string,source?:string,offset=0,results=false,now=new Date()){
@@ -50,7 +50,7 @@ export async function publishModelMorning(now=new Date(),options:{dryRun?:boolea
  if(!options.force&&(clock.hour<9||clock.hour>10))return {skipped:'OUTSIDE_PRAGUE_MORNING_WINDOW'};
  const {resourceBudgetGuard}=await import('./resourceBudgetGuard');if(await resourceBudgetGuard('telegram-digest'))return {status:'RESOURCE_LIMITED'};
  const yesterday=shiftDateKey(clock.date,-1);
- const prior=await prisma.telegramPublication.findUnique({where:{dateKey_channelId_kind:{dateKey:yesterday,channelId:config.channelId,kind:`MODEL_TIPS_${MODEL_ONLY_POLICY}`}}}) ?? await prisma.telegramPublication.findUnique({where:{dateKey_channelId_kind:{dateKey:yesterday,channelId:config.channelId,kind:'MODEL_TIPS_2002'}}}) ?? await prisma.telegramPublication.findUnique({where:{dateKey_channelId_kind:{dateKey:yesterday,channelId:config.channelId,kind:'MODEL_TIPS_2001'}}});
+ const prior=await prisma.telegramPublication.findUnique({where:{dateKey_channelId_kind:{dateKey:yesterday,channelId:config.channelId,kind:`MODEL_TIPS_${MODEL_ONLY_POLICY}`}}}) ?? await prisma.telegramPublication.findUnique({where:{dateKey_channelId_kind:{dateKey:yesterday,channelId:config.channelId,kind:'MODEL_TIPS_2003'}}}) ?? await prisma.telegramPublication.findUnique({where:{dateKey_channelId_kind:{dateKey:yesterday,channelId:config.channelId,kind:'MODEL_TIPS_2002'}}}) ?? await prisma.telegramPublication.findUnique({where:{dateKey_channelId_kind:{dateKey:yesterday,channelId:config.channelId,kind:'MODEL_TIPS_2001'}}});
  const priorIds=(prior?.status==='SENT'?(prior.payload as {ids?:string[]})?.ids:[])??[];
  const todayRows=await rowsFor(clock.date,undefined,0,false,now);
  const resultRows=priorIds.length?await prisma.modelOnlyForecast.findMany({where:{id:{in:priorIds}}}):[];
