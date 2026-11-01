@@ -10,14 +10,14 @@ import { createHash } from 'node:crypto';
 
 type DisplayRow={id:string;fixtureId:number;source:string;homeName:string;awayName:string;market:string;side:string;line:number|null;probability:number;kickoff:Date;outcome:string};
 const esc=(s:string)=>s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
-const aliases:Record<string,string>={'1x2':'MAIN_1X2',over25:'ORIGINAL_OVER',elo:'ELO_1X2',value:'MODEL_COMBINATION',kombinace:'MODEL_COMBINATION',ai:'AI_OVER'};
+const aliases:Record<string,string>={'1x2':'MAIN_1X2',over25:'ORIGINAL_OVER',elo:'ELO_1X2',value:'MODEL_COMBINATION',kombinace:'MODEL_COMBINATION',ai:'AI_OVER',tymove_goly:'TEAM_GOALS'};
 export function formatModelMessages(date:string,rows:DisplayRow[],results=false){
- return splitTelegramBlocks([`<b>${results?'Výsledky modelových výběrů':'Modelové predikce'} · ${date}</b>\nPolitika ${MODEL_ONLY_POLICY}. Bez kurzů; úspěšnost není ziskovost.`,
+ return splitTelegramBlocks([`<b>${results?'Výsledky modelových výběrů':'Modelové predikce'} · ${date}</b>\nBez kurzů · úspěšnost není ziskovost.`,
   ...rows.map(r=>`${r.outcome==='WON'?'✅':r.outcome==='LOST'?'❌':r.outcome==='VOID'?'↩️':'⏳'} <b>${esc(r.homeName)} – ${esc(r.awayName)}</b>\n${esc(modelSelectionLabel(r))} · model ${Math.round(r.probability*100)} %\n${esc(MODEL_SOURCE_LABELS[r.source]??r.source)} · ${new Intl.DateTimeFormat('cs-CZ',{timeZone:'Europe/Prague',hour:'2-digit',minute:'2-digit'}).format(r.kickoff)}`),
   ...(!rows.length?['Žádné zachycené výběry pro tento přehled. Neznamená to nulovou historickou bilanci.']:[])]);
 }
 async function rowsFor(date:string,source?:string,offset=0,results=false,now=new Date()){
- const rows=await prisma.modelOnlyForecast.findMany({where:{dateKey:date,policyVersion:MODEL_ONLY_POLICY,qualified:true,...(source?{source}:{}),...(!results?{outcome:'PENDING',kickoff:{gt:now}}:{})},orderBy:[{probability:'desc'},{kickoff:'asc'},{id:'asc'}],skip:offset,take:5});
+ const rows=await prisma.modelOnlyForecast.findMany({where:{dateKey:date,policyVersion:MODEL_ONLY_POLICY,qualified:true,...(source==='TEAM_GOALS'?{source:{startsWith:'TEAM_'}}:source?{source}:{}),...(!results?{outcome:'PENDING',kickoff:{gt:now}}:{})},orderBy:[{probability:'desc'},{kickoff:'asc'},{id:'asc'}],skip:offset,take:5});
  if(results||!rows.length)return rows;
  const current=await prisma.fixturePrediction.findMany({where:{fixtureId:{in:rows.map(r=>r.fixtureId)}},select:{fixtureId:true,homeTeamId:true,awayTeamId:true,status:true,kickoff:true,available:true}});
  return rows.filter(r=>current.some(f=>f.fixtureId===r.fixtureId&&f.available&&f.status==='NS'&&+f.kickoff===+r.kickoff&&f.homeTeamId===r.homeTeamId&&f.awayTeamId===r.awayTeamId));
@@ -25,7 +25,7 @@ async function rowsFor(date:string,source?:string,offset=0,results=false,now=new
 export async function handleModelCommand(userId:string,text:string,now=new Date()){
  if(!telegramConfig().allowedUsers.has(userId))return [];
  const [raw,...args]=text.trim().split(/\s+/),command=raw.toLowerCase().split('@')[0],today=localDateKey(now);
- if(command==='/help')return ['/tipy [1x2|over25|elo|kombinace|ai]\n/dalsi [strategie]\n/vyber [YYYY-MM-DD]\n/vysledky [strategie] [YYYY-MM-DD]\n/datum YYYY-MM-DD [strategie]\n/stav\nVALUE pokračuje jako modelová kombinace, nikoli cenová strategie.'];
+ if(command==='/help')return ['/tipy [1x2|over25|elo|kombinace|ai|tymove_goly]\n/dalsi [strategie]\n/vyber [YYYY-MM-DD]\n/vysledky [strategie] [YYYY-MM-DD]\n/datum YYYY-MM-DD [strategie]\n/stav\nVALUE pokračuje jako modelová kombinace, nikoli cenová strategie.'];
  if(command==='/stav')return ['Režim modelových predikcí. Kurzy, closing, CLV a Web Push jsou vypnuté. Historická sázková bilance je v archivu.'];
  const date=args.find(a=>isDateKey(a))??(command==='/vysledky'?shiftDateKey(today,-1):today);
  if(!isTelegramDateAllowed(date,today))return ['Neplatné nebo nepovolené datum.'];
@@ -50,11 +50,11 @@ export async function publishModelMorning(now=new Date(),options:{dryRun?:boolea
  if(!options.force&&(clock.hour<9||clock.hour>10))return {skipped:'OUTSIDE_PRAGUE_MORNING_WINDOW'};
  const {resourceBudgetGuard}=await import('./resourceBudgetGuard');if(await resourceBudgetGuard('telegram-digest'))return {status:'RESOURCE_LIMITED'};
  const yesterday=shiftDateKey(clock.date,-1);
- const prior=await prisma.telegramPublication.findUnique({where:{dateKey_channelId_kind:{dateKey:yesterday,channelId:config.channelId,kind:'MODEL_TIPS_2001'}}});
+ const prior=await prisma.telegramPublication.findUnique({where:{dateKey_channelId_kind:{dateKey:yesterday,channelId:config.channelId,kind:`MODEL_TIPS_${MODEL_ONLY_POLICY}`}}}) ?? await prisma.telegramPublication.findUnique({where:{dateKey_channelId_kind:{dateKey:yesterday,channelId:config.channelId,kind:'MODEL_TIPS_2002'}}}) ?? await prisma.telegramPublication.findUnique({where:{dateKey_channelId_kind:{dateKey:yesterday,channelId:config.channelId,kind:'MODEL_TIPS_2001'}}});
  const priorIds=(prior?.status==='SENT'?(prior.payload as {ids?:string[]})?.ids:[])??[];
  const todayRows=await rowsFor(clock.date,undefined,0,false,now);
  const resultRows=priorIds.length?await prisma.modelOnlyForecast.findMany({where:{id:{in:priorIds}}}):[];
- const entries=[{kind:'MODEL_TIPS_2001',date:clock.date,rows:todayRows.slice(0,3),results:false},{kind:'MODEL_RESULTS_2001',date:yesterday,rows:resultRows,results:true}];
+ const entries=[{kind:`MODEL_TIPS_${MODEL_ONLY_POLICY}`,date:clock.date,rows:todayRows.slice(0,3),results:false},{kind:`MODEL_RESULTS_${MODEL_ONLY_POLICY}`,date:yesterday,rows:resultRows,results:true}];
  if(options.dryRun||!config.enabled)return {dryRun:true,messages:entries.flatMap(e=>formatModelMessages(e.date,e.rows,e.results))};
  if(!config.channelId||!config.token)throw Error('TELEGRAM_NOT_CONFIGURED');
  await prisma.telegramPublication.updateMany({where:{kind:{startsWith:'MODEL_'},status:'SENDING',updatedAt:{lt:new Date(+now-15*60_000)}},data:{status:'UNKNOWN',lastError:'Delivery uncertain; no automatic retry'}});

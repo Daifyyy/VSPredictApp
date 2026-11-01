@@ -6,12 +6,12 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Football Insight — fotbalové zápasy a analýzy",
     short_name: "Football Insight",
     description:
-      "Program, výsledky, živé skóre a srozumitelné analýzy fotbalových týmů.",
+      "Předzápasové predikce, modelové tipy a výsledky fotbalových zápasů.",
     start_url: "/",
     display: "standalone",
     orientation: "portrait",
-    background_color: "#f5f7f4",
-    theme_color: "#f5f7f4",
+    background_color: "#0b1017",
+    theme_color: "#0b1017",
     lang: "cs",
     icons: [
       { src: "/icon-192.png", sizes: "192x192", type: "image/png" },

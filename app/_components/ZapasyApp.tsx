@@ -20,7 +20,8 @@ import { buildTipHref } from "./tipHref";
 import { useCurrentUser } from "./useCurrentUser";
 import { preferredProgramDayIndex } from "@/lib/homeDashboard";
 import { FixtureModelCard } from "./FixtureModelCard";
-import { QuickMatchOverview } from "./QuickMatchOverview";
+import { ModelOnlyPanel } from "./ModelOnlyPanel";
+import { ArchivedQuickOverview } from "./QuickMatchOverview";
 import { DailySelectionSummary } from './DailySelectionSummary';
 import { chooseFeaturedFixture } from "@/lib/homeFeaturedFixture";
 import { competitionGroupLabel, groupCompetitionFixtures, localDateKey } from "@/lib/competitionGrouping";
@@ -435,10 +436,6 @@ export function ZapasyApp({
   }, []);
 
   const activePast = pastDays[resultIdx] ?? pastDays[0];
-  const playedCount = useMemo(
-    () => pastDays.reduce((n, d) => n + d.played.length, 0),
-    [pastDays]
-  );
 
   // SSR snapshot překrytý živým skóre (dohrané zmizí, běžící přepíšou minutu/skóre).
   const dayFixtures = useMemo(
@@ -484,11 +481,7 @@ export function ZapasyApp({
 
 
 
-      <nav aria-label="Program a výsledky" className="flex flex-wrap gap-4 py-3 text-sm">
-        <Link prefetch={false} href="/" aria-current={view === 'program' ? 'page' : undefined}>Program</Link>
-        <Link prefetch={false} href="/vysledky" aria-current={view === 'results' ? 'page' : undefined}>Výsledky{view === 'results' && playedCount > 0 ? ` (${playedCount})` : ''}</Link>
-        <Link prefetch={false} href="/denni-vyber">Denní výběr · nejvýše 5 singlů</Link>
-      </nav>
+
 
       {view === "program" ? (
         <>
@@ -518,7 +511,7 @@ export function ZapasyApp({
             <FavoriteToggle onlyFav={onlyFav} onChange={setOnlyFav} />
           )}
 
-          <p className="text-xs text-muted">Předzápasové predikce a konečné výsledky. Živé skóre nesledujeme; rozehrané zápasy čekají na vyhodnocení.</p>
+          <h2 className="sport-section-heading">Program zápasů <span className="ml-auto text-xs font-medium text-muted">{dayFixtures.length} zápasů</span></h2>
 
           {active && dayFixtures.length > 0 ? (
             <>
@@ -577,7 +570,8 @@ export function ZapasyApp({
               rememberPage("results", pastDays[index]?.date);
             }}
           />
-          <QuickMatchOverview date={activePast?.date ?? null} user={user} compact historical />
+          <ModelOnlyPanel key={activePast?.date ?? 'results'} initialDate={activePast?.date} identity={user?.id??'public'} initialView="qualified"/>
+          <ArchivedQuickOverview date={activePast?.date ?? null} user={user}/>
           {activePast && activePast.played.length > 0 ? (
             <ResultsList played={activePast.played} isPro={isPro} />
           ) : (
@@ -600,18 +594,18 @@ function DashboardHeader({ today, todayCount, selectedDate, selectedCount, liveC
   const compareHref = spotlight ? buildCompareHref(spotlight) : null;
   const live = Boolean(spotlight?.live);
   return (
-    <section className="dashboard-card mt-5 overflow-hidden rounded-2xl border border-border bg-[linear-gradient(120deg,var(--surface)_55%,var(--accent-soft))] shadow-sm">
+    <section className="sport-hero mt-6 shadow-sm">
       <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-[minmax(180px,.7fr)_minmax(360px,1.5fr)_auto] lg:items-center">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <p className="page-kicker">{showingNearest ? "Nejbližší program" : liveCount > 0 ? "Právě se hraje" : "Dnešní program"}</p>
-            {liveCount > 0 ? <span className="inline-flex items-center gap-1.5 rounded-full bg-negative/10 px-2 py-1 text-[10px] font-bold text-negative"><LiveDot /> {liveCount} čeká na výsledek</span> : null}
+            <p className="page-kicker">{showingNearest ? "Nejbližší program" : liveCount > 0 ? "Dnešní přehled" : "Dnes · fotbalový přehled"}</p>
+            {liveCount > 0 ? <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-raised px-2 py-1 text-[10px] font-bold text-muted"><LiveDot /> {liveCount} čeká na výsledek</span> : null}
           </div>
-          <h1 className="mt-1 text-xl font-extrabold tracking-tight text-foreground">{selectedLabel}</h1>
+          <h1 className="mt-2 text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">{selectedLabel}</h1>
           <p className="mt-1 text-xs text-muted">{showingNearest ? "Dnes se ve sledovaných soutěžích nehraje." : today ? `${todayCount} ${matchWord(todayCount)} v dnešním přehledu` : "Aktuální program sledovaných soutěží"}</p>
         </div>
 
-        {spotlight ? <div className="rounded-xl border border-border/80 bg-background/75 px-3 py-3 backdrop-blur-sm">
+        {spotlight ? <div className="rounded-xl border border-border/80 bg-background/60 px-4 py-4">
           <div className="flex items-center justify-between gap-3 text-[10px] text-muted"><span className="truncate">{spotlight.leagueName}</span><strong className={live ? "text-negative" : "text-foreground"}>{live ? "Čeká na výsledek" : spotlightTime}</strong></div>
           <div className="mt-2 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-sm">
             <div className="flex min-w-0 items-center justify-end gap-2 text-right"><strong className="truncate">{spotlight.home.name}</strong><TeamLogo src={spotlight.home.logoUrl} alt={spotlight.home.name} size={30} /></div>

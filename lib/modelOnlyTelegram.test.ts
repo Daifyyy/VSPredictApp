@@ -18,3 +18,10 @@ it('marks ambiguous delivery UNKNOWN and does not retry it',async()=>{
  expect(m.update).toHaveBeenCalledWith(expect.objectContaining({data:expect.objectContaining({status:'UNKNOWN'})}));
  m.claim.mockResolvedValue({count:0});await publishModelMorning(now);expect(m.send).toHaveBeenCalledTimes(1);
 });
+it('serves all qualified team variants via the same ledger, not legacy prices',async()=>{
+ const team={...row,source:'TEAM_AWAY_15',market:'TEAM_AWAY_15',line:1.5};
+ m.read.mockResolvedValue([team]);
+ const messages=await handleModelCommand('owner','/tipy tymove_goly',now);
+ expect(m.read.mock.calls[0][0].where).toMatchObject({policyVersion:2003,qualified:true,source:{startsWith:'TEAM_'}});
+ expect(messages.join('')).toContain('Hosté dají alespoň 2 góly');
+});

@@ -187,3 +187,11 @@ function compareLink(item: QuickItem) {
   if (group === "EUROPE") { params.set("context", "EURO_CUP"); params.set("homeName", item.home.name); params.set("awayName", item.away.name); params.set("homeLogo", item.home.logoUrl); params.set("awayLogo", item.away.logoUrl); }
   return `/porovnani?${params.toString()}`;
 }
+/** Historical requests are made only when the archive is opened. */
+export function ArchivedQuickOverview({date,user}:{date:string|null;user:SessionUser|null}) {
+  const [open,setOpen]=useState(false);
+  return <section className="mt-6 rounded-2xl border border-border p-4">
+    <button type="button" className="flex min-h-11 w-full items-center justify-between text-left text-sm font-semibold" aria-expanded={open} onClick={()=>setOpen(!open)}>Archiv · původní rychlé TOP 3 <span aria-hidden>{open?'−':'+'}</span></button>
+    {open&&<><p className="my-3 text-xs text-muted">Samostatná starší metodika, nikoli aktuální modelové tipy.</p><QuickMatchOverview date={date} user={user} compact historical/></>}
+  </section>;
+}

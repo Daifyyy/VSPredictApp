@@ -1,21 +1,23 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f5f7f4;
-  --surface: #ffffff;
-  --surface-raised: #ffffff;
-  --foreground: #172019;
-  --muted: #667168;
-  --border: #dfe5df;
-  --accent: #b9f227;
-  --accent-strong: #78a900;
-  --accent-ink: #203000;
+  --background: #0b1017;
+  --surface: #141c26;
+  --surface-raised: #1b2633;
+  --foreground: #f1f5f9;
+  --muted: #9aabba;
+  --border: #2a3745;
+  --accent: #c6f65b;
+  --accent-strong: #c6f65b;
+  --accent-ink: #172108;
   --home: #1769e0;
   --away: #ee6b21;
-  --warning: #d97706;
-  --positive: #14854f;
-  --negative: #d7393e;
-  --sidebar: #fbfcfa;
+  --warning: #f7c66b;
+  --positive: #5ee2a0;
+  --negative: #fb8390;
+  --sidebar: #101720;
+  --accent-soft: #1b2922;
+  color-scheme: dark;
   --radius-control: 0.75rem;
   --radius-panel: 1rem;
   --shadow-panel: 0 5px 18px rgb(30 45 34 / 6%);
@@ -23,6 +25,7 @@
 }
 
 @theme inline {
+  --color-sidebar: var(--sidebar);
   --color-background: var(--background);
   --color-surface: var(--surface);
   --color-surface-raised: var(--surface-raised);
@@ -93,7 +96,7 @@ body {
 }
 
 .page-kicker {
-  color: var(--accent-ink);
+  color: var(--accent);
   font-size: 0.72rem;
   font-weight: 900;
   letter-spacing: 0.16em;
@@ -417,4 +420,24 @@ textarea:disabled {
 @keyframes nav-progress {
   0% { transform: translateX(-110%); }
   100% { transform: translateX(210%); }
+}
+/* Sport dashboard foundation. Semantic tokens also keep shared controls consistent. */
+.app-topbar { min-height: 4.5rem; }
+.app-topbar::before { content: ""; width: .4rem; height: .4rem; border-radius: 50%; background: var(--accent); }
+.ui-button-primary, .ui-button-secondary { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 2.75rem; border-radius: .75rem; font-size: .85rem; font-weight: 750; }
+.ui-button-primary { background: var(--accent); color: var(--accent-ink); border: 1px solid var(--accent); }
+.ui-button-primary:hover { filter: brightness(1.08); }
+.ui-button-secondary { background: var(--surface); color: var(--foreground); border: 1px solid var(--border); }
+.ui-button-secondary:hover:not(:disabled) { border-color: var(--muted); }
+.sport-section-heading { display: flex; align-items: center; gap: .75rem; margin-top: 2rem; padding-block: 1rem; font-size: 1.1rem; font-weight: 800; letter-spacing: -.02em; }
+.sport-section-heading::before { content: ""; width: .2rem; height: 1rem; border-radius: 2px; background: var(--accent); }
+.sport-hero { position: relative; overflow: hidden; border: 1px solid var(--border); border-radius: 1.5rem; background: radial-gradient(ellipse at 100% 0%, #c6f65b0d, transparent 60%), var(--surface); }
+.sport-hero::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--accent); }
+.forecast-card { background: var(--surface); transition: border-color 150ms ease; }
+.forecast-card:hover { border-color: var(--muted); }
+.match-page { width: 100%; }
+@media (min-width: 1024px) {
+  .standalone-header { margin-left: 17rem; padding-inline: 2rem; }
+  .app-page .standalone-header { margin-left: 0; padding-inline: 0; }
+  .match-page { width: calc(100% - 17rem); max-width: 80rem; margin-left: 17rem; margin-right: 0; padding-inline: clamp(1.5rem, 4vw, 4rem); }
 }

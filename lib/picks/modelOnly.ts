@@ -3,6 +3,8 @@ import { localDateKey } from '../competitionGrouping';
 import { poissonVector, drawTau } from '../stats/predict';
 
 export const MODEL_SOURCE_LABELS: Record<string,string> = {
+  TEAM_HOME_05:'Domácí nad 0,5 gólu', TEAM_HOME_15:'Domácí nad 1,5 gólu',
+  TEAM_AWAY_05:'Hosté nad 0,5 gólu', TEAM_AWAY_15:'Hosté nad 1,5 gólu',
   MAIN_1X2:'Hlavní model 1X2', ORIGINAL_OVER:'Over 2,5 — modelová politika',
   ELO_1X2:'ELO 1X2 · experiment', MODEL_COMBINATION:'Modelová kombinace · experiment (dříve VALUE)', AI_OVER:'AI Over · výzkum',
 };
@@ -27,7 +29,7 @@ export function modelCandidate(f:ModelForecastInput,source:string,p:number[],now
   const side=options.side??(p.length===3?['HOME','DRAW','AWAY'][index]:index===1?'OVER':'UNDER');
   const probability=options.side?p[1]:p[index];
   const sample=options.sample??f.readinessSample;
-  const threshold=market==='1X2'?0.58:market==='COMBINATION'?0.55:0.60;
+  const threshold=market.startsWith('TEAM_')&&options.line===0.5?0.78:0.60;
   const ready=Number.isFinite(sample)&&sample>=8&&!f.lowConfidence;
   const qualified=ready && probability>=threshold && (market!=='OVER_25'||side==='OVER');
   const version=options.modelVersion??f.modelVersion, artifactId=options.artifactId??'';
@@ -35,6 +37,14 @@ export function modelCandidate(f:ModelForecastInput,source:string,p:number[],now
 }
 export function mainModelCandidates(f:ModelForecastInput,now:Date):ModelCandidate[] {
  const result=[modelCandidate(f,'MAIN_1X2',[f.homeWin,f.draw,f.awayWin],now),modelCandidate(f,'ORIGINAL_OVER',[1-f.over25,f.over25],now)];
+ for(const [venue,lambda] of [['HOME',f.lambdaHome],['AWAY',f.lambdaAway]] as const){
+  if(!Number.isFinite(lambda)||lambda<=0||lambda>=10)continue;
+  for(const line of [0.5,1.5]){
+   const p=1-Math.exp(-lambda)*(line===0.5?1:1+lambda);
+   const market=`TEAM_${venue}_${line===0.5?'05':'15'}`;
+   result.push(modelCandidate(f,market,[1-p,p],now,{market,side:'OVER',line}));
+  }
+ }
  // A joint score-grid event, never a product of independent marginal probabilities.
  if(Number.isFinite(f.lambdaHome)&&Number.isFinite(f.lambdaAway)&&f.lambdaHome>0&&f.lambdaAway>0&&f.lambdaHome<10&&f.lambdaAway<10){
   const home=poissonVector(f.lambdaHome),away=poissonVector(f.lambdaAway);const sums=[0,0];let norm=0;
@@ -48,6 +58,7 @@ export function mainModelCandidates(f:ModelForecastInput,now:Date):ModelCandidat
  return result.filter((v):v is ModelCandidate=>v!=null);
 }
 export function modelSelectionLabel(row:{market:string;side:string;line:number|null}){
+ if(/^TEAM_(HOME|AWAY)_(05|15)$/.test(row.market))return `${row.market.startsWith('TEAM_HOME')?'Domácí':'Hosté'} dají alespoň ${row.line===0.5?'1 gól':'2 góly'}`;
  if(row.market==='COMBINATION')return `${row.side==='HOME'?'Domácí':'Hosté'} vyhrají + méně než ${row.line} gólu`;
  if(row.market==='1X2')return {HOME:'Výhra domácích',DRAW:'Remíza',AWAY:'Výhra hostů'}[row.side]??row.side;
  return row.side==='OVER'?'Více než 2,5 gólu':'Méně než 2,5 gólu';
@@ -61,7 +72,10 @@ export function settleModelForecast(row:{market:string;side:string;probabilities
  if(['CANC','ABD','AWD','WO'].includes(status))return {outcome:'VOID',hit:null,actualClass:null,baselineHit:null,brier:null,logLoss:null};
  if(status!=='FT'||home==null||away==null||!Number.isInteger(home)||!Number.isInteger(away)||home<0||away<0)return null;
  const probs=row.probabilities as number[];if(!Array.isArray(probs)||!validProbabilities(probs))return null;
- const actualClass=row.market==='1X2'?(home>away?0:home===away?1:2):row.market==='COMBINATION'?Number((row.side==='HOME'?home>away:away>home)&&home+away<(row.line??4.5)):Number(home+away>2.5);
+ const teamMarket=/^TEAM_(HOME|AWAY)_(05|15)$/.test(row.market);
+ if(teamMarket&&(row.line!==(row.market.endsWith('05')?0.5:1.5)||row.side!=='OVER'||probs.length!==2))return null;
+ if(!teamMarket&&!['1X2','OVER_25','COMBINATION'].includes(row.market))return null;
+ const actualClass=teamMarket?Number((row.market.startsWith('TEAM_HOME')?home:away)>row.line!):row.market==='1X2'?(home>away?0:home===away?1:2):row.market==='COMBINATION'?Number((row.side==='HOME'?home>away:away>home)&&home+away<(row.line??4.5)):Number(home+away>2.5);
  const predicted=row.market==='1X2'?['HOME','DRAW','AWAY'].indexOf(row.side):row.market==='COMBINATION'?1:row.side==='OVER'?1:0;
  const hit=actualClass===predicted;
  return {outcome:hit?'WON':'LOST',hit,actualClass,baselineHit:row.market==='1X2'?actualClass===0:row.market==='OVER_25'?actualClass===1:null,

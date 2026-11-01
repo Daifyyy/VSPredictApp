@@ -3,9 +3,17 @@ import { mainModelCandidates,modelCandidate,settleModelForecast,appendModelDaily
 const now=new Date('2026-10-31T09:00:00Z');
 const fixture:ModelForecastInput={fixtureId:1,leagueId:39,homeTeamId:1,awayTeamId:2,homeName:'A',awayName:'B',kickoff:new Date('2026-10-31T18:00:00Z'),predictedAt:new Date('2026-10-31T08:00:00Z'),status:'NS',available:true,lowConfidence:false,readinessSample:8,modelVersion:8,contextVersion:1,modelContext:'LEAGUE',homeWin:.6,draw:.2,awayWin:.2,over25:.65,lambdaHome:2,lambdaAway:1};
 describe('price-free prospective policy',()=>{
+ it('requires at least 60 percent for recommendations, including ELO and combinations',()=>{
+  for(const p of [.56,.58,.5999,.6,.65]){
+   for(const source of ['MAIN_1X2','ELO_1X2']){
+    expect(modelCandidate(fixture,source,[p,(1-p)/2,(1-p)/2],now)?.qualified).toBe(p>=.6);
+   }
+   expect(modelCandidate(fixture,'MODEL_COMBINATION',[1-p,p],now,{market:'COMBINATION',side:'HOME',line:4.5})?.qualified).toBe(p>=.6);
+  }
+ });
  it('qualifies without prices, EV or market benchmark and has a separate identity',()=>{
-  const rows=mainModelCandidates(fixture,now);expect(rows).toHaveLength(3);
-  expect(rows.find(r=>r.source==='MAIN_1X2')).toMatchObject({qualified:true,side:'HOME',policyVersion:2001});
+  const rows=mainModelCandidates(fixture,now);expect(rows).toHaveLength(7);
+  expect(rows.find(r=>r.source==='MAIN_1X2')).toMatchObject({qualified:true,side:'HOME',policyVersion:2003});
   expect(rows.find(r=>r.source==='ORIGINAL_OVER')).toMatchObject({qualified:true,side:'OVER',probability:.65});
   expect(JSON.stringify(rows)).not.toMatch(/decimalOdds|bookmaker|priceClv|expectedValue/);
  });
@@ -39,6 +47,27 @@ describe('price-free prospective policy',()=>{
   expect(selected.filter(r=>r.leagueId===0)).toHaveLength(2);
   expect(appendModelDaily(selected,[{...candidates[19],probability:.99}],now)).toEqual(selected);
   expect(appendModelDaily([],candidates.map(c=>({...c,qualified:false})),now)).toEqual([]);
+ });
+ it('keeps four team markets distinct, uses their own score and never total match goals',()=>{
+  const rows=mainModelCandidates(fixture,now).filter(r=>r.market.startsWith('TEAM_'));
+  expect(rows).toHaveLength(4);expect(new Set(rows.map(r=>r.id)).size).toBe(4);
+  for(const row of rows){
+   const lambda=row.market.startsWith('TEAM_HOME')?2:1;
+   expect(row.probability).toBeCloseTo(1-Math.exp(-lambda)*(row.line===.5?1:1+lambda));
+   expect(row.qualified).toBe(row.probability>=(row.line===.5?.78:.6));
+   const hit=(row.market.startsWith('TEAM_HOME')?0:3)>row.line!;
+   expect(settleModelForecast(row,'FT',0,3)).toMatchObject({hit,actualClass:Number(hit)});
+   expect(settleModelForecast(row,'FT',null,3)).toBeNull();
+   expect(settleModelForecast({...row,line:2.5},'FT',3,0)).toBeNull();
+  }
+  expect(mainModelCandidates({...fixture,lambdaHome:NaN},now).some(r=>r.source.startsWith('TEAM_HOME'))).toBe(false);
+  expect(mainModelCandidates({...fixture,readinessSample:0},now).filter(r=>r.source.startsWith('TEAM_')).every(r=>!r.qualified)).toBe(true);
+ });
+ it('team thresholds are inclusive and remain independent of odds',()=>{
+  for(const [market,line,threshold] of [['TEAM_HOME_05',.5,.78],['TEAM_AWAY_15',1.5,.6]] as const){
+   expect(modelCandidate(fixture,market,[1-threshold,threshold],now,{market,line,side:'OVER'})?.qualified).toBe(true);
+   expect(modelCandidate(fixture,market,[1-threshold+.001,threshold-.001],now,{market,line,side:'OVER'})?.qualified).toBe(false);
+  }
  });
  it('returns uncertainty rather than 60% as proof',()=>{expect(accuracyInterval(0,0)).toBeNull();const ci=accuracyInterval(6,10)!;expect(ci[0]).toBeLessThan(.5);expect(ci[1]).toBeGreaterThan(.8);});
 });

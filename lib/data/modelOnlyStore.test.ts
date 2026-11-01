@@ -11,7 +11,7 @@ beforeEach(()=>{vi.clearAllMocks();m.elo.mockResolvedValue([]);m.ai.mockResolved
 it.each([1,50])('captures %i fixtures with fixed query count and insert-only compact rows',async n=>{
  m.fixtures.mockResolvedValue(Array.from({length:n},(_,i)=>({...fixture,fixtureId:i+1})));await captureModelOnly(now);
  expect(m.fixtures).toHaveBeenCalledTimes(1);expect(m.elo).toHaveBeenCalledTimes(1);expect(m.ai).toHaveBeenCalledTimes(1);expect(m.create).toHaveBeenCalledTimes(1);
- const data=m.create.mock.calls[0][0];expect(data.skipDuplicates).toBe(true);expect(data.data).toHaveLength(n*3);expect(Object.keys(m.fixtures.mock.calls[0][0].select)).not.toContain('inputSnapshot');
+ const data=m.create.mock.calls[0][0];expect(data.skipDuplicates).toBe(true);expect(data.data).toHaveLength(n*7);expect(Object.keys(m.fixtures.mock.calls[0][0].select)).not.toContain('inputSnapshot');
  expect(JSON.stringify(data)).not.toMatch(/odds|bookmaker|roi|priceClv/);
 });
 it('never reads concrete forecasts for public summary',async()=>{const result=await readModelOnly('2026-10-31',false);expect(result.locked).toBe(true);expect(result.daily).toEqual([]);expect(m.forecasts).not.toHaveBeenCalled();});
@@ -24,3 +24,8 @@ it('settlement only replaces changed definitive results with one bounded batch',
 });
 it('dry run has no inference, database reads or writes',async()=>{expect((await runModelOnly(now,{dryRun:true})).status).toBe('DRY_RUN');expect(m.execute).not.toHaveBeenCalled();expect(m.fixtures).not.toHaveBeenCalled();expect(m.create).not.toHaveBeenCalled();});
 it('an overlapping job exits before reading data',async()=>{m.execute.mockResolvedValue(0);expect((await runModelOnly(now)).status).toBe('LEASE_HELD');expect(m.fixtures).not.toHaveBeenCalled();expect(m.query).not.toHaveBeenCalled();});
+it('filters qualified team predictions in SQL before pagination, with explicit historical policy',async()=>{
+ await readModelOnly('2026-10-31',true,1,'TEAM_GOALS',true,2001);
+ expect(m.forecasts.mock.calls[0][0]).toMatchObject({where:{policyVersion:2001,qualified:true,source:{startsWith:'TEAM_'}},skip:30,take:31});
+ expect(m.day.mock.calls[0][0]).toMatchObject({where:{key:'2001:2026-10-31'}});
+});

@@ -1,5 +1,5 @@
 import { readModelOnlyFixture } from '@/lib/data/modelOnlyStore';
-import { MODEL_SOURCE_LABELS, modelSelectionLabel } from '@/lib/picks/modelOnly';
+import { ModelForecastCard } from '@/app/_components/ModelForecastCard';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getCurrentUser } from '@/lib/authUser';
@@ -22,30 +22,37 @@ export default async function MatchPage({ params }: { params: Promise<{ fixtureI
   let modelRows:Awaited<ReturnType<typeof readModelOnlyFixture>>|null=null;
   try { modelRows=await readModelOnlyFixture(id,!data.locked); } catch { /* Preserve the main detail during migration/outage. */ }
   const f = data.forecast, pct = (n: number) => `${(n * 100).toFixed(0)} %`;
-  return <><AppHeader user={user ? { id: user.id, name: user.name, image: user.image, tier: user.tier, proTrialUsed: user.proTrialUsed, isAdmin: isAdminEmail(user.email) } : null}/><main className="mx-auto max-w-3xl space-y-4 p-6 pb-24">
+  return <><AppHeader user={user ? { id: user.id, name: user.name, image: user.image, tier: user.tier, proTrialUsed: user.proTrialUsed, isAdmin: isAdminEmail(user.email) } : null}/><main className="match-page mx-auto max-w-5xl space-y-6 px-4 py-6 pb-24">
     <nav className="flex gap-4 text-sm"><Link prefetch={false} href="/">← Program</Link><Link prefetch={false} href={`/vysledky?date=${new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Prague', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(data.kickoff))}`}>Výsledky dne</Link><Link prefetch={false} href="/vykonnost">Výkonnost</Link></nav>
-    <h1 className="text-2xl font-bold">{data.homeName} – {data.awayName}</h1>
-    <p>{new Date(data.kickoff).toLocaleString('cs-CZ', { timeZone: 'Europe/Prague' })} · {data.status}</p>
-    <p>{['FT', 'AET', 'PEN'].includes(data.status) ? `Konečné skóre základní doby: ${data.homeGoals ?? '—'} : ${data.awayGoals ?? '—'}` : 'Konečný výsledek dosud není vyhodnocen. Živý přenos neposkytujeme.'}</p>
-    <section className="ui-panel p-4"><h2 className="font-bold">Uložená předzápasová predikce</h2>
-      <p className="text-sm">Výpočet z {new Date(data.asOf).toLocaleString('cs-CZ', { timeZone: 'Europe/Prague' })}. Otevření stránky model nepřepočítává. Nejde o doporučení k sázce ani identifikaci původně publikovaného tipu.</p>
-      {data.limitedReason ? <p>Použitelná předzápasová predikce není zachycena.</p> : data.locked ? <p>Číselná predikce je dostupná s PRO.</p> : f && <>
-        <p className="mt-3">Domácí {pct(f.homeWin)} · remíza {pct(f.draw)} · hosté {pct(f.awayWin)}</p>
-        <p>Over 2,5 {pct(f.over25)} · oba skórují {pct(f.bttsYes)}</p>
-        <p>Očekávané góly {f.lambdaHome.toFixed(2)} : {f.lambdaAway.toFixed(2)}</p>
-        <p className="text-xs">Model {f.modelVersion} · {f.modelContext} · kontext {f.contextVersion}</p>
-        {f.lowConfidence && <p>Model označuje omezenou důvěru v podklady.</p>}
+    <header className="sport-hero p-6 sm:p-10">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 text-xs font-semibold text-muted">
+        <span>{new Date(data.kickoff).toLocaleString('cs-CZ', { timeZone: 'Europe/Prague', dateStyle: 'medium', timeStyle: 'short' })}</span>
+        <span className="rounded-full border border-border bg-background px-3 py-1.5">{data.status==='FT'?'Dohráno':data.status==='NS'?'Před zápasem':data.status}</span>
+      </div>
+      <h1 className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 text-center text-2xl font-extrabold tracking-tight sm:gap-6 sm:text-4xl">
+        <span>{data.homeName}<span className="mt-2 block text-[10px] font-medium uppercase tracking-widest text-muted">Domácí</span></span>
+        <span className="text-xl tabular-nums text-muted">{data.status==='FT'?`${data.homeGoals??'—'} : ${data.awayGoals??'—'}`:'vs.'}</span>
+        <span>{data.awayName}<span className="mt-2 block text-[10px] font-medium uppercase tracking-widest text-muted">Hosté</span></span>
+      </h1>
+    </header>
+    <section className="rounded-2xl border border-border bg-surface p-5 sm:p-6">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-2"><h2 className="text-lg font-bold">Očekávaný výsledek</h2><span className="text-xs text-muted">Poslední uložený odhad</span></div>
+      {data.limitedReason?<p className="text-sm text-muted">Použitelná předzápasová predikce není zachycena.</p>:data.locked?<p className="text-sm text-muted">Číselná predikce je dostupná s PRO.</p>:f&&<>
+        <div className="grid grid-cols-3 gap-3">{[['Domácí',f.homeWin],['Remíza',f.draw],['Hosté',f.awayWin]].map(([label,p])=><div key={String(label)} className={`rounded-xl border p-3 text-center sm:p-5 ${p===Math.max(f.homeWin,f.draw,f.awayWin)?'border-home/50 bg-home/10':'border-border bg-background/40'}`}><p className="text-xs text-muted">{label}</p><p className="mt-2 text-2xl font-extrabold tabular-nums sm:text-3xl">{pct(Number(p))}</p></div>)}</div>
+        <div className="mt-5 grid grid-cols-3 divide-x divide-border rounded-xl bg-surface/60 py-4 text-center"><div><p className="text-xs text-muted">Over 2,5</p><strong className="mt-1 block text-lg tabular-nums">{pct(f.over25)}</strong></div><div><p className="text-xs text-muted">Oba skórují</p><strong className="mt-1 block text-lg tabular-nums">{pct(f.bttsYes)}</strong></div><div><p className="text-xs text-muted">Očekávané góly</p><strong className="mt-1 block text-lg tabular-nums">{f.lambdaHome.toFixed(1)} : {f.lambdaAway.toFixed(1)}</strong></div></div>
+        {f.lowConfidence&&<p className="mt-4 rounded-lg bg-amber-500/10 px-3 py-2 text-xs text-warning">Omezená důvěra v podklady.</p>}
+        <details className="mt-4 text-xs text-muted"><summary className="cursor-pointer">Zdroj a čas výpočtu</summary><p className="mt-2">Výpočet {new Date(data.asOf).toLocaleString('cs-CZ',{timeZone:'Europe/Prague'})} · model v{f.modelVersion} · {f.modelContext} · kontext {f.contextVersion}. Otevření stránky model nepřepočítává. Tento odhad se může lišit od prvního zmrazeného tipu níže.</p></details>
       </>}
     </section>
-    <section className="ui-panel p-4 space-y-2"><h2 className="font-bold">Modelová evidence bez kurzů · politika 2001</h2><p className="text-sm">První zachycené odhady pro vyhodnocení přesnosti. Nemusí se shodovat s pozdějším přepočtem hlavní prognózy výše. Úspěšnost není ziskovost.</p>
-      {data.locked?<p>Konkrétní predikce jsou PRO.</p>:modelRows===null?<p>Novou modelovou evidenci se nepodařilo načíst.</p>:!modelRows.length?<p>Pro tento zápas nová prospektivní evidence nebyla zachycena.</p>:modelRows.map(r=><p key={r.id}><strong>{MODEL_SOURCE_LABELS[r.source]}</strong> · {modelSelectionLabel(r)} · {pct(r.probability)} · {r.qualified?'kvalifikovaný modelový výběr':'pouze predikce'} · {r.outcome==='WON'?'✅ Trefeno':r.outcome==='LOST'?'❌ Netrefeno':r.outcome==='VOID'?'↩ Nehodnoceno':'⏳ Čeká'} · model v{r.modelVersion} / {r.modelContext}</p>)}
+    <section className="space-y-4"><div><h2 className="text-lg font-bold">Uložené modelové tipy</h2><p className="mt-1 text-xs text-muted">Neměnné předzápasové odhady · přesnost, nikoli ziskovost</p></div>
+      {data.locked?<p className="text-sm text-muted">Konkrétní predikce jsou PRO.</p>:modelRows===null?<p role="status">Evidenci se nepodařilo načíst.</p>:!modelRows.length?<p className="rounded-xl border border-dashed border-border p-5 text-sm text-muted">Předzápasové tipy pro tento zápas nebyly zachyceny.</p>:<div className="grid gap-4 md:grid-cols-2">{modelRows.map(r=><ModelForecastCard key={r.id} row={{...r,capturedAt:r.capturedAt.toISOString()}}/>)}</div>}
     </section>
     <MatchContextDetail key={id} fixtureId={id}/>
-    <section className="space-y-2">
+    <details className="rounded-2xl border border-border p-5"><summary className="cursor-pointer font-bold">Průběh a konečný audit</summary><div className="mt-4 space-y-3">
       {data.flow.insight && <MatchInsightCard insight={data.flow.insight} pro={!data.locked} />}
       {data.flow.reason && <p role="status">{data.flow.reason === 'FLOW_UNAVAILABLE' ? 'Audit průběhu se nepodařilo načíst.' : data.flow.reason === 'FINAL_AUDIT_PENDING' ? 'Konečný audit dosud není uložený. Výše je pouze původní očekávání.' : data.flow.reason === 'AWAITING_FINAL_RESULT' ? 'Čeká na konečné vyhodnocení. Výše zůstává předzápasové očekávání, nikoli živý průběh.' : 'Předzápasový audit průběhu nebyl zachycen.'}</p>}
-    </section>
-    <section className="ui-panel p-4"><h2 className="font-bold">Historický cenový Denní výběr</h2>
+    </div></details>
+    <details className="rounded-2xl border border-border p-5 text-sm"><summary className="cursor-pointer font-bold">Archiv · původní Denní výběr</summary><div className="mt-4 space-y-3">
       <p className="text-sm">Posledních nejvýše 30 položek publikační historie, nikoli všechny predikce a kandidáti. Nepotvrzuje doručení Telegramu.</p>
       {data.locked ? <p>Konkrétní výběry jsou dostupné s PRO.</p> : data.publications.unavailable ? <p role="status">Historii nelze načíst; nejde o nulovou bilanci.</p> : !data.publications.items.length ? <p>Zápas nemá zachycenou položku Denního výběru.</p> : <ul className="space-y-3">{data.publications.items.map(p => <li key={p.id} className="mt-3 border-t border-border pt-3">
         <strong>{p.selection ?? 'Popis výběru nezachycen'}</strong><p>{p.strategy ?? 'Zdroj nezachycen'} · {p.decimalOdds.toFixed(2)} · {p.bookmaker}</p>
@@ -53,8 +60,8 @@ export default async function MatchPage({ params }: { params: Promise<{ fixtureI
         <p>Profit {p.profit == null ? '—' : `${p.profit.toFixed(2)} j`} · CLV {p.priceClv == null ? 'nezachyceno' : `${(p.priceClv * 100).toFixed(2)} %`}</p>
         <p className="text-xs">Publikováno {p.publishedAt.toLocaleString('cs-CZ', { timeZone: 'Europe/Prague' })}</p>
       </li>)}</ul>}
-    </section>
-    <section className="ui-panel p-4"><h2 className="font-bold">Archiv tiketů VALUE / ELO</h2>
+    </div></details>
+    <details className="rounded-2xl border border-border p-5 text-sm"><summary className="cursor-pointer font-bold">Archiv · tikety VALUE / ELO</summary><div className="mt-4 space-y-3">
       <p className="text-sm">Uložené nohy tiketů, nikoli nové singly. Výsledek nohy a profit celého tiketu jsou oddělené; nepřičítají se k bilanci Denního výběru. Nejvýše 30 záznamů.</p>
       {data.locked ? <p>Detail tiketů je dostupný s PRO.</p> : data.ticketLegs.unavailable ? <p role="status">Tikety nelze načíst; nejde o nulovou bilanci.</p> : !data.ticketLegs.items.length ? <p>Zápas nemá uloženou nohu VALUE/ELO tiketu.</p> : <ul className="space-y-3">{data.ticketLegs.items.map(leg => <li key={leg.id} className="mt-3 border-t border-border pt-3">
         <strong>{leg.ticket.strategy === 'VALUE' ? 'VALUE' : 'ELO / Intuice'} · {leg.ticket.windowKey} · tiket {leg.ticket.slot}</strong>
@@ -64,7 +71,7 @@ export default async function MatchPage({ params }: { params: Promise<{ fixtureI
         <p>Celý tiket: {leg.ticket.status} · profit {leg.ticket.profit == null ? '—' : `${leg.ticket.profit.toFixed(2)} j`}</p>
         <p className="text-xs">Policy {leg.ticket.policyVersion} · CLV {leg.priceClv == null ? 'nezachyceno' : `${(leg.priceClv * 100).toFixed(2)} % (${leg.clvMethodVersion === 2 ? 'v2' : 'historická metodika'})`}</p>
       </li>)}</ul>}
-    </section>
-    <p className="text-sm text-muted">Detail čte uložené předzápasové očekávání a konečné vyhodnocení. Živý přenos ani nový modelový výpočet při otevření neprovádí.</p>
+    </div></details>
+    <p className="text-xs text-muted">Detail čte uložené předzápasové očekávání a konečné vyhodnocení. Živý přenos ani nový modelový výpočet při otevření neprovádí.</p>
   </main></>;
 }

@@ -26,7 +26,7 @@ export function AppHeader({
   return (
     <>
       <DesktopSidebar />
-      <header className="relative z-30">
+      <header className="standalone-header relative z-30">
         <div className="app-topbar">
           <Link
             href="/"
@@ -43,10 +43,10 @@ export function AppHeader({
             />
             <span className="hidden leading-tight sm:block">
               <span className="block text-sm font-bold tracking-tight text-foreground">Football Insight</span>
-              <span className="block text-[11px] text-muted">Fotbal v souvislostech</span>
+              <span className="block text-[11px] text-muted">Předpověď. Výsledek. Přehled.</span>
             </span>
           </Link>
-          <Link href="/" prefetch={false} className="hidden text-sm font-semibold text-muted sm:block">Program a předzápasové predikce</Link>
+          <Link href="/" prefetch={false} className="hidden text-sm font-semibold text-muted sm:block">PŘED ZÁPASEM · MODELOVÉ PREDIKCE</Link>
           <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
             {share && <ShareButton />}
             <AccountMenu user={user} />

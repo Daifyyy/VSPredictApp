@@ -8,7 +8,7 @@ import { Suspense } from "react";
 
 const TITLE = "Football Insight — zápasy, analýzy a fotbalové statistiky";
 const DESCRIPTION =
-  "Fotbalový program, výsledky, živé skóre a srozumitelné analýzy klubů i reprezentací na jednom místě.";
+  "Předzápasové predikce, modelové tipy a přehledné vyhodnocení fotbalových zápasů.";
 
 export const metadata: Metadata = {
   // Základ pro absolutní URL OG/twitter obrázků (prod doména, fallback z AUTH_URL).
@@ -59,7 +59,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#f5f7f4",
+  themeColor: "#0b1017",
 };
 
 export default function RootLayout({

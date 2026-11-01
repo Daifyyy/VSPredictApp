@@ -6,7 +6,7 @@ type ButtonVariant = "primary" | "accent" | "secondary" | "ghost" | "danger";
 type ButtonSize = "sm" | "md" | "lg";
 
 const buttonVariant: Record<ButtonVariant, string> = {
-  primary: "border-foreground bg-foreground text-background shadow-sm hover:-translate-y-px hover:shadow-md",
+  primary: "border-accent bg-accent text-accent-ink shadow-sm hover:-translate-y-px hover:shadow-md",
   accent: "border-accent-strong/30 bg-accent text-accent-ink shadow-sm hover:-translate-y-px hover:bg-accent/85",
   secondary: "border-border bg-surface text-foreground shadow-sm hover:border-foreground/25 hover:bg-background",
   ghost: "border-transparent bg-transparent text-muted hover:bg-background hover:text-foreground",
@@ -20,7 +20,7 @@ const buttonSize: Record<ButtonSize, string> = {
 };
 
 export function buttonClass(variant: ButtonVariant = "secondary", size: ButtonSize = "md", className = "") {
-  return `inline-flex items-center justify-center gap-2 border font-bold transition duration-150 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-45 ${buttonVariant[variant]} ${buttonSize[size]} ${className}`;
+  return `inline-flex items-center justify-center gap-2 border font-bold transition duration-150 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-45 ${buttonVariant[variant]} ${buttonSize[size]} ${className}`;
 }
 
 export function Button({ variant = "secondary", size = "md", className = "", ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: ButtonSize }) {
@@ -33,7 +33,7 @@ export function ActionLink({ href, children, variant = "secondary", size = "md",
 
 const badgeTone: Record<Tone, string> = {
   neutral: "border-border bg-background text-muted",
-  accent: "border-accent-strong/20 bg-accent/20 text-accent-ink",
+  accent: "border-accent-strong/20 bg-accent/10 text-accent",
   positive: "border-positive/20 bg-positive/10 text-positive",
   warning: "border-warning/20 bg-warning/10 text-warning",
   negative: "border-negative/20 bg-negative/10 text-negative",

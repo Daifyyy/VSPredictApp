@@ -2,15 +2,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-export type NavSection = "matches" | "results" | "performance";
+export type NavSection = "matches" | "predictions" | "results" | "performance";
 export interface NavItem { href: string; label: string; section: NavSection; description?: string; icon: IconName }
 export const NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Program", section: "matches", description: "Nadcházející zápasy a predikce", icon: "matches" },
+  { href: "/", label: "Dnes", section: "matches", description: "Nadcházející zápasy a predikce", icon: "matches" },
+  { href: "/denni-vyber", label: "Predikce", section: "predictions", description: "Doporučení a všechny modelové odhady", icon: "prediction" },
   { href: "/vysledky", label: "Výsledky", section: "results", description: "Konečné výsledky a audit", icon: "tips" },
-  { href: "/vykonnost", label: "Výkonnost", section: "performance", description: "Modely, strategie a historie", icon: "strategy" },
+  { href: "/vykonnost", label: "Úspěšnost", section: "performance", description: "Modely, strategie a historie", icon: "strategy" },
 ];
 export function isActiveSection(pathname: string, href: string) {
-  if (href === "/") return pathname === "/" || pathname.startsWith("/zapas/") || pathname === "/denni-vyber";
+  if (href === "/") return pathname === "/" || pathname.startsWith("/zapas/");
   return pathname === href || pathname.startsWith(href + "/");
 }
 export function SectionNav() { return null; }
@@ -18,10 +19,10 @@ export function SectionNav() { return null; }
 export function DesktopSidebar() {
   const pathname = usePathname();
   return <aside className="fixed inset-y-0 left-0 z-50 hidden w-[17rem] flex-col border-r border-border bg-sidebar p-5 text-foreground lg:flex">
-    <Link href="/" className="border-b border-border pb-5 text-xl font-bold">Football Insight</Link>
-    <nav aria-label="Hlavní navigace" className="mt-6 flex flex-1 flex-col gap-3">
+    <Link href="/" className="border-b border-border pb-6"><span className="text-[10px] font-bold uppercase tracking-[.24em] text-accent">Football intelligence</span><strong className="mt-2 block text-2xl font-extrabold tracking-tight">Football<span className="text-accent">.</span><br/>Insight</strong></Link>
+    <nav aria-label="Hlavní navigace" className="mt-8 flex flex-1 flex-col gap-2">
       {NAV_ITEMS.map(item => <Link key={item.href} href={item.href} prefetch={false} aria-current={isActiveSection(pathname,item.href) ? "page" : undefined}
-        className={`flex min-h-14 items-center gap-3 rounded-xl p-3 ${isActiveSection(pathname,item.href) ? "bg-accent/25" : "hover:bg-background"}`}>
+        className={`flex min-h-14 items-center gap-3 rounded-xl p-3 ${isActiveSection(pathname,item.href) ? "bg-accent/10 text-accent ring-1 ring-accent/20" : "hover:bg-background"}`}>
         <NavIcon name={item.icon}/><span><strong className="block">{item.label}</strong><span className="text-xs text-muted">{item.description}</span></span>
       </Link>)}
     </nav>
@@ -32,7 +33,7 @@ export function DesktopSidebar() {
 export function MobileBottomNav() {
   const pathname = usePathname();
   return <nav aria-label="Hlavní mobilní navigace" className="mobile-bottom-nav border-t border-border bg-surface lg:hidden">
-    <div className="mx-auto grid max-w-lg grid-cols-3">
+    <div className="mx-auto grid max-w-lg grid-cols-4">
       {NAV_ITEMS.map(item => <Link key={item.href} href={item.href} prefetch={false}
         aria-current={isActiveSection(pathname,item.href) ? "page" : undefined}
         className={`flex min-h-16 flex-col items-center justify-center gap-1 text-xs font-bold ${isActiveSection(pathname,item.href) ? "bg-accent/25" : "text-muted"}`}>
